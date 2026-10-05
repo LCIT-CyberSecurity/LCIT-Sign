@@ -71,8 +71,19 @@ services:
     depends_on:
       api:
         condition: service_healthy
+    environment:
+      # Name on the self-signed fallback certificate (used only when no
+      # certificate is mounted under LCIT_SIGN_CERT_DIR).
+      LCIT_SIGN_TLS_FQDN: ${LCIT_SIGN_FQDN:-localhost}
     ports:
+      # Plain HTTP: development and integration only. Remove this line in
+      # production and publish just the HTTPS port.
       - "127.0.0.1:4180:80"
+      - "${LCIT_SIGN_HTTPS_BIND:-127.0.0.1}:${LCIT_SIGN_HTTPS_PORT:-4443}:443"
+    volumes:
+      # tls.crt / tls.key managed by scripts/certificate-installer.sh.
+      # Read-only: the proxy can never alter its own key (spec §104).
+      - ${LCIT_SIGN_CERT_DIR:-./certs}:/etc/nginx/certs:ro
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/healthz"]
       interval: 10s

@@ -7,8 +7,12 @@ COPY . .
 RUN npm run build
 
 FROM nginx:1.27-alpine
+RUN apk add --no-cache openssl
 COPY --from=build /app/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-EXPOSE 80
+COPY nginx/default.conf /etc/nginx/conf.d/default.conf
+COPY nginx/server-common.conf /etc/nginx/lcit-sign/server-common.conf
+COPY nginx/40-lcit-sign-tls.sh /docker-entrypoint.d/40-lcit-sign-tls.sh
+RUN chmod +x /docker-entrypoint.d/40-lcit-sign-tls.sh
+EXPOSE 80 443
 HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=5 \
     CMD wget -q -O /dev/null http://127.0.0.1/healthz || exit 1

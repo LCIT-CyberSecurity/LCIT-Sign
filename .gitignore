@@ -25,3 +25,10 @@ web/*.tsbuildinfo
 .DS_Store
 .vscode/
 .idea/
+
+# TLS material is never versioned
+certs/
+certs.backup/
+*.key
+*.pem
+certificate-installer.log
