@@ -16,7 +16,7 @@ from lcit_sign import __version__
 from lcit_sign.api.documents import DOCUMENTS_BUCKET, PDF_SUFFIX
 from lcit_sign.config import Settings
 from lcit_sign.deps import get_current_user, get_db, require_roles, user_roles
-from lcit_sign.models.campaign import AssignmentStatus, SignatureAssignment
+from lcit_sign.models.campaign import AssignmentStatus, Campaign, SignatureAssignment
 from lcit_sign.models.document import Document, DocumentVersion, DocumentVersionStatus
 from lcit_sign.models.mail import NotificationType
 from lcit_sign.models.signature import Signature
@@ -57,6 +57,23 @@ def _signature_payload(signature: Signature) -> dict[str, Any]:
         "signed_at_utc": signature.signed_at_utc.isoformat(),
         "display_name_snapshot": signature.display_name_snapshot,
         "email_snapshot": signature.email_snapshot,
+    }
+
+
+def _described(signature: Signature, db: DbSession) -> dict[str, Any]:
+    """The signature payload plus what a human needs to recognise it: the
+    document title and version, the campaign name and the signed file's hash."""
+    version = db.get(DocumentVersion, signature.document_version_id)
+    document = db.get(Document, signature.document_id)
+    campaign = db.get(Campaign, signature.campaign_id) if signature.campaign_id else None
+    return {
+        **_signature_payload(signature),
+        "document_title": document.title if document else "",
+        "version_label": version.version_label if version else "",
+        "campaign_name": campaign.name if campaign else None,
+        "signed_file_sha256": signature.signed_file_sha256,
+        "original_file_sha256": signature.original_file_sha256,
+        "signing_key_id": signature.signing_key_id,
     }
 
 
@@ -255,7 +272,7 @@ def list_my_signatures(
         .where(Signature.user_id == user.id)
         .order_by(Signature.signed_at_utc.desc())
     ).scalars()
-    return [_signature_payload(row) for row in rows]
+    return [_described(row, db) for row in rows]
 
 
 @router.get("/signatures/{signature_id}")
@@ -266,13 +283,14 @@ def get_signature(
     if signature is None:
         raise HTTPException(404, "Signature not found")
     _authorize_signature_access(signature, user, db)
-    return _signature_payload(signature)
+    return _described(signature, db)
 
 
 @router.get("/signatures/{signature_id}/signed-pdf")
 def download_signed_pdf(
     request: Request,
     signature_id: uuid.UUID,
+    inline: bool = False,
     user: User = Depends(get_current_user),
     db: DbSession = Depends(get_db),
 ) -> Response:
@@ -284,7 +302,11 @@ def download_signed_pdf(
     data = storage.read(SIGNED_BUCKET, signature.id, PDF_SUFFIX)
     return Response(
         content=data, media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{signature.display_id}.pdf"'},
+        headers={
+            "Content-Disposition": (
+                f'{"inline" if inline else "attachment"}; filename="{signature.display_id}.pdf"'
+            )
+        },
     )
 
 

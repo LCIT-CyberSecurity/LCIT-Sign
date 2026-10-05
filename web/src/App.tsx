@@ -14,6 +14,8 @@ import AdminMailPage from "./pages/AdminMailPage";
 import AdminAuditPage from "./pages/AdminAuditPage";
 import AdminSigningKeysPage from "./pages/AdminSigningKeysPage";
 import AdminDiagnosticsPage from "./pages/AdminDiagnosticsPage";
+import MySignaturesPage from "./pages/MySignaturesPage";
+import SignatureDetailPage from "./pages/SignatureDetailPage";
 
 function RoleRoute({ allowed, children }: { allowed: boolean; children: ReactNode }) {
   return allowed ? <>{children}</> : <Navigate to="/" replace />;
@@ -40,6 +42,8 @@ export default function App() {
       <Route element={<Shell />}>
         <Route path="/" element={<SignerAssignmentsPage />} />
         <Route path="/assignments/:id" element={<SignerAssignmentDetailPage />} />
+        <Route path="/signatures" element={<MySignaturesPage />} />
+        <Route path="/signatures/:id" element={<SignatureDetailPage />} />
 
         <Route
           path="/documents"

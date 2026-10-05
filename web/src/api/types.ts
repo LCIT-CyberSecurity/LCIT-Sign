@@ -55,6 +55,7 @@ export interface CampaignAssignment {
   id: string;
   document_version_id: string;
   document_title: string;
+  signature_id: string | null;
   groups: string[];
   user_id: string;
   user_email: string;
@@ -83,6 +84,21 @@ export interface Campaign {
   assignment_counts: Record<AssignmentStatus, number>;
   policies: CampaignPolicies;
   renewal_of_campaign_id: string | null;
+}
+
+export interface SignatureDetail extends SignatureSummary {
+  campaign_id: string | null;
+  document_title: string;
+  version_label: string;
+  campaign_name: string | null;
+  signed_file_sha256: string;
+  original_file_sha256: string;
+  signing_key_id: string;
+}
+
+export interface VerificationResult {
+  valid: boolean;
+  checks: Record<string, boolean>;
 }
 
 export interface SignatureSummary {

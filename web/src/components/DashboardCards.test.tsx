@@ -16,7 +16,7 @@ describe("<DashboardCards />", () => {
     expect(screen.getByTestId("stat-Signatures attendues")).toHaveTextContent("142");
     expect(screen.getByTestId("stat-Signatures réalisées")).toHaveTextContent("115");
     expect(screen.getByTestId("stat-En retard")).toHaveTextContent("4");
-    expect(screen.getByTestId("stat-Relances envoyées")).toHaveTextContent("33");
+    expect(screen.getByText(/33 relance\(s\) envoyée\(s\)/)).toBeInTheDocument();
     expect(screen.getByTestId("signature-rate")).toHaveTextContent("81 %");
     expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "81");
   });

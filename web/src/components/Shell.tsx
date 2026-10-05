@@ -1,33 +1,75 @@
-import type { ReactNode } from "react";
-import { NavLink, Outlet } from "react-router-dom";
+import { useState, type ReactNode } from "react";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
 import {
+  Activity,
+  ChevronRight,
   FileSignature,
   FileText,
-  Megaphone,
-  Users,
   FolderCog,
-  Mail,
-  ScrollText,
   KeyRound,
-  Activity,
-  LogOut,
+  Mail,
+  Megaphone,
+  Menu,
+  ScrollText,
+  ShieldCheck,
+  Users,
 } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
 import { api } from "../api/client";
+import UserMenu from "./UserMenu";
 
-function NavItem({ to, icon, label }: { to: string; icon: ReactNode; label: string }) {
+function NavItem({
+  to,
+  icon,
+  label,
+  end,
+  onNavigate,
+}: {
+  to: string;
+  icon: ReactNode;
+  label: string;
+  end?: boolean;
+  onNavigate: () => void;
+}) {
   return (
-    <NavLink to={to} className={({ isActive }) => `nav-item${isActive ? " nav-item--active" : ""}`}>
+    <NavLink
+      to={to}
+      end={end}
+      onClick={onNavigate}
+      className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}
+    >
       {icon}
       <span>{label}</span>
     </NavLink>
   );
 }
 
+const TITLES: [prefix: string, label: string][] = [
+  ["/signatures", "Mes signatures"],
+  ["/assignments", "Document à signer"],
+  ["/documents", "Documents"],
+  ["/campaigns", "Campagnes"],
+  ["/admin/users", "Utilisateurs"],
+  ["/admin/directory", "Annuaire"],
+  ["/admin/mail", "E-mail"],
+  ["/admin/audit", "Audit"],
+  ["/admin/signing-keys", "Clés de signature"],
+  ["/admin/diagnostics", "Diagnostic"],
+];
+
+function sectionTitle(pathname: string): string {
+  return TITLES.find(([prefix]) => pathname.startsWith(prefix))?.[1] ?? "Mes documents";
+}
+
 export default function Shell() {
   const { user, hasRole, refresh } = useAuth();
+  const { pathname } = useLocation();
+  const [open, setOpen] = useState(false);
   const isOperator = hasRole("OPERATOR") || hasRole("ADMIN");
   const isAdmin = hasRole("ADMIN");
+  const close = () => setOpen(false);
+
+  const roleLabel = isAdmin ? "Administrateur" : isOperator ? "Opérateur" : "Signataire";
 
   const logout = async () => {
     await api.post("/auth/logout");
@@ -36,41 +78,77 @@ export default function Shell() {
 
   return (
     <div className="app-shell">
-      <header className="app-header">
+      <aside className={`sidebar${open ? " sidebar--open" : ""}`}>
         <div className="brand">
-          <FileSignature size={20} aria-hidden="true" />
-          <span>LCIT Sign</span>
+          <img className="brand-logo" src="/lcit-mark.png" alt="LCIT" />
+          <div>
+            <span>Sign</span>
+            <small>Signature &amp; attestation</small>
+          </div>
         </div>
-        <div className="header-user">
-          <span className="header-user__name">{user?.display_name}</span>
-          <button className="button button--ghost" onClick={logout}>
-            <LogOut size={14} aria-hidden="true" />
-            Déconnexion
-          </button>
-        </div>
-      </header>
-      <div className="app-body">
-        <nav className="app-nav">
-          <NavItem to="/" icon={<FileText size={16} />} label="Mes documents" />
+        <nav aria-label="Navigation principale">
+          <div className="nav-heading">Mon espace</div>
+          <NavItem to="/" end icon={<FileText size={18} />} label="Mes documents" onNavigate={close} />
+          <NavItem
+            to="/signatures"
+            icon={<FileSignature size={18} />}
+            label="Mes signatures"
+            onNavigate={close}
+          />
           {isOperator && (
             <>
-              <div className="nav-section">Opérateur</div>
-              <NavItem to="/documents" icon={<FileText size={16} />} label="Documents" />
-              <NavItem to="/campaigns" icon={<Megaphone size={16} />} label="Campagnes" />
+              <div className="nav-heading">Opérateur</div>
+              <NavItem to="/documents" icon={<FileText size={18} />} label="Documents" onNavigate={close} />
+              <NavItem to="/campaigns" icon={<Megaphone size={18} />} label="Campagnes" onNavigate={close} />
             </>
           )}
           {isAdmin && (
             <>
-              <div className="nav-section">Administration</div>
-              <NavItem to="/admin/users" icon={<Users size={16} />} label="Utilisateurs" />
-              <NavItem to="/admin/directory" icon={<FolderCog size={16} />} label="Annuaire" />
-              <NavItem to="/admin/mail" icon={<Mail size={16} />} label="Email" />
-              <NavItem to="/admin/audit" icon={<ScrollText size={16} />} label="Audit" />
-              <NavItem to="/admin/signing-keys" icon={<KeyRound size={16} />} label="Clés de signature" />
-              <NavItem to="/admin/diagnostics" icon={<Activity size={16} />} label="Diagnostic" />
+              <div className="nav-heading">Administration</div>
+              <NavItem to="/admin/users" icon={<Users size={18} />} label="Utilisateurs" onNavigate={close} />
+              <NavItem to="/admin/directory" icon={<FolderCog size={18} />} label="Annuaire" onNavigate={close} />
+              <NavItem to="/admin/mail" icon={<Mail size={18} />} label="Email" onNavigate={close} />
+              <NavItem to="/admin/audit" icon={<ScrollText size={18} />} label="Audit" onNavigate={close} />
+              <NavItem
+                to="/admin/signing-keys"
+                icon={<KeyRound size={18} />}
+                label="Clés de signature"
+                onNavigate={close}
+              />
+              <NavItem
+                to="/admin/diagnostics"
+                icon={<Activity size={18} />}
+                label="Diagnostic"
+                onNavigate={close}
+              />
             </>
           )}
         </nav>
+        <div className="sidebar-footer">
+          <strong>
+            <ShieldCheck size={13} aria-hidden="true" /> LCIT Cybersecurity
+          </strong>
+          Connecté en tant que {roleLabel.toLowerCase()}
+        </div>
+      </aside>
+      {open && <div className="sidebar-scrim" onClick={close} aria-hidden="true" />}
+
+      <div className="page">
+        <header className="topbar">
+          <div className="crumb">
+            <button
+              className="button button--ghost button--sm mobile-menu"
+              onClick={() => setOpen(true)}
+              aria-label="Ouvrir le menu"
+            >
+              <Menu size={18} />
+            </button>
+            <span>LCIT Sign</span>
+            <ChevronRight size={14} aria-hidden="true" />
+            <strong>{sectionTitle(pathname)}</strong>
+          </div>
+          <div className="top-actions">{user && <UserMenu user={user} onSignOut={logout} />}</div>
+        </header>
         <main className="app-main app-main--shell">
           <Outlet />
         </main>

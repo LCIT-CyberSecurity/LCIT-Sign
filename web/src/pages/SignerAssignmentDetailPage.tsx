@@ -2,10 +2,12 @@ import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { ArrowLeft, Download, FileCheck } from "lucide-react";
 import { api, ApiError } from "../api/client";
+import { useAuth } from "../auth/AuthContext";
 import type { MyAssignment, PublicConfig, SignatureSummary } from "../api/types";
 
 export default function SignerAssignmentDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const { user } = useAuth();
   const [assignment, setAssignment] = useState<MyAssignment | null>(null);
   const [config, setConfig] = useState<PublicConfig | null>(null);
   const [consentChecked, setConsentChecked] = useState(false);
@@ -74,6 +76,12 @@ export default function SignerAssignmentDetailPage() {
             </p>
           )}
           <div className="button-row">
+            <Link
+              className="button button--primary"
+              to={`/signatures/${signature ? signature.id : assignment.signature_id}`}
+            >
+              Voir ma signature et vérifier
+            </Link>
             <a
               className="button button--secondary"
               href={
@@ -97,7 +105,25 @@ export default function SignerAssignmentDetailPage() {
           </div>
         </div>
       ) : (
-        <div className="card">
+        <div className="card stack" style={{ gap: 16 }}>
+          <div className="signature-preview" aria-label="Aperçu de votre signature">
+            <span className="signature-preview__label">Aperçu de votre signature</span>
+            <span className="signature-preview__name" data-testid="signature-preview-name">
+              {user?.display_name}
+            </span>
+            <span className="signature-preview__meta">Signé avec LCIT Sign</span>
+            <div className="signature-preview__fields">
+              <span>
+                Signataire : <strong>{user?.display_name}</strong>
+              </span>
+              <span>
+                E-mail : <strong>{user?.email}</strong>
+              </span>
+              <span>
+                Date : <strong>à l&apos;instant de la signature</strong>
+              </span>
+            </div>
+          </div>
           <label className="consent-row">
             <input
               type="checkbox"

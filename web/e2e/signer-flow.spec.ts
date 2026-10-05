@@ -7,12 +7,12 @@ async function loginAs(page: Page, name: string) {
   await page.getByRole("link", { name: /Se connecter avec le SSO/ }).click();
   await page.getByRole("link", { name: new RegExp(name) }).click();
   // The login page also says "LCIT Sign": wait for something only a session shows.
-  await expect(page.getByRole("button", { name: /Déconnexion/ })).toBeVisible();
+  await expect(page.getByLabel("Compte et réglages")).toBeVisible();
 }
 
 test("a signer sees nothing of the operator and admin areas", async ({ page }) => {
   await loginAs(page, "Erwan");
-  await expect(page.getByText("Mes documents")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Mes documents" })).toBeVisible();
   await expect(page.getByText("Administration")).toHaveCount(0);
   await page.goto("/admin/diagnostics");
   await expect(page).toHaveURL(/\/$/); // bounced back by the route guard

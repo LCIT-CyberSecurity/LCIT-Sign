@@ -5,6 +5,9 @@ import App from "./App";
 import { AuthProvider } from "./auth/AuthContext";
 import "@fontsource-variable/inter";
 import "./styles.css";
+import { applyStoredPreferences } from "./theme";
+
+applyStoredPreferences();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

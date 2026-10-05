@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { FileText, CheckCircle2, Clock } from "lucide-react";
+import { useAuth } from "../auth/AuthContext";
 import { api } from "../api/client";
 import type { MyAssignment } from "../api/types";
 
@@ -15,6 +16,7 @@ function formatDate(value: string | null): string {
 
 export default function SignerAssignmentsPage() {
   const [assignments, setAssignments] = useState<MyAssignment[] | null>(null);
+  const { user } = useAuth();
 
   useEffect(() => {
     api.get<MyAssignment[]>("/me/assignments").then(setAssignments);
@@ -27,6 +29,31 @@ export default function SignerAssignmentsPage() {
 
   return (
     <div className="stack">
+      <div>
+        <p className="greeting">Bonjour {user?.display_name?.split(" ")[0]}</p>
+        <div className="metrics" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(190px, 260px))" }}>
+          <div className="metric">
+            <div className="metric-label">
+              À signer
+              <span className="metric-icon amber" aria-hidden="true">
+                <Clock size={15} />
+              </span>
+            </div>
+            <strong data-testid="count-pending">{pending.length}</strong>
+            <small>document(s) en attente</small>
+          </div>
+          <div className="metric">
+            <div className="metric-label">
+              Signés
+              <span className="metric-icon green" aria-hidden="true">
+                <CheckCircle2 size={15} />
+              </span>
+            </div>
+            <strong data-testid="count-signed">{signed.length}</strong>
+            <small>document(s) signé(s)</small>
+          </div>
+        </div>
+      </div>
       <section>
         <h1 className="page-title">
           <FileText size={20} aria-hidden="true" /> À signer

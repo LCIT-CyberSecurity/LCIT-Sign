@@ -28,7 +28,7 @@ def test_ready_reports_database_connectivity() -> None:
 def test_security_headers_are_present() -> None:
     with make_client() as client:
         response = client.get("/api/health")
-    assert response.headers["X-Frame-Options"] == "DENY"
+    assert response.headers["X-Frame-Options"] == "SAMEORIGIN"
     assert response.headers["X-Content-Type-Options"] == "nosniff"
 
 

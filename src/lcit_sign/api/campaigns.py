@@ -504,6 +504,7 @@ def list_campaign_assignments(
             "document_version_id": str(assignment.document_version_id),
             "document_title": titles.get(assignment.document_version_id, ""),
             "groups": group_names.get(assignment.user_id, []),
+            "signature_id": str(assignment.signature_id) if assignment.signature_id else None,
             "user_id": str(assignment.user_id),
             "user_email": target_user.email,
             "user_display_name": target_user.display_name,

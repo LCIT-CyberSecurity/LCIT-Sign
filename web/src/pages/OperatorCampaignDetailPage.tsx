@@ -315,6 +315,7 @@ export default function OperatorCampaignDetailPage() {
                 <th>Consulté</th>
                 <th>Signé</th>
                 <th>Relances</th>
+                <th />
               </tr>
             </thead>
             <tbody>
@@ -332,6 +333,13 @@ export default function OperatorCampaignDetailPage() {
                   <td>{a.first_viewed_at ? new Date(a.first_viewed_at).toLocaleDateString("fr-FR") : "—"}</td>
                   <td>{a.signed_at ? new Date(a.signed_at).toLocaleDateString("fr-FR") : "—"}</td>
                   <td>{a.reminder_count}</td>
+                  <td>
+                    {a.signature_id && (
+                      <Link className="button button--ghost button--sm" to={`/signatures/${a.signature_id}`}>
+                        Voir la signature
+                      </Link>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

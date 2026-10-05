@@ -4,7 +4,10 @@ import { MemoryRouter } from "react-router-dom";
 import App from "./App";
 
 const auth = vi.hoisted(() => ({
-  current: { user: null as null | { display_name: string }, roles: [] as string[] },
+  current: {
+    user: null as null | { display_name: string; email: string; roles: string[] },
+    roles: [] as string[],
+  },
 }));
 
 vi.mock("./auth/AuthContext", () => ({
@@ -36,27 +39,27 @@ describe("role-based navigation (the UI only hides; the API enforces)", () => {
   });
 
   it("does not offer operator or admin sections to a plain signer", () => {
-    auth.current = { user: { display_name: "Erwan" }, roles: ["SIGNER"] };
+    auth.current = { user: { display_name: "Erwan", email: "x@lcit-test.local", roles: ["SIGNER"] }, roles: ["SIGNER"] };
     renderAt("/");
     expect(screen.queryByText("Campagnes")).not.toBeInTheDocument();
     expect(screen.queryByText("Diagnostic")).not.toBeInTheDocument();
   });
 
   it("redirects a signer away from an admin URL", () => {
-    auth.current = { user: { display_name: "Erwan" }, roles: ["SIGNER"] };
+    auth.current = { user: { display_name: "Erwan", email: "x@lcit-test.local", roles: ["SIGNER"] }, roles: ["SIGNER"] };
     renderAt("/admin/diagnostics");
     expect(screen.queryByRole("heading", { name: /Diagnostic/ })).not.toBeInTheDocument();
   });
 
   it("offers the admin section, including Diagnostic, to an administrator", () => {
-    auth.current = { user: { display_name: "Alice" }, roles: ["ADMIN"] };
+    auth.current = { user: { display_name: "Alice", email: "x@lcit-test.local", roles: ["ADMIN"] }, roles: ["ADMIN"] };
     renderAt("/");
     expect(screen.getByText("Diagnostic")).toBeInTheDocument();
     expect(screen.getByText("Annuaire")).toBeInTheDocument();
   });
 
   it("offers operators campaigns but not administration", () => {
-    auth.current = { user: { display_name: "Diane" }, roles: ["OPERATOR"] };
+    auth.current = { user: { display_name: "Diane", email: "x@lcit-test.local", roles: ["OPERATOR"] }, roles: ["OPERATOR"] };
     renderAt("/");
     expect(screen.getByText("Campagnes")).toBeInTheDocument();
     expect(screen.queryByText("Administration")).not.toBeInTheDocument();

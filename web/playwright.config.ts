@@ -10,6 +10,8 @@ export default defineConfig({
   reporter: [["list"]],
   use: {
     baseURL: process.env.LCIT_SIGN_E2E_BASE_URL ?? "http://localhost:4180",
+    // The test stack presents a self-signed certificate.
+    ignoreHTTPSErrors: true,
     trace: "retain-on-failure",
   },
 });

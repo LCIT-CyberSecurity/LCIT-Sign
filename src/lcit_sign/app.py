@@ -47,7 +47,8 @@ logger = logging.getLogger(__name__)
 # (e.g. a local dev server on a different port).
 SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
-    "X-Frame-Options": "DENY",
+    # SAMEORIGIN, not DENY: our own pages embed our own PDFs. Other sites still cannot frame us.
+    "X-Frame-Options": "SAMEORIGIN",
     "Referrer-Policy": "strict-origin-when-cross-origin",
     "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
 }
