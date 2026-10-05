@@ -14,7 +14,9 @@ BOOTSTRAP_ADMIN_EMAIL = "alice.martin@lcit-test.local"
 NON_ADMIN_EMAIL = "bob.dupont@lcit-test.local"
 
 
-def make_app(tmp_path, mock_oidc_base_url: str, *, bootstrap_admin: str = BOOTSTRAP_ADMIN_EMAIL):
+def make_app(
+    tmp_path, mock_oidc_base_url: str, *, bootstrap_admin: str = BOOTSTRAP_ADMIN_EMAIL, **overrides
+):
     settings = Settings(
         database_url=f"sqlite:///{tmp_path}/test.db",
         session_secret="test-session-secret",
@@ -24,6 +26,8 @@ def make_app(tmp_path, mock_oidc_base_url: str, *, bootstrap_admin: str = BOOTST
         oidc_client_id="test-client",
         oidc_client_secret="test-secret",
         bootstrap_admin=bootstrap_admin,
+        storage_root=str(tmp_path / "storage"),
+        **overrides,
     )
     app = create_app(settings)
     return app

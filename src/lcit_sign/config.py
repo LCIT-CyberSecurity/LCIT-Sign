@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     # Unset it once a real administrator has taken over the account.
     bootstrap_admin: str = ""
 
+    # Persistent filesystem root (spec §8) — never PostgreSQL, never S3/MinIO.
+    storage_root: str = "/var/lib/lcit-sign"
+    max_upload_size_mb: int = 25
+
 
 @lru_cache
 def get_settings() -> Settings:

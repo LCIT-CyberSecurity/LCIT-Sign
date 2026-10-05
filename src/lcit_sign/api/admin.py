@@ -1,19 +1,90 @@
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
 
-from lcit_sign.deps import get_db, require_roles
+from lcit_sign.deps import get_db, require_roles, user_roles
 from lcit_sign.models.audit import AuditEvent
-from lcit_sign.models.user import Role
-from lcit_sign.services.audit import verify_audit_chain
+from lcit_sign.models.user import Role, User, UserRole
+from lcit_sign.services.audit import append_audit_event, verify_audit_chain
 
 router = APIRouter(
     prefix="/admin", tags=["admin"], dependencies=[Depends(require_roles(Role.ADMIN))]
 )
+
+
+class RoleGrantRequest(BaseModel):
+    role: Role
+
+
+@router.get("/users")
+def list_users(db: DbSession = Depends(get_db)) -> list[dict[str, Any]]:
+    users = db.execute(select(User).order_by(User.email)).scalars()
+    return [
+        {
+            "id": str(u.id),
+            "email": u.email,
+            "display_name": u.display_name,
+            "active": u.active,
+            "roles": sorted(role.value for role in user_roles(db, u)),
+        }
+        for u in users
+    ]
+
+
+@router.post("/users/{target_user_id}/roles", status_code=201)
+def grant_role(
+    target_user_id: uuid.UUID,
+    body: RoleGrantRequest,
+    user: User = Depends(require_roles(Role.ADMIN)),
+    db: DbSession = Depends(get_db),
+) -> dict[str, Any]:
+    target = db.get(User, target_user_id)
+    if target is None:
+        raise HTTPException(404, "User not found")
+
+    existing = db.execute(
+        select(UserRole).where(UserRole.user_id == target.id, UserRole.role == body.role)
+    ).scalar_one_or_none()
+    if existing is None:
+        db.add(UserRole(user_id=target.id, role=body.role))
+        append_audit_event(
+            db, action="USER_ROLE_CHANGED", actor_id=user.id,
+            target_type="user", target_id=str(target.id),
+            metadata={"change": "grant", "role": body.role.value},
+        )
+        db.commit()
+    return {"id": str(target.id), "roles": sorted(role.value for role in user_roles(db, target))}
+
+
+@router.delete("/users/{target_user_id}/roles/{role}", status_code=200)
+def revoke_role(
+    target_user_id: uuid.UUID,
+    role: Role,
+    user: User = Depends(require_roles(Role.ADMIN)),
+    db: DbSession = Depends(get_db),
+) -> dict[str, Any]:
+    target = db.get(User, target_user_id)
+    if target is None:
+        raise HTTPException(404, "User not found")
+
+    existing = db.execute(
+        select(UserRole).where(UserRole.user_id == target.id, UserRole.role == role)
+    ).scalar_one_or_none()
+    if existing is not None:
+        db.delete(existing)
+        append_audit_event(
+            db, action="USER_ROLE_CHANGED", actor_id=user.id,
+            target_type="user", target_id=str(target.id),
+            metadata={"change": "revoke", "role": role.value},
+        )
+        db.commit()
+    return {"id": str(target.id), "roles": sorted(role.value for role in user_roles(db, target))}
 
 
 @router.get("/audit")
