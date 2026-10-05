@@ -126,6 +126,21 @@ def sign_document_version(
             .order_by(SignatureAssignment.assigned_at)
         ).scalars()
     )
+    if not pending_assignments:
+        # A campaign that was cancelled or closed no longer accepts signatures: its
+        # outstanding assignments were ended, and signing must not slip through as
+        # if the person had never been asked.
+        ended = db.execute(
+            select(SignatureAssignment.id).where(
+                SignatureAssignment.document_version_id == version.id,
+                SignatureAssignment.user_id == user.id,
+                SignatureAssignment.status.in_(
+                    [AssignmentStatus.CANCELLED, AssignmentStatus.EXPIRED]
+                ),
+            )
+        ).first()
+        if ended is not None:
+            raise HTTPException(409, "Cette campagne n'est plus ouverte à la signature")
     campaign_id = pending_assignments[0].campaign_id if pending_assignments else None
     # With an outstanding assignment, only a signature for that same
     # campaign counts as "already signed" (a renewal asks again). Without
@@ -169,6 +184,9 @@ def sign_document_version(
             signed_at=signed_at,
             inputs=body.values,
             logo_sha256=logo[1] if logo else None,
+            signer_first_name=user.given_name or "",
+            signer_last_name=user.family_name or "",
+            tz=settings.timezone,
         )
     except FieldError as exc:
         raise HTTPException(422, str(exc)) from exc

@@ -48,6 +48,10 @@ class Settings(BaseSettings):
     storage_root: str = "/var/lib/lcit-sign"
     max_upload_size_mb: int = 25
 
+    # The time zone people live in. "Today's date" and the time stamped on a
+    # document follow it; stored timestamps stay UTC.
+    timezone: str = "Europe/Paris"
+
     # Runtime-only secret (spec §64-65, §101): every signing key's Ed25519
     # seed is derived from this via HKDF and a key_id, so the private key
     # material itself is never persisted anywhere, in Postgres or on disk.

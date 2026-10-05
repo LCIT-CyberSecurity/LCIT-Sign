@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session as DbSession
 
 from lcit_sign.deps import get_current_user, get_db, require_roles
 from lcit_sign.models.document import (
+    INPUT_KINDS,
     Document,
     DocumentField,
     DocumentVersion,
@@ -191,7 +192,7 @@ def get_signing_form(
     version = _version_or_404(db, version_id)
     mine = [r for r in load_fields(db, version.id) if r.role == 1]
     return {
-        "inputs": [field_payload(r) for r in mine if r.kind == FieldKind.TEXT],
+        "inputs": [field_payload(r) for r in mine if r.kind in INPUT_KINDS],
         "automatic": [field_payload(r) for r in mine if automatic(r.kind)],
     }
 

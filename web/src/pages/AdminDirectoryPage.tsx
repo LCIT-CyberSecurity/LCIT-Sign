@@ -1,154 +1,316 @@
-import { useEffect, useState } from "react";
-import { FolderCog, RefreshCw } from "lucide-react";
-import { api } from "../api/client";
+import { useEffect, useMemo, useState } from "react";
+import { Cloud, Database, FolderCog, Network, RefreshCw, Settings2, Workflow } from "lucide-react";
+import { api, ApiError } from "../api/client";
 import DirectoryConnectorForm from "./DirectoryConnectorForm";
 import type { DirectoryGroup, DirectorySource, DirectorySyncRun } from "../api/types";
 
-export default function AdminDirectoryPage() {
-  const [groups, setGroups] = useState<DirectoryGroup[] | null>(null);
-  const [runs, setRuns] = useState<DirectorySyncRun[] | null>(null);
+interface SourceInfo {
+  source: string;
+  title: string;
+  description: string;
+  icon: typeof Cloud;
+  remote: boolean;
+}
+
+const SOURCES: SourceInfo[] = [
+  {
+    source: "entra",
+    title: "Microsoft Entra ID",
+    description: "Utilisateurs et groupes de votre tenant Microsoft 365, en lecture seule.",
+    icon: Cloud,
+    remote: true,
+  },
+  {
+    source: "google",
+    title: "Google Workspace",
+    description: "Utilisateurs et groupes de votre domaine Google, en lecture seule.",
+    icon: Cloud,
+    remote: true,
+  },
+  {
+    source: "local",
+    title: "Annuaire de démonstration",
+    description: "Une organisation fictive (24 personnes, 6 groupes) pour tester sans rien connecter.",
+    icon: Database,
+    remote: false,
+  },
+];
+
+const SCHEDULES: { minutes: number | null; label: string }[] = [
+  { minutes: null, label: "Manuelle" },
+  { minutes: 15, label: "Toutes les 15 minutes" },
+  { minutes: 60, label: "Toutes les heures" },
+  { minutes: 360, label: "Toutes les 6 heures" },
+  { minutes: 1440, label: "Une fois par jour" },
+];
+
+export function scheduleLabel(minutes: number | null): string {
+  return SCHEDULES.find((s) => s.minutes === minutes)?.label ?? `Toutes les ${minutes} minutes`;
+}
+
+function lastRunText(run: DirectorySyncRun | undefined): string {
+  if (!run) return "Jamais synchronisée";
+  const when = new Date(run.started_at).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" });
+  if (run.status === "SUCCESS") {
+    return `${when} — ${run.users_added} ajouté(s), ${run.users_updated} mis à jour, ${run.users_deactivated} désactivé(s)`;
+  }
+  return `${when} — ${run.status === "FAILED" ? "échec" : run.status}`;
+}
+
+function SourceCard({
+  info,
+  source,
+  lastRun,
+  onChanged,
+}: {
+  info: SourceInfo;
+  source: DirectorySource;
+  lastRun: DirectorySyncRun | undefined;
+  onChanged: () => void;
+}) {
+  const [open, setOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [sources, setSources] = useState<DirectorySource[]>([{ source: "local", configured: true, fields: {}, sync_interval_minutes: null }]);
-  const [source, setSource] = useState("local");
   const [error, setError] = useState<string | null>(null);
-  const [interval, setIntervalMinutes] = useState<string>("");
-
-  const load = () => {
-    api.get<DirectoryGroup[]>("/admin/directory/groups").then(setGroups);
-    api.get<DirectorySyncRun[]>("/admin/directory/sync-runs").then(setRuns);
-    api.get<DirectorySource[]>("/admin/directory/sources").then(setSources);
-  };
-
-  useEffect(load, []);
-
-  const current = sources.find((s) => s.source === source);
-  useEffect(() => {
-    setIntervalMinutes(current?.sync_interval_minutes ? String(current.sync_interval_minutes) : "");
-  }, [current?.source, current?.sync_interval_minutes]);
-
-  const saveSchedule = async () => {
-    setError(null);
-    try {
-      await api.put(`/admin/directory/sources/${source}/config`, {
-        fields: current?.fields ?? {},
-        sync_interval_minutes: interval ? Number(interval) : null,
-      });
-      load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Échec de l'enregistrement.");
-    }
-  };
+  const Icon = info.icon;
+  const ready = !info.remote || source.configured;
 
   const sync = async () => {
     setSyncing(true);
     setError(null);
     try {
-      const run = await api.post<DirectorySyncRun>(
-        `/admin/directory/sync?source=${encodeURIComponent(source)}`,
-      );
+      const run = await api.post<DirectorySyncRun>(`/admin/directory/sync?source=${info.source}`);
       if (run.status === "FAILED") setError(run.error ?? "Échec de la synchronisation");
-      load();
+      onChanged();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Échec de la synchronisation");
     } finally {
       setSyncing(false);
     }
   };
 
+  const setSchedule = async (value: string) => {
+    setError(null);
+    try {
+      await api.put(`/admin/directory/sources/${info.source}/config`, {
+        fields: source.fields,
+        sync_interval_minutes: value ? Number(value) : null,
+      });
+      onChanged();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Échec de l'enregistrement");
+    }
+  };
+
+  return (
+    <section className="card source-card" data-testid={`source-${info.source}`}>
+      <div className="source-card__head">
+        <span className="metric-icon" aria-hidden="true">
+          <Icon size={16} />
+        </span>
+        <div>
+          <div className="card-title" style={{ margin: 0 }}>
+            {info.title}
+          </div>
+          <div className="muted small">{info.description}</div>
+        </div>
+        <span className={`badge ${ready ? "badge--signed" : "badge--draft"}`} data-testid="source-state">
+          {info.remote ? (source.configured ? "Configurée" : "Non configurée") : "Toujours disponible"}
+        </span>
+      </div>
+
+      <dl className="kv" style={{ marginTop: 12 }}>
+        <dt>Dernière synchronisation</dt>
+        <dd>{lastRunText(lastRun)}</dd>
+        <dt>Planification</dt>
+        <dd>
+          <select
+            value={source.sync_interval_minutes ?? ""}
+            disabled={!ready}
+            aria-label={`Planification — ${info.title}`}
+            onChange={(e) => void setSchedule(e.target.value)}
+          >
+            {SCHEDULES.map((s) => (
+              <option key={s.label} value={s.minutes ?? ""}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+        </dd>
+      </dl>
+
+      {error && <p className="error-text" role="alert">{error}</p>}
+      <div className="button-row" style={{ marginTop: 14 }}>
+        <button className="button button--primary button--sm" onClick={sync} disabled={!ready || syncing}>
+          <RefreshCw size={13} aria-hidden="true" /> {syncing ? "Synchronisation…" : "Synchroniser maintenant"}
+        </button>
+        {info.remote && (
+          <button className="button button--secondary button--sm" onClick={() => setOpen(!open)} aria-expanded={open}>
+            <Settings2 size={13} aria-hidden="true" /> {source.configured ? "Modifier la connexion" : "Configurer"}
+          </button>
+        )}
+      </div>
+      {info.remote && open && (
+        <div style={{ marginTop: 14 }}>
+          <DirectoryConnectorForm
+            source={source}
+            onChanged={() => {
+              onChanged();
+            }}
+          />
+        </div>
+      )}
+    </section>
+  );
+}
+
+export default function AdminDirectoryPage() {
+  const [sources, setSources] = useState<DirectorySource[]>([]);
+  const [groups, setGroups] = useState<DirectoryGroup[] | null>(null);
+  const [runs, setRuns] = useState<DirectorySyncRun[] | null>(null);
+  const [query, setQuery] = useState("");
+
+  const load = () => {
+    api.get<DirectorySource[]>("/admin/directory/sources").then(setSources);
+    api.get<DirectoryGroup[]>("/admin/directory/groups").then(setGroups);
+    api.get<DirectorySyncRun[]>("/admin/directory/sync-runs").then(setRuns);
+  };
+
+  useEffect(load, []);
+
+  const visibleGroups = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return (groups ?? [])
+      .filter((g) => !q || `${g.name} ${g.source}`.toLowerCase().includes(q))
+      .sort((a, b) => a.name.localeCompare(b.name, "fr", { sensitivity: "base" }));
+  }, [groups, query]);
+
+  const byId = new Map(sources.map((s) => [s.source, s]));
+
   return (
     <div className="stack">
-      <h1 className="page-title">
-        <FolderCog size={20} aria-hidden="true" /> Annuaire
-      </h1>
+      <div>
+        <h1 className="page-title" style={{ marginBottom: 6 }}>
+          <FolderCog size={22} aria-hidden="true" /> Annuaire
+        </h1>
+        <p className="page-subtitle">
+          Récupérez vos utilisateurs et vos groupes (RH, Compta, SRE…) depuis votre annuaire : ils servent ensuite à
+          cibler les campagnes. L&apos;annuaire n&apos;est jamais modifié, et un utilisateur disparu est désactivé, jamais
+          supprimé.
+        </p>
+      </div>
 
-      <div className="card">
-        <select value={source} onChange={(e) => setSource(e.target.value)} aria-label="Source">
-          {sources.map((s) => (
-            <option key={s.source} value={s.source} disabled={!s.configured}>
-              {s.source}
-              {s.configured ? "" : " (non configuré)"}
-            </option>
-          ))}
-        </select>{" "}
-        <button className="button button--primary" onClick={sync} disabled={syncing}>
-          <RefreshCw size={14} aria-hidden="true" /> {syncing ? "Synchronisation…" : "Synchroniser maintenant"}
-        </button>
-        {error && <p role="alert">{error}</p>}
-        <div className="form-row">
-          <label>
-            Synchronisation automatique toutes les (minutes, vide = manuelle)
-            <input
-              type="number"
-              min={5}
-              value={interval}
-              onChange={(e) => setIntervalMinutes(e.target.value)}
-              aria-label="Intervalle de synchronisation"
+      <div className="source-grid">
+        {SOURCES.map((info) => {
+          const source = byId.get(info.source);
+          return source ? (
+            <SourceCard
+              key={info.source}
+              info={info}
+              source={source}
+              lastRun={runs?.find((r) => r.source === info.source)}
+              onChanged={load}
             />
-          </label>
-          <button className="button button--secondary" type="button" onClick={saveSchedule}>
-            Enregistrer la planification
-          </button>
+          ) : null;
+        })}
+        <section className="card source-card source-card--soon" data-testid="source-ldap">
+          <div className="source-card__head">
+            <span className="metric-icon" aria-hidden="true">
+              <Network size={16} />
+            </span>
+            <div>
+              <div className="card-title" style={{ margin: 0 }}>
+                LDAP / Active Directory
+              </div>
+              <div className="muted small">Annuaires d&apos;entreprise sur site (LDAP, LDAPS).</div>
+            </div>
+            <span className="badge badge--draft">Bientôt</span>
+          </div>
+          <p className="muted small" style={{ marginTop: 12 }}>
+            <Workflow size={13} aria-hidden="true" /> Pas encore disponible.
+          </p>
+        </section>
+      </div>
+
+      <div className="section-panel">
+        <div className="page-title-row" style={{ marginBottom: 12 }}>
+          <h2 className="page-title" style={{ margin: 0, fontSize: 18 }}>
+            Groupes <span className="count-badge">{groups?.length ?? 0}</span>
+          </h2>
+          <input
+            type="search"
+            placeholder="Rechercher un groupe…"
+            aria-label="Rechercher un groupe"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </div>
+        <div className="table-wrap">
+          <table className="simple-table">
+            <thead>
+              <tr>
+                <th>Nom</th>
+                <th>Source</th>
+                <th>Membres</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visibleGroups.length === 0 && (
+                <tr>
+                  <td colSpan={3} className="muted">
+                    {groups ? "Aucun groupe — lancez une synchronisation." : "Chargement…"}
+                  </td>
+                </tr>
+              )}
+              {visibleGroups.map((g) => (
+                <tr key={g.id}>
+                  <td>{g.name}</td>
+                  <td>{g.source}</td>
+                  <td>{g.member_count}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
 
-      {sources
-        .filter((s) => s.source !== "local")
-        .map((s) => (
-          <DirectoryConnectorForm key={s.source + String(s.configured)} source={s} onChanged={load} />
-        ))}
-
-      <div className="card">
-        <div className="card-title">Groupes</div>
-        <table className="simple-table">
-          <thead>
-            <tr>
-              <th>Nom</th>
-              <th>Source</th>
-              <th>Membres</th>
-            </tr>
-          </thead>
-          <tbody>
-            {groups?.map((g) => (
-              <tr key={g.id}>
-                <td>{g.name}</td>
-                <td>{g.source}</td>
-                <td>{g.member_count}</td>
+      <div className="section-panel">
+        <h2 className="page-title" style={{ margin: "0 0 12px", fontSize: 18 }}>
+          Historique de synchronisation
+        </h2>
+        <div className="table-wrap">
+          <table className="simple-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Source</th>
+                <th>Statut</th>
+                <th>Utilisateurs +/~/−</th>
+                <th>Groupes +/~</th>
+                <th>Appartenances +/−</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="card">
-        <div className="card-title">Historique de synchronisation</div>
-        <table className="simple-table">
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Source</th>
-              <th>Statut</th>
-              <th>Utilisateurs +/~/-</th>
-              <th>Groupes +/~</th>
-              <th>Memberships +/-</th>
-            </tr>
-          </thead>
-          <tbody>
-            {runs?.map((r) => (
-              <tr key={r.id}>
-                <td>{new Date(r.started_at).toLocaleString("fr-FR")}</td>
-                <td>{r.source}</td>
-                <td>{r.status}</td>
-                <td>
-                  {r.users_added}/{r.users_updated}/{r.users_deactivated}
-                </td>
-                <td>
-                  {r.groups_added}/{r.groups_updated}
-                </td>
-                <td>
-                  {r.memberships_added}/{r.memberships_removed}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {runs?.map((r) => (
+                <tr key={r.id}>
+                  <td>{new Date(r.started_at).toLocaleString("fr-FR")}</td>
+                  <td>{r.source}</td>
+                  <td>
+                    <span className={`badge badge--${r.status === "SUCCESS" ? "signed" : "failed"}`}>{r.status}</span>
+                  </td>
+                  <td>
+                    {r.users_added}/{r.users_updated}/{r.users_deactivated}
+                  </td>
+                  <td>
+                    {r.groups_added}/{r.groups_updated}
+                  </td>
+                  <td>
+                    {r.memberships_added}/{r.memberships_removed}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

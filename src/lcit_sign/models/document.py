@@ -71,17 +71,32 @@ class FieldKind(enum.StrEnum):
     """What an element placed on a document is (DocuSign's "tabs")."""
 
     SIGNATURE = "SIGNATURE"   # the signer's name, handwritten-style — automatic
-    DATE = "DATE"             # date of signing — automatic
-    FULL_NAME = "FULL_NAME"   # the signer's name — automatic
+    DATE = "DATE"             # today's date, at signing — automatic
+    TIME = "TIME"             # the time, at signing — automatic
+    FULL_NAME = "FULL_NAME"   # first and last name — automatic
+    FIRST_NAME = "FIRST_NAME"  # first name — automatic
+    LAST_NAME = "LAST_NAME"   # last name — automatic
     EMAIL = "EMAIL"           # the signer's address — automatic
     TEXT = "TEXT"             # free text typed by the signer
+    PLACE = "PLACE"           # a place, typed by the signer ("Fait à ...")
     LOGO = "LOGO"             # the company logo — automatic
 
 
 # Filled in by the platform from the authenticated identity: nothing to type.
 AUTOMATIC_KINDS = frozenset(
-    {FieldKind.SIGNATURE, FieldKind.DATE, FieldKind.FULL_NAME, FieldKind.EMAIL, FieldKind.LOGO}
+    {
+        FieldKind.SIGNATURE,
+        FieldKind.DATE,
+        FieldKind.TIME,
+        FieldKind.FULL_NAME,
+        FieldKind.FIRST_NAME,
+        FieldKind.LAST_NAME,
+        FieldKind.EMAIL,
+        FieldKind.LOGO,
+    }
 )
+# Typed by the signer.
+INPUT_KINDS = frozenset({FieldKind.TEXT, FieldKind.PLACE})
 
 
 class DocumentField(Base):

@@ -194,3 +194,58 @@ def test_a_cropped_page_is_measured_and_stamped_by_its_crop_box():
     stamped = stamp_fields(pdf, resolve_all([date_at_origin]), None)
     x, _ = positions(stamped)["05/10/2026"]
     assert x == pytest.approx(100, abs=3)  # the crop's left edge, not the media box's
+
+
+def test_first_and_last_name_and_time_elements_are_automatic():
+    fields = [
+        field(FieldKind.FIRST_NAME, id="fn"),
+        field(FieldKind.LAST_NAME, id="ln"),
+        field(FieldKind.TIME, id="tm"),
+    ]
+    resolved = resolve(
+        fields, signer_name="Cédric Di Cesare", signer_email="c@lcit.fr", signed_at=SIGNED_AT,
+        inputs={}, logo_sha256=None, signer_first_name="Cédric", signer_last_name="Di Cesare",
+    )
+    by_kind = {r["kind"]: r["value"] for r in resolved}
+    assert by_kind["FIRST_NAME"] == "Cédric"
+    assert by_kind["LAST_NAME"] == "Di Cesare"
+    assert by_kind["TIME"] == "11:59"  # 09:59 UTC is 11:59 in Paris (summer time)
+
+
+def test_names_fall_back_to_splitting_the_display_name():
+    fields = [field(FieldKind.FIRST_NAME, id="fn"), field(FieldKind.LAST_NAME, id="ln")]
+    resolved = resolve_all(fields)  # no separate first/last name known
+    by_kind = {r["kind"]: r["value"] for r in resolved}
+    assert (by_kind["FIRST_NAME"], by_kind["LAST_NAME"]) == ("Cédric", "Di Cesare")
+
+
+def test_today_follows_the_company_time_zone_not_utc():
+    # 23:30 UTC on the 5th is already 01:30 on the 6th in Paris.
+    late = datetime(2026, 10, 5, 23, 30, tzinfo=UTC)
+    fields = [field(FieldKind.DATE, id="d"), field(FieldKind.TIME, id="t")]
+    paris = {
+        r["kind"]: r["value"]
+        for r in resolve(
+            fields, signer_name="A B", signer_email="a@b.c", signed_at=late,
+            inputs={}, logo_sha256=None, tz="Europe/Paris",
+        )
+    }
+    utc = {
+        r["kind"]: r["value"]
+        for r in resolve(
+            fields, signer_name="A B", signer_email="a@b.c", signed_at=late,
+            inputs={}, logo_sha256=None, tz="UTC",
+        )
+    }
+    assert paris == {"DATE": "06/10/2026", "TIME": "01:30"}
+    assert utc == {"DATE": "05/10/2026", "TIME": "23:30"}
+
+
+def test_a_place_is_typed_by_the_signer_like_free_text():
+    place = field(FieldKind.PLACE, id="p", label="Fait à")
+    with pytest.raises(FieldError, match="Fait à"):
+        resolve_all([place])
+    assert resolve_all([place], {"p": " Paris "})[0]["value"] == "Paris"
+    # ... and it cannot be filled in by anyone but the signer, nor for automatic kinds.
+    with pytest.raises(FieldError, match="automatically"):
+        resolve_all([field(FieldKind.FIRST_NAME, id="x")], {"x": "Autre"})

@@ -49,9 +49,16 @@ services:
       # anything but local dev, and never commit a real value.
       LCIT_SIGN_MASTER_KEY: ${LCIT_SIGN_MASTER_KEY:-dev-only-insecure-master-key-change-me}
       LCIT_SIGN_OIDC_CLIENT_SECRET: ${LCIT_SIGN_OIDC_CLIENT_SECRET:-dev-secret-not-for-prod}
+      # Secrets read from files in ./secrets (mounted below, read-only): they win over the
+      # plain variables above, and never have to sit in .env. Create the folder yourself
+      # first:  mkdir -p -m 700 secrets   (otherwise Docker creates it as root).
+      LCIT_SIGN_OIDC_CLIENT_SECRET_FILE: ${LCIT_SIGN_OIDC_CLIENT_SECRET_FILE:-}
+      LCIT_SIGN_MASTER_KEY_FILE: ${LCIT_SIGN_MASTER_KEY_FILE:-}
+      LCIT_SIGN_SESSION_SECRET_FILE: ${LCIT_SIGN_SESSION_SECRET_FILE:-}
       LCIT_SIGN_BOOTSTRAP_ADMIN: ${LCIT_SIGN_BOOTSTRAP_ADMIN:-alice.martin@lcit-test.local}
     volumes:
       - lcit-sign-data:/var/lib/lcit-sign
+      - ${LCIT_SIGN_SECRETS_DIR:-./secrets}:/run/secrets/lcit-sign:ro
     expose:
       - "8000"
     healthcheck:

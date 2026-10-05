@@ -6,7 +6,7 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, model_validator
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session as DbSession
 
 from lcit_sign.config import Settings
@@ -23,7 +23,9 @@ from lcit_sign.models.campaign import (
 )
 from lcit_sign.models.directory import Group, GroupMembership
 from lcit_sign.models.document import Document, DocumentVersion, DocumentVersionStatus
-from lcit_sign.models.mail import NotificationType
+from lcit_sign.models.mail import Notification, NotificationType
+from lcit_sign.models.report import Report
+from lcit_sign.models.signature import Signature
 from lcit_sign.models.user import Role, User
 from lcit_sign.services.audit import append_audit_event
 from lcit_sign.services.campaign_launch import create_assignments
@@ -205,6 +207,7 @@ def _campaign_payload(campaign: Campaign, db: DbSession) -> dict[str, Any]:
         "launch_at": campaign.launch_at.isoformat() if campaign.launch_at else None,
         "deadline": campaign.deadline.isoformat() if campaign.deadline else None,
         "closed_at": campaign.closed_at.isoformat() if campaign.closed_at else None,
+        "delete_blockers": campaign_delete_blockers(db, campaign),
         "policies": {field: getattr(campaign, field) for field in POLICY_FIELDS},
         "renewal_of_campaign_id": (
             str(campaign.renewal_of_campaign_id) if campaign.renewal_of_campaign_id else None
@@ -416,9 +419,95 @@ def close_campaign(
 
     campaign.status = CampaignStatus.CLOSED
     campaign.closed_at = datetime.now(UTC)
+    # Closing ends the signing: what is still outstanding can no longer be signed.
+    _end_outstanding(db, campaign.id, AssignmentStatus.EXPIRED)
     append_audit_event(
         db, action="CAMPAIGN_CLOSED", actor_id=user.id,
         target_type="campaign", target_id=str(campaign.id), campaign_id=campaign.id,
+    )
+    db.commit()
+    return _campaign_payload(campaign, db)
+
+
+def _end_outstanding(db: DbSession, campaign_id: uuid.UUID, status: AssignmentStatus) -> None:
+    for assignment in db.execute(
+        select(SignatureAssignment).where(
+            SignatureAssignment.campaign_id == campaign_id,
+            SignatureAssignment.status.in_([AssignmentStatus.PENDING, AssignmentStatus.VIEWED]),
+        )
+    ).scalars():
+        assignment.status = status
+
+
+def campaign_delete_blockers(db: DbSession, campaign: Campaign) -> list[str]:
+    """Why this campaign cannot be erased. One that is running must be cancelled
+    first; one that holds signatures or reports is part of the evidence trail
+    and can only be archived (signatures, reports and the audit trail name it)."""
+    reasons: list[str] = []
+    if campaign.status == CampaignStatus.ACTIVE:
+        reasons.append("elle est en cours : annulez-la d'abord")
+    signed = db.execute(
+        select(func.count()).select_from(Signature).where(Signature.campaign_id == campaign.id)
+    ).scalar_one()
+    if signed:
+        reasons.append(f"{signed} signature(s) enregistrée(s)")
+    reports = db.execute(
+        select(func.count()).select_from(Report).where(Report.campaign_id == campaign.id)
+    ).scalar_one()
+    if reports:
+        reasons.append(f"{reports} procès-verbal(aux)")
+    return reasons
+
+
+@router.delete("/{campaign_id}")
+def delete_campaign(
+    campaign_id: uuid.UUID, user: User = Depends(_manage), db: DbSession = Depends(get_db)
+) -> dict[str, Any]:
+    """Erase a campaign that never produced evidence (a draft, or one cancelled
+    before anyone signed). Otherwise it is refused with the reason: archive it."""
+    campaign = db.get(Campaign, campaign_id)
+    if campaign is None:
+        raise HTTPException(404, "Campaign not found")
+    reasons = campaign_delete_blockers(db, campaign)
+    if reasons:
+        raise HTTPException(
+            409,
+            "Cette campagne ne peut pas être supprimée (" + " ; ".join(reasons) + ")."
+            + (" Archivez-la à la place." if campaign.status != CampaignStatus.ACTIVE else ""),
+        )
+    assignment_ids = select(SignatureAssignment.id).where(
+        SignatureAssignment.campaign_id == campaign.id
+    )
+    # Queued e-mails about these assignments go with them.
+    db.execute(delete(Notification).where(Notification.related_assignment_id.in_(assignment_ids)))
+    for model in (SignatureAssignment, CampaignTargetUser, CampaignTargetGroup, CampaignDocument):
+        db.execute(delete(model).where(model.campaign_id == campaign.id))
+    name = campaign.name
+    db.delete(campaign)
+    append_audit_event(
+        db, action="CAMPAIGN_DELETED", actor_id=user.id,
+        target_type="campaign", target_id=str(campaign_id), metadata={"name": name},
+    )
+    db.commit()
+    return {"deleted": str(campaign_id)}
+
+
+@router.post("/{campaign_id}/archive")
+def archive_campaign(
+    campaign_id: uuid.UUID, user: User = Depends(_manage), db: DbSession = Depends(get_db)
+) -> dict[str, Any]:
+    """Put a finished campaign away: it leaves the working list but its signatures,
+    reports and audit trail stay intact and reachable."""
+    campaign = db.get(Campaign, campaign_id)
+    if campaign is None:
+        raise HTTPException(404, "Campaign not found")
+    if campaign.status not in (CampaignStatus.CLOSED, CampaignStatus.CANCELLED):
+        raise HTTPException(409, "Seule une campagne clôturée ou annulée peut être archivée")
+    campaign.status = CampaignStatus.ARCHIVED
+    append_audit_event(
+        db, action="CAMPAIGN_UPDATED", actor_id=user.id,
+        target_type="campaign", target_id=str(campaign.id), campaign_id=campaign.id,
+        metadata={"change": "archived"},
     )
     db.commit()
     return _campaign_payload(campaign, db)
@@ -435,6 +524,9 @@ def cancel_campaign(
         raise HTTPException(409, "Campaign cannot be cancelled from its current status")
 
     campaign.status = CampaignStatus.CANCELLED
+    campaign.closed_at = datetime.now(UTC)
+    # A cancelled campaign is withdrawn: nobody can sign it any more.
+    _end_outstanding(db, campaign.id, AssignmentStatus.CANCELLED)
     append_audit_event(
         db, action="CAMPAIGN_CANCELLED", actor_id=user.id,
         target_type="campaign", target_id=str(campaign.id), campaign_id=campaign.id,

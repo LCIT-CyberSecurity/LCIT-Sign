@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from io import BytesIO
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from pypdf import PdfReader, PdfWriter
 from reportlab.lib.colors import HexColor
@@ -24,7 +25,7 @@ from reportlab.lib.utils import ImageReader, simpleSplit
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfgen import canvas
 
-from lcit_sign.models.document import AUTOMATIC_KINDS, FieldKind
+from lcit_sign.models.document import AUTOMATIC_KINDS, INPUT_KINDS, FieldKind
 from lcit_sign.services.signature_pdf import _SIGNATURE_FONT_NAME, _ensure_font_registered
 
 MAX_TEXT_LENGTH = 500
@@ -105,12 +106,20 @@ def resolve(
     signed_at: datetime,
     inputs: dict[str, str],
     logo_sha256: str | None,
+    signer_first_name: str = "",
+    signer_last_name: str = "",
+    tz: str = "Europe/Paris",
 ) -> list[dict[str, Any]]:
     """Final value of each of this signer's elements, as stored with the
     signature. Raises FieldError for a missing required input, an unknown
     input id, or a logo that was never configured."""
     mine = [f for f in fields if f.role == role]
-    typed = {f.id for f in mine if f.kind == FieldKind.TEXT}
+    typed = {f.id for f in mine if f.kind in INPUT_KINDS}
+    # "Today" and "now" are the signer's, not UTC's: just after midnight in Paris
+    # it is already tomorrow's date.
+    local = signed_at.astimezone(ZoneInfo(tz))
+    first = signer_first_name or signer_name.partition(" ")[0]
+    last = signer_last_name or signer_name.partition(" ")[2]
     unknown = set(inputs) - {f.id for f in fields}
     if unknown:
         raise FieldError("Values were supplied for elements that do not exist")
@@ -121,25 +130,33 @@ def resolve(
     # Elements sharing a group key are filled once and apply to all of them.
     shared: dict[str, str] = {}
     for f in mine:
-        if f.kind == FieldKind.TEXT and f.group_key and inputs.get(f.id, "").strip():
+        if f.kind in INPUT_KINDS and f.group_key and inputs.get(f.id, "").strip():
             shared.setdefault(f.group_key, inputs[f.id].strip())
 
     resolved: list[dict[str, Any]] = []
     missing: list[str] = []
     for f in mine:
-        if f.kind == FieldKind.TEXT:
+        if f.kind in INPUT_KINDS:
             value = inputs.get(f.id, "").strip() or (shared.get(f.group_key or "", ""))
+            default_label = "Lieu" if f.kind == FieldKind.PLACE else "Texte"
             if len(value) > MAX_TEXT_LENGTH:
-                raise FieldError(f"« {f.label or 'Texte'} » is too long ({MAX_TEXT_LENGTH} max)")
+                label = f.label or default_label
+                raise FieldError(f"« {label} » is too long ({MAX_TEXT_LENGTH} max)")
             if not value and f.required:
-                missing.append(f.label or "Texte")
+                missing.append(f.label or default_label)
                 continue
             if not value:
                 continue
         elif f.kind == FieldKind.DATE:
-            value = signed_at.strftime("%d/%m/%Y")
+            value = local.strftime("%d/%m/%Y")
+        elif f.kind == FieldKind.TIME:
+            value = local.strftime("%H:%M")
         elif f.kind in (FieldKind.SIGNATURE, FieldKind.FULL_NAME):
             value = signer_name
+        elif f.kind == FieldKind.FIRST_NAME:
+            value = first
+        elif f.kind == FieldKind.LAST_NAME:
+            value = last
         elif f.kind == FieldKind.EMAIL:
             value = signer_email
         elif f.kind == FieldKind.LOGO:
@@ -214,7 +231,7 @@ def _draw_field(
         return
 
     c.setFillColor(_INK)
-    if kind == FieldKind.TEXT and box_h >= 24:
+    if kind in INPUT_KINDS and box_h >= 24:
         # A taller box holds several lines of free text.
         size = 10.0
         lines = simpleSplit(value, "Helvetica", size, box_w - 2)
