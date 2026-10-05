@@ -1,0 +1,106 @@
+# Local development and integration stack.
+#   docker compose up -d --build
+#
+# Expects a .env file beside this one (copy .env.example) holding
+# LCIT_SIGN_DB_PASSWORD at minimum.
+name: lcit-sign
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: lcit-sign-postgres
+    environment:
+      POSTGRES_USER: lcit_sign
+      POSTGRES_PASSWORD: ${LCIT_SIGN_DB_PASSWORD:-lcit_sign}
+      POSTGRES_DB: lcit_sign
+    volumes:
+      - lcit-sign-postgres-data:/var/lib/postgresql/data
+    expose:
+      - "5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "lcit_sign"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    image: lcit-sign-api:latest
+    container_name: lcit-sign-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      LCIT_SIGN_ENVIRONMENT: development
+      LCIT_SIGN_DATABASE_URL: postgresql+psycopg://lcit_sign:${LCIT_SIGN_DB_PASSWORD:-lcit_sign}@postgres:5432/lcit_sign
+      LCIT_SIGN_LOG_LEVEL: INFO
+      LCIT_SIGN_SESSION_SECRET: ${LCIT_SIGN_SESSION_SECRET:-dev-only-insecure-secret-change-me}
+      # http only for now (TLS/cert installer lands in a later phase).
+      LCIT_SIGN_COOKIE_SECURE: ${LCIT_SIGN_COOKIE_SECURE:-false}
+      LCIT_SIGN_PUBLIC_BASE_URL: ${LCIT_SIGN_PUBLIC_BASE_URL:-http://localhost:4180}
+      # Points at the mock-oidc service (enable with --profile dev-sso).
+      # Override with a real provider's values for anything but local dev.
+      LCIT_SIGN_OIDC_ISSUER: ${LCIT_SIGN_OIDC_ISSUER:-http://mock-oidc:8080}
+      LCIT_SIGN_OIDC_CLIENT_ID: ${LCIT_SIGN_OIDC_CLIENT_ID:-lcit-sign-dev}
+      LCIT_SIGN_OIDC_CLIENT_SECRET: ${LCIT_SIGN_OIDC_CLIENT_SECRET:-dev-secret-not-for-prod}
+      LCIT_SIGN_BOOTSTRAP_ADMIN: ${LCIT_SIGN_BOOTSTRAP_ADMIN:-alice.martin@lcit-test.local}
+    volumes:
+      - lcit-sign-data:/var/lib/lcit-sign
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      start_period: 15s
+      retries: 6
+    restart: unless-stopped
+
+  webui:
+    build:
+      context: web
+      dockerfile: Dockerfile
+    image: lcit-sign-webui:latest
+    container_name: lcit-sign-webui
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:4180:80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/healthz"]
+      interval: 10s
+      timeout: 3s
+      start_period: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Dev-only fake OpenID Connect provider — never started unless the
+  # dev-sso profile is requested: docker compose --profile dev-sso up
+  mock-oidc:
+    build:
+      context: mock_oidc
+    image: lcit-sign-mock-oidc:latest
+    container_name: lcit-sign-mock-oidc
+    profiles: ["dev-sso"]
+    environment:
+      MOCK_OIDC_ISSUER: http://mock-oidc:8080
+      MOCK_OIDC_PUBLIC_BASE_URL: ${LCIT_SIGN_PUBLIC_BASE_URL:-http://localhost:4180}/mock-oidc
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      start_period: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  lcit-sign-postgres-data:
+    name: lcit-sign-postgres-data
+  lcit-sign-data:
+    name: lcit-sign-data
