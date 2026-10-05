@@ -419,16 +419,49 @@ def list_my_assignments(
         select(SignatureAssignment)
         .where(SignatureAssignment.user_id == user.id)
         .order_by(SignatureAssignment.assigned_at.desc())
-    ).scalars()
-    return [
-        {
-            "id": str(a.id),
-            "campaign_id": str(a.campaign_id),
-            "document_version_id": str(a.document_version_id),
-            "status": a.status.value,
-            "assigned_at": a.assigned_at.isoformat(),
-            "deadline": a.deadline.isoformat() if a.deadline else None,
-            "signed_at": a.signed_at.isoformat() if a.signed_at else None,
-        }
-        for a in rows
-    ]
+    ).scalars().all()
+
+    campaigns_by_id = {
+        c.id: c
+        for c in db.execute(
+            select(Campaign).where(Campaign.id.in_({a.campaign_id for a in rows}))
+        ).scalars()
+    }
+    versions_by_id = {
+        v.id: v
+        for v in db.execute(
+            select(DocumentVersion).where(
+                DocumentVersion.id.in_({a.document_version_id for a in rows})
+            )
+        ).scalars()
+    }
+    documents_by_id = {
+        d.id: d
+        for d in db.execute(
+            select(Document).where(
+                Document.id.in_({v.document_id for v in versions_by_id.values()})
+            )
+        ).scalars()
+    }
+
+    result = []
+    for a in rows:
+        version = versions_by_id.get(a.document_version_id)
+        document = documents_by_id.get(version.document_id) if version else None
+        campaign = campaigns_by_id.get(a.campaign_id)
+        result.append(
+            {
+                "id": str(a.id),
+                "campaign_id": str(a.campaign_id),
+                "campaign_name": campaign.name if campaign else "",
+                "document_version_id": str(a.document_version_id),
+                "document_title": document.title if document else "",
+                "version_label": version.version_label if version else "",
+                "status": a.status.value,
+                "assigned_at": a.assigned_at.isoformat(),
+                "deadline": a.deadline.isoformat() if a.deadline else None,
+                "signed_at": a.signed_at.isoformat() if a.signed_at else None,
+                "signature_id": str(a.signature_id) if a.signature_id else None,
+            }
+        )
+    return result
