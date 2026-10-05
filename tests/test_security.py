@@ -281,7 +281,7 @@ def test_known_secrets_never_reach_logs(tmp_path, mock_oidc_base_url, caplog):
 def test_session_cookie_is_httponly_samesite_and_opaque(tmp_path, mock_oidc_base_url):
     app, admin, *_ = setup_campaign_fixture(tmp_path, mock_oidc_base_url)
     client = TestClient(app)
-    response = login_as(client, mock_oidc_base_url, sub="u-it-2")
+    response = login_as(client, mock_oidc_base_url, sub="u-it-1")
     cookies = [v for k, v in response.headers.multi_items() if k.lower() == "set-cookie"]
     session_cookies = [c for c in cookies if c.lower().startswith("lcit_sign_session")]
     assert session_cookies, cookies
