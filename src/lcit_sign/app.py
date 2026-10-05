@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import asyncio
+import contextlib
+import logging
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -19,7 +22,10 @@ from lcit_sign.config import Settings, get_settings
 from lcit_sign.database import make_engine, make_session_factory
 from lcit_sign.logging_utils import configure_logging
 from lcit_sign.request_context import set_request_id
+from lcit_sign.services.notification_queue import process_pending_notifications
 from lcit_sign.services.storage import StorageService
+
+logger = logging.getLogger(__name__)
 
 # LCIT Sign is a Backend-For-Frontend: the browser only ever talks to nginx,
 # which proxies same-origin to this API. Nothing here is meant to be called
@@ -37,12 +43,37 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     configure_logging(settings.log_level)
 
+    async def _notification_worker_loop(app: FastAPI) -> None:
+        while True:
+            await asyncio.sleep(settings.notification_worker_interval_seconds)
+            try:
+                await asyncio.to_thread(_process_notifications_once, app)
+            except Exception:
+                logger.exception("notification worker iteration failed")
+
+    def _process_notifications_once(app: FastAPI) -> None:
+        db = app.state.session_factory()
+        try:
+            process_pending_notifications(db, settings)
+        finally:
+            db.close()
+
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.engine = make_engine(settings.database_url)
         app.state.session_factory = make_session_factory(app.state.engine)
         app.state.storage = StorageService(settings.storage_root)
+
+        worker_task = None
+        if settings.notification_worker_enabled:
+            worker_task = asyncio.create_task(_notification_worker_loop(app))
+
         yield
+
+        if worker_task is not None:
+            worker_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await worker_task
         app.state.engine.dispose()
 
     app = FastAPI(title="LCIT Sign", version=__version__, lifespan=lifespan)

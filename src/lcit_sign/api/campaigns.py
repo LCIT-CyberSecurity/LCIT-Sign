@@ -4,11 +4,12 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as DbSession
 
+from lcit_sign.config import Settings
 from lcit_sign.deps import get_current_user, get_db, require_roles
 from lcit_sign.models.campaign import (
     AssignmentStatus,
@@ -19,9 +20,11 @@ from lcit_sign.models.campaign import (
     CampaignTargetUser,
     SignatureAssignment,
 )
-from lcit_sign.models.document import DocumentVersion, DocumentVersionStatus
+from lcit_sign.models.document import Document, DocumentVersion, DocumentVersionStatus
+from lcit_sign.models.mail import NotificationType
 from lcit_sign.models.user import Role, User
 from lcit_sign.services.audit import append_audit_event
+from lcit_sign.services.notification_queue import enqueue_notification
 
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])
 
@@ -151,6 +154,7 @@ def preview_targets(
 
 @router.post("/{campaign_id}/launch")
 def launch_campaign(
+    request: Request,
     campaign_id: uuid.UUID,
     body: LaunchRequest,
     user: User = Depends(_manage),
@@ -169,7 +173,15 @@ def launch_campaign(
         for target_user_id in population:
             db.add(CampaignTargetUser(campaign_id=campaign.id, user_id=target_user_id))
 
+    settings: Settings = request.app.state.settings
+    population_users = db.execute(select(User).where(User.id.in_(population))).scalars()
+    users_by_id = {u.id: u for u in population_users}
+
     for campaign_document in campaign.documents:
+        version = db.get(DocumentVersion, campaign_document.document_version_id)
+        document = db.get(Document, version.document_id) if version else None
+        document_title = document.title if document else "document"
+
         for target_user_id in population:
             db.add(
                 SignatureAssignment(
@@ -179,6 +191,22 @@ def launch_campaign(
                     deadline=body.deadline,
                 )
             )
+            target_user = users_by_id.get(target_user_id)
+            if target_user is not None:
+                enqueue_notification(
+                    db,
+                    notification_type=NotificationType.DOCUMENT_TO_SIGN,
+                    recipient_email=target_user.email,
+                    recipient_user_id=target_user.id,
+                    subject=f"Document à signer : {document_title}",
+                    body_text=(
+                        f"Bonjour {target_user.display_name},\n\n"
+                        f'Un document "{document_title}" ({campaign.name}) '
+                        f"attend votre signature.\n"
+                        f"Connectez-vous à LCIT Sign pour le consulter et le signer : "
+                        f"{settings.public_base_url}\n"
+                    ),
+                )
 
     campaign.status = CampaignStatus.ACTIVE
     campaign.launch_at = datetime.now(UTC)
@@ -192,6 +220,61 @@ def launch_campaign(
     )
     db.commit()
     return _campaign_payload(campaign, db)
+
+
+@router.post("/{campaign_id}/remind")
+def remind_campaign(
+    request: Request,
+    campaign_id: uuid.UUID,
+    user: User = Depends(_manage),
+    db: DbSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Manual reminder (spec §83): queues one REMINDER email per
+    still-outstanding assignment. Someone who already signed is never
+    nagged again — only PENDING/VIEWED assignments qualify.
+    """
+    campaign = db.get(Campaign, campaign_id)
+    if campaign is None:
+        raise HTTPException(404, "Campaign not found")
+    if campaign.status != CampaignStatus.ACTIVE:
+        raise HTTPException(409, "Only an active campaign can send reminders")
+
+    settings: Settings = request.app.state.settings
+    outstanding = db.execute(
+        select(SignatureAssignment, User)
+        .join(User, SignatureAssignment.user_id == User.id)
+        .where(
+            SignatureAssignment.campaign_id == campaign.id,
+            SignatureAssignment.status.in_([AssignmentStatus.PENDING, AssignmentStatus.VIEWED]),
+        )
+    ).all()
+
+    now = datetime.now(UTC)
+    for assignment, target_user in outstanding:
+        enqueue_notification(
+            db,
+            notification_type=NotificationType.REMINDER,
+            recipient_email=target_user.email,
+            recipient_user_id=target_user.id,
+            related_assignment_id=assignment.id,
+            subject=f"Rappel : document à signer — {campaign.name}",
+            body_text=(
+                f"Bonjour {target_user.display_name},\n\n"
+                f'Il vous reste un document à signer pour la campagne "{campaign.name}".\n'
+                f"Connectez-vous à LCIT Sign pour le consulter et le signer : "
+                f"{settings.public_base_url}\n"
+            ),
+        )
+        assignment.last_reminder_at = now
+        assignment.reminder_count += 1
+
+    append_audit_event(
+        db, action="CAMPAIGN_UPDATED", actor_id=user.id,
+        target_type="campaign", target_id=str(campaign.id), campaign_id=campaign.id,
+        metadata={"change": "reminder_sent", "count": len(outstanding)},
+    )
+    db.commit()
+    return {"reminders_queued": len(outstanding)}
 
 
 @router.post("/{campaign_id}/close")

@@ -27,6 +27,9 @@ def make_app(
         oidc_client_secret="test-secret",
         bootstrap_admin=bootstrap_admin,
         storage_root=str(tmp_path / "storage"),
+        # Off by default in tests: the worker would otherwise race
+        # Base.metadata.create_all() for a table that doesn't exist yet.
+        notification_worker_enabled=overrides.pop("notification_worker_enabled", False),
         **overrides,
     )
     app = create_app(settings)

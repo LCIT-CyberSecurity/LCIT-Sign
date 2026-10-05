@@ -53,6 +53,13 @@ class Settings(BaseSettings):
     consent_text: str = "J'atteste avoir pris connaissance de ce document."
     consent_version: str = "1.0"
 
+    # Background notification worker (spec §151-152: a plain PostgreSQL-
+    # backed worker, no Redis/Celery). Disabled by default in tests via
+    # make_app() overrides, so test runs don't race the queue table before
+    # Base.metadata.create_all() has run.
+    notification_worker_enabled: bool = True
+    notification_worker_interval_seconds: int = 30
+
 
 @lru_cache
 def get_settings() -> Settings:

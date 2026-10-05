@@ -7,6 +7,7 @@ from collections.abc import Iterator
 
 import pytest
 import uvicorn
+from aiosmtpd.controller import Controller
 
 _MOCK_OIDC_BASE_URL = "http://127.0.0.1:8099"
 
@@ -47,3 +48,35 @@ def mock_oidc_base_url() -> Iterator[str]:
 
     thread.stop()
     thread.join(timeout=5)
+
+
+class RecordingSmtpHandler:
+    """Accepts every message and records it — a real SMTP protocol
+    round-trip for the happy path, not a mocked smtplib call."""
+
+    def __init__(self) -> None:
+        self.messages: list[dict[str, object]] = []
+
+    async def handle_DATA(self, server, session, envelope):  # noqa: N802, ANN001
+        self.messages.append(
+            {
+                "mail_from": envelope.mail_from,
+                "rcpt_tos": list(envelope.rcpt_tos),
+                "content": envelope.content,
+            }
+        )
+        return "250 Message accepted for delivery"
+
+
+_SMTP_TEST_PORT = 10025
+
+
+@pytest.fixture
+def smtp_test_server() -> Iterator[tuple[str, int, RecordingSmtpHandler]]:
+    handler = RecordingSmtpHandler()
+    controller = Controller(handler, hostname="127.0.0.1", port=_SMTP_TEST_PORT)
+    controller.start()
+    try:
+        yield "127.0.0.1", _SMTP_TEST_PORT, handler
+    finally:
+        controller.stop()

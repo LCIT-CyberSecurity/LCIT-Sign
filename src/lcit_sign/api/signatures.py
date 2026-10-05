@@ -19,11 +19,13 @@ from lcit_sign.config import Settings
 from lcit_sign.deps import get_current_user, get_db, require_roles, user_roles
 from lcit_sign.models.campaign import AssignmentStatus, SignatureAssignment
 from lcit_sign.models.document import Document, DocumentVersion, DocumentVersionStatus
+from lcit_sign.models.mail import NotificationType
 from lcit_sign.models.signature import Signature
 from lcit_sign.models.signing_key import SigningKey
 from lcit_sign.models.user import Role, User
 from lcit_sign.services.audit import append_audit_event
 from lcit_sign.services.evidence import canonical_evidence_fields, canonical_json
+from lcit_sign.services.notification_queue import enqueue_notification
 from lcit_sign.services.signature_pdf import append_signature_page, render_certificate_pdf
 from lcit_sign.services.signing_keys import (
     derive_private_key,
@@ -231,6 +233,21 @@ def sign_document_version(
         assignment.status = AssignmentStatus.SIGNED
         assignment.signed_at = signed_at
         assignment.signature_id = signature.id
+
+    enqueue_notification(
+        db,
+        notification_type=NotificationType.SIGNATURE_CONFIRMATION,
+        recipient_email=user.email,
+        recipient_user_id=user.id,
+        subject=f"Confirmation de signature — {document.title}",
+        body_text=(
+            f"Bonjour {user.display_name},\n\n"
+            f'Votre signature du document "{document.title}" (version {version.version_label}) '
+            f"a bien été enregistrée.\n"
+            f"Identifiant : {display_id}\n"
+            f"Date : {signed_at.strftime('%d/%m/%Y à %H:%M UTC')}\n"
+        ),
+    )
 
     append_audit_event(
         db, action="SIGNATURE_CREATED", actor_id=user.id,
