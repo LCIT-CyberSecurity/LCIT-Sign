@@ -12,6 +12,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
 from lcit_sign.models.directory import DirectoryConnectorConfig
+from lcit_sign.services.aad_errors import describe_token_error
 from lcit_sign.services.crypto import decrypt_secret
 
 
@@ -133,11 +134,16 @@ def _get_json(client: httpx.Client, url: str, **kwargs: Any) -> dict[str, Any]:
 def _post_token(client: httpx.Client, url: str, data: dict[str, str]) -> str:
     try:
         response = client.post(url, data=data)
-        response.raise_for_status()
-        token = response.json()["access_token"]
-    except (httpx.HTTPError, ValueError, KeyError) as exc:
-        raise DirectoryConnectorError(f"token request failed: {exc}") from exc
-    return str(token)
+    except httpx.HTTPError as exc:
+        raise DirectoryConnectorError(
+            f"Impossible de joindre le service d'authentification ({type(exc).__name__})"
+        ) from exc
+    if response.status_code != 200:
+        raise DirectoryConnectorError(describe_token_error(response))
+    try:
+        return str(response.json()["access_token"])
+    except (ValueError, KeyError) as exc:
+        raise DirectoryConnectorError("Réponse inattendue du service d'authentification") from exc
 
 
 class EntraConnector:

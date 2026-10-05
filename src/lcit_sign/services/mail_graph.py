@@ -6,6 +6,7 @@ from urllib.parse import quote
 
 import httpx
 
+from lcit_sign.services.aad_errors import describe_token_error
 from lcit_sign.services.mail import MailSendError
 
 GRAPH = "https://graph.microsoft.com/v1.0"
@@ -76,9 +77,7 @@ class GraphSender:
         except httpx.HTTPError as exc:
             raise MailSendError(f"Could not reach Microsoft login: {type(exc).__name__}") from exc
         if response.status_code != 200:
-            raise MailSendError(
-                f"Microsoft login refused the credentials ({_error_code(response)})"
-            )
+            raise MailSendError(describe_token_error(response))
         data = response.json()
         _token_cache[key] = (data["access_token"], time.monotonic() + int(data["expires_in"]))
         return str(data["access_token"])

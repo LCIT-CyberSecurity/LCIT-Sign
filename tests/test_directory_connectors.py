@@ -127,7 +127,7 @@ def test_entra_failure_touches_nothing(tmp_path, mock_oidc_base_url):
     state["fail"] = True
     run = admin.post("/api/admin/directory/sync?source=entra").json()
     assert run["status"] == "FAILED"
-    assert "token request failed" in run["error"]
+    assert "Microsoft a refusé" in run["error"]
     with app.state.session_factory() as db:
         assert db.execute(select(User).where(User.email == "ann.one@corp.test")
                           ).scalar_one().active is True
@@ -354,3 +354,42 @@ def test_entra_sync_resolves_nested_groups(tmp_path, mock_oidc_base_url):
     assert run["memberships_added"] == 2
     groups = {g["name"]: g["member_count"] for g in admin.get("/api/admin/directory/groups").json()}
     assert groups == {"Parent": 1, "Child": 1}
+
+
+def _entra_refuses(status: int, codes: list[int], description: str = "x"):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            status, json={"error": "invalid_client", "error_codes": codes,
+                          "error_description": description + " FAKE-SECRET-VALUE"},
+        )
+
+    return handler
+
+
+def test_a_wrong_entra_secret_says_what_to_fix_and_never_echoes_anything_secret(
+    tmp_path, mock_oidc_base_url
+):
+    handler = _entra_refuses(401, [7000215])
+    app = _entra_app(tmp_path, mock_oidc_base_url, handler)
+    admin = _admin(app, mock_oidc_base_url)
+    _configure_entra(admin)
+    run = admin.post("/api/admin/directory/sync?source=entra").json()
+    assert run["status"] == "FAILED"
+    assert "AADSTS7000215" in run["error"]
+    assert "Valeur" in run["error"]  # points at the classic mistake: Value vs Secret ID
+    assert "FAKE-SECRET-VALUE" not in run["error"] and "s3cr3t-value" not in run["error"]
+
+
+def test_each_known_entra_error_has_its_own_advice():
+    from lcit_sign.services.aad_errors import describe_token_error
+
+    def say(code):
+        return describe_token_error(httpx.Response(401, json={"error_codes": [code]}))
+
+    assert "expiré" in say(7000222)
+    assert "ID de l'application" in say(700016) and "tenant" in say(700016)
+    assert "tenant" in say(90002)
+    assert "client public" in say(700025)
+    # An unknown code still gives a useful pointer rather than a stack of jargon.
+    assert "AADSTS999999" in say(999999)
+    assert "identifiants refusés" in describe_token_error(httpx.Response(401, text="nope"))
