@@ -165,3 +165,8 @@ export interface ReportSummary {
   pdf_sha256: string;
   csv_sha256: string;
 }
+
+export interface DirectorySource {
+  source: string;
+  configured: boolean;
+}

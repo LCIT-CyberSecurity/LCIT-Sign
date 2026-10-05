@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Generator
 from typing import Any
 
-from fastapi import APIRouter, Depends
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as DbSession
 
@@ -11,7 +13,13 @@ from lcit_sign.deps import get_db, require_roles
 from lcit_sign.models.directory import DirectorySyncRun, Group, GroupMembership
 from lcit_sign.models.user import Role, User
 from lcit_sign.services.audit import append_audit_event
-from lcit_sign.services.directory_sync import SOURCE, sync_local_directory
+from lcit_sign.services.directory_connectors import (
+    DirectoryConnector,
+    DirectoryConnectorError,
+    build_remote_connector,
+    configured_sources,
+)
+from lcit_sign.services.directory_sync import LocalConnector, sync_directory
 
 router = APIRouter(prefix="/admin/directory", tags=["directory"])
 
@@ -40,14 +48,44 @@ def _run_payload(run: DirectorySyncRun) -> dict[str, Any]:
     }
 
 
+def get_directory_http_client() -> Generator[httpx.Client]:
+    # A dependency so tests can swap in a mock transport.
+    with httpx.Client(timeout=30.0) as client:
+        yield client
+
+
+@router.get("/sources")
+def list_sources(request: Request, user: User = Depends(_admin)) -> list[dict[str, Any]]:
+    return [
+        {"source": source, "configured": ok}
+        for source, ok in configured_sources(request.app.state.settings).items()
+    ]
+
+
 @router.post("/sync")
-def trigger_sync(db: DbSession = Depends(get_db), user: User = Depends(_admin)) -> dict[str, Any]:
+def trigger_sync(
+    request: Request,
+    source: str = "local",
+    db: DbSession = Depends(get_db),
+    http_client: httpx.Client = Depends(get_directory_http_client),
+    user: User = Depends(_admin),
+) -> dict[str, Any]:
+    settings = request.app.state.settings
+    connector: DirectoryConnector
+    if source == "local":
+        connector = LocalConnector()
+    elif source in configured_sources(settings):
+        try:
+            connector = build_remote_connector(source, settings, http_client)
+        except DirectoryConnectorError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+    else:
+        raise HTTPException(status_code=404, detail=f"unknown directory source {source!r}")
     append_audit_event(
-        db, action="DIRECTORY_SYNC_STARTED", actor_id=user.id, metadata={"source": SOURCE}
+        db, action="DIRECTORY_SYNC_STARTED", actor_id=user.id, metadata={"source": source}
     )
     db.commit()
-    run = sync_local_directory(db)
-    return _run_payload(run)
+    return _run_payload(sync_directory(db, connector))
 
 
 @router.get("/sync-runs")

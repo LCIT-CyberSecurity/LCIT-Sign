@@ -9,10 +9,15 @@ from sqlalchemy.orm import Session as DbSession
 from lcit_sign.models.directory import DirectorySyncRun, Group, GroupMembership
 from lcit_sign.models.user import User
 from lcit_sign.services.audit import append_audit_event
+from lcit_sign.services.directory_connectors import (
+    DirectoryConnector,
+    DirectoryConnectorError,
+    DirectorySnapshot,
+    DirGroup,
+    DirUser,
+)
 
-SOURCE = "local"
-DIRECTORY_ISSUER_PREFIX = "directory:"
-LOCAL_ISSUER = f"{DIRECTORY_ISSUER_PREFIX}{SOURCE}"
+SOURCE = "local"  # the bundled fictional directory
 
 GROUPS = ["Direction", "RH", "Comptabilite", "Sales", "IT", "Consultants"]
 
@@ -58,78 +63,134 @@ LOCAL_USERS: list[_DirectoryUser] = [
 ]
 
 
-def sync_local_directory(db: DbSession) -> DirectorySyncRun:
-    """Sync the bundled fictional directory into Users/Groups/
-    GroupMemberships (spec §22-30). Read-only from the connector's point
-    of view — a real connector (Entra ID, Google Workspace) would plug in
-    here with the same shape, producing the same kind of run record.
+class LocalConnector:
+    source = SOURCE
+
+    def fetch(self) -> DirectorySnapshot:
+        return DirectorySnapshot(
+            groups=[DirGroup(external_id=name, name=name) for name in GROUPS],
+            users=[
+                DirUser(
+                    external_id=e["external_id"],
+                    email=e["email"],
+                    given_name=e["given_name"],
+                    family_name=e["family_name"],
+                    group_ids={e["group"]},
+                )
+                for e in LOCAL_USERS
+            ],
+        )
+
+
+def sync_directory(db: DbSession, connector: DirectoryConnector) -> DirectorySyncRun:
+    """Sync one connector's snapshot into Users/Groups/GroupMemberships
+    (spec §22-30). Read-only towards the upstream, idempotent, and always
+    leaves a DirectorySyncRun behind — FAILED with the error if the
+    connector couldn't produce a snapshot, in which case nothing is
+    touched (a partial upstream answer must never deactivate anyone).
     """
-    run = DirectorySyncRun(source=SOURCE, status="RUNNING")
+    source = connector.source
+    issuer = f"directory:{source}"
+    run = DirectorySyncRun(source=source, status="RUNNING")
     db.add(run)
     db.flush()
 
-    groups_by_name: dict[str, Group] = {}
-    for name in GROUPS:
+    try:
+        snapshot = connector.fetch()
+    except DirectoryConnectorError as exc:
+        run.status = "FAILED"
+        run.error = str(exc)[:2000]
+        run.finished_at = datetime.now(UTC)
+        append_audit_event(
+            db, action="DIRECTORY_SYNC_FAILED",
+            target_type="directory_sync_run", target_id=str(run.id),
+            metadata={"source": source, "error": run.error},
+        )
+        db.commit()
+        return run
+
+    groups_by_external_id: dict[str, Group] = {}
+    for entry in snapshot.groups:
         group = db.execute(
-            select(Group).where(Group.source == SOURCE, Group.external_id == name)
+            select(Group).where(Group.source == source, Group.external_id == entry.external_id)
         ).scalar_one_or_none()
         if group is None:
-            group = Group(source=SOURCE, external_id=name, name=name)
+            group = Group(source=source, external_id=entry.external_id, name=entry.name)
             db.add(group)
             run.groups_added += 1
         else:
             run.groups_updated += 1
-        groups_by_name[name] = group
+        group.name = entry.name
+        group.description = entry.description[:1000]
+        group.active = True
+        groups_by_external_id[entry.external_id] = group
     db.flush()
 
+    # A group that disappeared upstream is deactivated, not deleted.
+    for stale_group in db.execute(select(Group).where(Group.source == source)).scalars():
+        if stale_group.external_id not in groups_by_external_id:
+            stale_group.active = False
+    source_group_ids = set(
+        db.execute(select(Group.id).where(Group.source == source)).scalars()
+    )
+
     seen_external_ids: set[str] = set()
-    for entry in LOCAL_USERS:
-        seen_external_ids.add(entry["external_id"])
+    for entry_user in snapshot.users:
+        seen_external_ids.add(entry_user.external_id)
 
         user = db.execute(
-            select(User).where(
-                User.issuer == LOCAL_ISSUER, User.subject == entry["external_id"]
-            )
+            select(User).where(User.issuer == issuer, User.subject == entry_user.external_id)
         ).scalar_one_or_none()
         if user is None:
             # Someone who already logged in via real SSO with this email
             # owns this identity now — sync updates that same row instead
             # of creating a second one for the same person.
-            user = db.execute(select(User).where(User.email == entry["email"])).scalar_one_or_none()
+            user = db.execute(
+                select(User).where(User.email == entry_user.email)
+            ).scalar_one_or_none()
 
-        display_name = f"{entry['given_name']} {entry['family_name']}"
+        display_name = f"{entry_user.given_name} {entry_user.family_name}".strip()
         if user is None:
             user = User(
-                issuer=LOCAL_ISSUER,
-                subject=entry["external_id"],
-                external_directory_id=entry["external_id"],
-                email=entry["email"],
-                given_name=entry["given_name"],
-                family_name=entry["family_name"],
+                issuer=issuer,
+                subject=entry_user.external_id,
+                external_directory_id=entry_user.external_id,
+                email=entry_user.email,
+                given_name=entry_user.given_name,
+                family_name=entry_user.family_name,
                 display_name=display_name,
-                active=True,
+                active=entry_user.active,
             )
             db.add(user)
             run.users_added += 1
         else:
-            user.external_directory_id = entry["external_id"]
-            user.given_name = entry["given_name"]
-            user.family_name = entry["family_name"]
+            user.external_directory_id = entry_user.external_id
+            user.given_name = entry_user.given_name
+            user.family_name = entry_user.family_name
             user.display_name = display_name
-            user.active = True
+            user.active = entry_user.active
             run.users_updated += 1
         db.flush()
 
+        # Only this source's memberships are reconciled — another
+        # connector's groups are none of our business.
         current_group_ids = set(
             db.execute(
-                select(GroupMembership.group_id).where(GroupMembership.user_id == user.id)
+                select(GroupMembership.group_id).where(
+                    GroupMembership.user_id == user.id,
+                    GroupMembership.group_id.in_(source_group_ids),
+                )
             ).scalars()
         )
-        desired_group_id = groups_by_name[entry["group"]].id
-        if desired_group_id not in current_group_ids:
-            db.add(GroupMembership(group_id=desired_group_id, user_id=user.id))
+        desired_group_ids = {
+            groups_by_external_id[gid].id
+            for gid in entry_user.group_ids
+            if gid in groups_by_external_id
+        }
+        for new_group_id in desired_group_ids - current_group_ids:
+            db.add(GroupMembership(group_id=new_group_id, user_id=user.id))
             run.memberships_added += 1
-        for stale_group_id in current_group_ids - {desired_group_id}:
+        for stale_group_id in current_group_ids - desired_group_ids:
             db.execute(
                 delete(GroupMembership).where(
                     GroupMembership.user_id == user.id, GroupMembership.group_id == stale_group_id
@@ -140,7 +201,7 @@ def sync_local_directory(db: DbSession) -> DirectorySyncRun:
     # A user previously synced from this source but no longer present
     # upstream is deactivated, never deleted — their signature history
     # must stay intact (spec §30).
-    previously_synced = db.execute(select(User).where(User.issuer == LOCAL_ISSUER)).scalars()
+    previously_synced = db.execute(select(User).where(User.issuer == issuer)).scalars()
     for user in previously_synced:
         if user.subject not in seen_external_ids and user.active:
             user.active = False
@@ -152,7 +213,7 @@ def sync_local_directory(db: DbSession) -> DirectorySyncRun:
         db, action="DIRECTORY_SYNC_COMPLETED",
         target_type="directory_sync_run", target_id=str(run.id),
         metadata={
-            "source": SOURCE,
+            "source": source,
             "users_added": run.users_added,
             "users_updated": run.users_updated,
             "users_deactivated": run.users_deactivated,
@@ -164,3 +225,7 @@ def sync_local_directory(db: DbSession) -> DirectorySyncRun:
     )
     db.commit()
     return run
+
+
+def sync_local_directory(db: DbSession) -> DirectorySyncRun:
+    return sync_directory(db, LocalConnector())

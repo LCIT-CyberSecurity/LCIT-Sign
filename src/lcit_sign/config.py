@@ -53,6 +53,17 @@ class Settings(BaseSettings):
     consent_text: str = "J'atteste avoir pris connaissance de ce document."
     consent_version: str = "1.0"
 
+    # Directory connectors (spec §22-30), read-only. Each is enabled only
+    # when all of its fields are set; the local fictional directory is
+    # always available.
+    entra_tenant_id: str = ""
+    entra_client_id: str = ""
+    entra_client_secret: str = ""
+    # Full service-account key JSON, with domain-wide delegation granted.
+    google_service_account_json: str = ""
+    # Workspace admin the service account impersonates.
+    google_admin_email: str = ""
+
     # Background notification worker (spec §151-152: a plain PostgreSQL-
     # backed worker, no Redis/Celery). Disabled by default in tests via
     # make_app() overrides, so test runs don't race the queue table before
