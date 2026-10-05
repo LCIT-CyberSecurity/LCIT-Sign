@@ -22,6 +22,7 @@ from lcit_sign.api.campaigns import router as campaigns_router
 from lcit_sign.api.diagnostics import router as diagnostics_router
 from lcit_sign.api.directory import router as directory_router
 from lcit_sign.api.documents import router as documents_router
+from lcit_sign.api.fields import router as fields_router
 from lcit_sign.api.health import router as health_router
 from lcit_sign.api.reports import campaign_reports_router
 from lcit_sign.api.reports import router as reports_router
@@ -226,6 +227,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(auth_router, prefix="/api")
     app.include_router(admin_router, prefix="/api")
     app.include_router(documents_router, prefix="/api")
+    app.include_router(fields_router, prefix="/api")
     app.include_router(signatures_router, prefix="/api")
     app.include_router(campaigns_router, prefix="/api")
     app.include_router(me_assignments_router, prefix="/api")

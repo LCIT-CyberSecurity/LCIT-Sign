@@ -26,13 +26,14 @@ def canonical_evidence_fields(
     signed_file_sha256: str,
     application_version: str,
     signing_key_id: str,
+    fields_sha256: str | None = None,
 ) -> dict[str, Any]:
     """The exact field set a signature's evidence hash is computed over
     (spec §60). Called both when signing (to produce the hash) and when
     verifying (to recompute it from the stored row) — the two call sites
     must stay structurally identical or every verification would fail.
     """
-    return {
+    evidence = {
         "signature_id": str(signature_id),
         "campaign_id": str(campaign_id) if campaign_id else None,
         "document_id": str(document_id),
@@ -52,6 +53,11 @@ def canonical_evidence_fields(
         "application_version": application_version,
         "signing_key_id": signing_key_id,
     }
+    # Only when elements were stamped: a signature made on a document with none
+    # keeps exactly the field set it was signed with, so it still verifies.
+    if fields_sha256 is not None:
+        evidence["fields_sha256"] = fields_sha256
+    return evidence
 
 
 def canonical_json(fields: dict[str, Any]) -> str:

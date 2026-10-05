@@ -18,13 +18,63 @@ def make_minimal_pdf_bytes() -> bytes:
     return buffer.getvalue()
 
 
+def _pdf_with(mutate) -> bytes:
+    """A PDF built with pypdf, then altered by `mutate(writer)`."""
+    writer = PdfWriter()
+    writer.add_blank_page(width=72, height=72)
+    mutate(writer)
+    buffer = BytesIO()
+    writer.write(buffer)
+    return buffer.getvalue()
+
+
 def make_js_tainted_pdf_bytes() -> bytes:
-    """A structurally valid PDF with a `/JavaScript` marker in a comment —
-    valid enough to parse, but must still be rejected as active content.
-    """
-    pdf_bytes = make_minimal_pdf_bytes()
-    header_end = pdf_bytes.index(b"\n") + 1
-    return pdf_bytes[:header_end] + b"%/JavaScript test marker\n" + pdf_bytes[header_end:]
+    """A PDF whose document-level JavaScript runs when it is opened."""
+    return _pdf_with(lambda w: w.add_js("app.alert('hello');"))
+
+
+def make_pdf_with_open_action_view() -> bytes:
+    """What Acrobat and other tools write routinely: an /OpenAction that only
+    sets the initial view. Harmless, and must be accepted."""
+    def mutate(writer: PdfWriter) -> None:
+        from pypdf.generic import ArrayObject, NameObject
+
+        page = writer.pages[0].indirect_reference
+        writer._root_object[NameObject("/OpenAction")] = ArrayObject([page, NameObject("/Fit")])
+
+    return _pdf_with(mutate)
+
+
+def make_pdf_with_attachment() -> bytes:
+    return _pdf_with(lambda w: w.add_attachment("payload.exe", b"MZ not really"))
+
+
+def make_pdf_with_launch_action() -> bytes:
+    def mutate(writer: PdfWriter) -> None:
+        from pypdf.generic import DictionaryObject, NameObject, TextStringObject
+
+        writer._root_object[NameObject("/OpenAction")] = DictionaryObject(
+            {
+                NameObject("/S"): NameObject("/Launch"),
+                NameObject("/F"): TextStringObject("cmd.exe"),
+            }
+        )
+
+    return _pdf_with(mutate)
+
+
+def make_pdf_with_hyperlink_and_false_markers() -> bytes:
+    """A normal PDF: a clickable link, and page data that happens to contain
+    the byte patterns the old raw-bytes check mistook for scripts."""
+    def mutate(writer: PdfWriter) -> None:
+        from pypdf.annotations import Link
+
+        writer.add_annotation(0, Link(rect=(5, 5, 60, 20), url="https://www.lcit.fr"))
+        writer.pages[0][NameObject("/Note")] = TextStringObject("x /AA y /JS z /OpenAction w")
+
+    from pypdf.generic import NameObject, TextStringObject  # noqa: F811
+
+    return _pdf_with(mutate)
 
 
 def setup_operator(tmp_path, mock_oidc_base_url, **overrides):
@@ -155,15 +205,36 @@ def test_oversized_upload_is_rejected(tmp_path, mock_oidc_base_url):
     assert response.status_code == 400
 
 
-def test_pdf_with_javascript_marker_is_rejected(tmp_path, mock_oidc_base_url):
-    app, operator = setup_operator(tmp_path, mock_oidc_base_url)
-    response = operator.post(
+def _upload_status(operator, pdf: bytes):
+    return operator.post(
         "/api/documents",
-        data={"title": "Tainted", "version_label": "1.0"},
-        files={"file": ("tainted.pdf", make_js_tainted_pdf_bytes(), "application/pdf")},
+        data={"title": "Essai", "version_label": "1.0"},
+        files={"file": ("essai.pdf", pdf, "application/pdf")},
     )
+
+
+def test_pdf_with_javascript_is_rejected_and_the_reason_is_explained(tmp_path, mock_oidc_base_url):
+    app, operator = setup_operator(tmp_path, mock_oidc_base_url)
+    response = _upload_status(operator, make_js_tainted_pdf_bytes())
     assert response.status_code == 400
-    assert "active content" in response.json()["detail"]
+    detail = response.json()["detail"]
+    assert "JavaScript" in detail and "Réexportez" in detail  # says what, and how to fix it
+
+
+def test_other_active_constructs_are_rejected_too(tmp_path, mock_oidc_base_url):
+    app, operator = setup_operator(tmp_path, mock_oidc_base_url)
+    attached = _upload_status(operator, make_pdf_with_attachment())
+    assert attached.status_code == 400 and "fichiers joints" in attached.json()["detail"]
+    launch = _upload_status(operator, make_pdf_with_launch_action())
+    assert launch.status_code == 400 and "lancement" in launch.json()["detail"]
+
+
+def test_ordinary_pdfs_are_not_mistaken_for_scripts(tmp_path, mock_oidc_base_url):
+    app, operator = setup_operator(tmp_path, mock_oidc_base_url)
+    # An /OpenAction that only sets the initial view is routine.
+    assert _upload_status(operator, make_pdf_with_open_action_view()).status_code == 201
+    # Hyperlinks work, and the literal words /AA /JS /OpenAction in data are not code.
+    assert _upload_status(operator, make_pdf_with_hyperlink_and_false_markers()).status_code == 201
 
 
 def test_signer_without_role_cannot_manage_documents(tmp_path, mock_oidc_base_url):

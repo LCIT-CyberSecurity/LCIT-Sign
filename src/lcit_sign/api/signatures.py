@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session as DbSession
 
 from lcit_sign import __version__
 from lcit_sign.api.documents import DOCUMENTS_BUCKET, PDF_SUFFIX
+from lcit_sign.api.fields import load_fields, to_prepared
 from lcit_sign.config import Settings
 from lcit_sign.deps import get_current_user, get_db, require_roles, user_roles
 from lcit_sign.models.campaign import AssignmentStatus, Campaign, SignatureAssignment
@@ -21,8 +22,15 @@ from lcit_sign.models.document import Document, DocumentVersion, DocumentVersion
 from lcit_sign.models.mail import NotificationType
 from lcit_sign.models.signature import Signature
 from lcit_sign.models.user import Role, User
+from lcit_sign.services import branding
 from lcit_sign.services.audit import append_audit_event
 from lcit_sign.services.evidence import canonical_evidence_fields, canonical_json
+from lcit_sign.services.field_stamping import (
+    FieldError,
+    fields_digest,
+    stamp_fields,
+)
+from lcit_sign.services.field_stamping import resolve as resolve_fields
 from lcit_sign.services.notification_queue import enqueue_notification
 from lcit_sign.services.signature_pdf import append_signature_page, render_certificate_pdf
 from lcit_sign.services.signing_keys import (
@@ -45,6 +53,8 @@ _sign = require_roles(Role.SIGNER)
 
 class SignRequest(BaseModel):
     consent: bool
+    # Free-text elements the signer filled in, by element id.
+    values: dict[str, str] = {}
 
 
 def _signature_payload(signature: Signature) -> dict[str, Any]:
@@ -146,8 +156,26 @@ def sign_document_version(
     display_id = f"SIG-{signature_id.hex[:12].upper()}"
 
     original_pdf = storage.read(DOCUMENTS_BUCKET, version.id, PDF_SUFFIX)
+
+    # Elements the operator placed on the document: resolve this signer's values
+    # (automatic ones from the account and the clock, text from what was typed)
+    # and stamp them on a copy of the original.
+    logo = branding.read_logo(storage)
+    try:
+        resolved_fields = resolve_fields(
+            to_prepared(load_fields(db, version.id)),
+            signer_name=user.display_name,
+            signer_email=user.email,
+            signed_at=signed_at,
+            inputs=body.values,
+            logo_sha256=logo[1] if logo else None,
+        )
+    except FieldError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    stamped_pdf = stamp_fields(original_pdf, resolved_fields, logo[0] if logo else None)
+
     signed_pdf = append_signature_page(
-        original_pdf,
+        stamped_pdf,
         document_title=document.title,
         version_label=version.version_label,
         display_name=user.display_name,
@@ -178,6 +206,7 @@ def sign_document_version(
         signed_file_sha256=signed_file_sha256,
         application_version=__version__,
         signing_key_id=signing_key.key_id,
+        fields_sha256=fields_digest(resolved_fields) if resolved_fields else None,
     )
     evidence_hash = hashlib.sha256(canonical_json(evidence_fields).encode("utf-8")).hexdigest()
     private_key = derive_private_key(settings.master_key, signing_key.key_id)
@@ -214,6 +243,7 @@ def sign_document_version(
         signing_key_id=signing_key.key_id,
         evidence_hash=evidence_hash,
         cryptographic_signature=cryptographic_signature,
+        field_values=resolved_fields or None,
     )
     db.add(signature)
     try:
@@ -224,6 +254,7 @@ def sign_document_version(
 
     evidence_export = {
         **evidence_fields,
+        "field_values": resolved_fields,
         "evidence_hash": evidence_hash,
         "cryptographic_signature": cryptographic_signature,
     }

@@ -22,9 +22,11 @@ from lcit_sign.models.document import (
     DocumentField,
     DocumentVersion,
     DocumentVersionStatus,
+    FieldKind,
 )
 from lcit_sign.models.signature import Signature
 from lcit_sign.models.user import Role, User
+from lcit_sign.services import branding
 from lcit_sign.services.audit import append_audit_event
 from lcit_sign.services.document_validation import DocumentValidationError, validate_pdf_upload
 from lcit_sign.services.storage import StorageService
@@ -208,13 +210,28 @@ async def create_document_version(
 
 @router.post("/versions/{version_id}/publish")
 def publish_version(
-    version_id: uuid.UUID, user: User = Depends(_manage), db: DbSession = Depends(get_db)
+    request: Request,
+    version_id: uuid.UUID,
+    user: User = Depends(_manage),
+    db: DbSession = Depends(get_db),
 ) -> dict[str, Any]:
     version = db.get(DocumentVersion, version_id)
     if version is None:
         raise HTTPException(404, "Document version not found")
     if version.status != DocumentVersionStatus.DRAFT:
         raise HTTPException(409, "Only a draft version can be published")
+
+    placed = list(
+        db.execute(
+            select(DocumentField.kind).where(DocumentField.document_version_id == version.id)
+        ).scalars()
+    )
+    if FieldKind.LOGO in placed and branding.read_logo(request.app.state.storage) is None:
+        raise HTTPException(
+            409,
+            "Ce document comporte un logo d'entreprise, mais aucun logo n'est configuré "
+            "(Administration → Logo).",
+        )
 
     currently_published = db.execute(
         select(DocumentVersion).where(

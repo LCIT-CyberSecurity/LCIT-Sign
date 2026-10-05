@@ -12,6 +12,7 @@ from lcit_sign.models.report import Report
 from lcit_sign.models.signature import Signature
 from lcit_sign.models.signing_key import SigningKey, SigningKeyStatus
 from lcit_sign.services.evidence import canonical_evidence_fields, canonical_json
+from lcit_sign.services.field_stamping import fields_digest
 from lcit_sign.services.signing_keys import load_public_key
 from lcit_sign.services.storage import StorageService
 from lcit_sign.time_utils import ensure_utc
@@ -45,6 +46,9 @@ def evidence_fields_for(signature: Signature, db: DbSession) -> dict[str, Any]:
         signed_file_sha256=signature.signed_file_sha256,
         application_version=signature.application_version,
         signing_key_id=signature.signing_key_id,
+        fields_sha256=(
+            fields_digest(signature.field_values) if signature.field_values is not None else None
+        ),
     )
 
 
