@@ -95,6 +95,14 @@ export interface CampaignAssignment {
   reminder_count: number;
 }
 
+export interface CampaignDocumentInfo {
+  version_id: string;
+  title: string;
+  version_label: string;
+  status: string;
+  elements: number;
+}
+
 export type CampaignStatus = "DRAFT" | "ACTIVE" | "CLOSED" | "CANCELLED" | "ARCHIVED";
 
 export interface Campaign {
@@ -110,6 +118,7 @@ export interface Campaign {
   document_version_ids: string[];
   roles_required: number;
   roles: CampaignRole[];
+  documents: CampaignDocumentInfo[];
   assignment_counts: Record<AssignmentStatus, number>;
   policies: CampaignPolicies;
   renewal_of_campaign_id: string | null;

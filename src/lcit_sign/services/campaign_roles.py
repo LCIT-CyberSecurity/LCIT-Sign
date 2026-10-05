@@ -60,55 +60,83 @@ def roles_required(db: DbSession, campaign: Campaign) -> int:
     return max((max(r) for r in per_version.values()), default=1)
 
 
-def validate_roles(
-    db: DbSession, campaign: Campaign, given: list[RoleSpec]
-) -> list[RoleSpec]:
-    """The complete, checked list of roles for the campaign. With no roles given,
-    a campaign whose documents have a single signer defaults to "every recipient"
-    (what it always did)."""
-    needed = roles_required(db, campaign)
-    if not given:
-        if needed > 1:
-            raise RoleError(
-                f"Ces documents prévoient {needed} signataires : indiquez qui est "
-                "chacun d'eux avant de lancer."
-            )
-        return [RoleSpec(role=1, mode="EACH")]
-
-    by_number = {spec.role: spec for spec in given}
-    if len(by_number) != len(given):
-        raise RoleError("Un même signataire est défini deux fois.")
-    expected = list(range(1, needed + 1))
-    if sorted(by_number) != expected:
-        raise RoleError(
-            "Il faut définir exactement les signataires "
-            + ", ".join(f"« Signataire {n} »" for n in expected)
-            + "."
-        )
-    each = [spec for spec in given if spec.mode == "EACH"]
+def check_signers(db: DbSession, given: list[RoleSpec]) -> list[RoleSpec]:
+    """The shape of the signers list, whatever the documents are: numbered 1..n in
+    order, at most one "every recipient" (and then last), distinct active people."""
+    ordered = sorted(given, key=lambda spec: spec.role)
+    if [spec.role for spec in ordered] != list(range(1, len(ordered) + 1)):
+        raise RoleError("Les signataires doivent être numérotés dans l'ordre, sans trou.")
+    if len(ordered) > 10:
+        raise RoleError("10 signataires au plus.")
+    each = [spec for spec in ordered if spec.mode == "EACH"]
     if len(each) > 1:
         raise RoleError("Un seul signataire peut être « chaque destinataire ».")
-    if each and each[0].role != needed:
+    if each and each[0].role != len(ordered):
         raise RoleError(
-            "« Chaque destinataire » doit être le dernier signataire : "
-            "les signataires fixes (le RSSI par exemple) signent avant."
+            "« Chaque destinataire » doit signer en dernier : "
+            "les personnes précises (le RSSI par exemple) signent avant."
         )
     fixed_ids: list[uuid.UUID] = []
-    for spec in given:
+    for spec in ordered:
         if spec.mode == "FIXED":
             if spec.user_id is None:
-                raise RoleError(f"Choisissez une personne pour le signataire {spec.role}.")
+                raise RoleError(f"Choisissez la personne qui signe en position {spec.role}.")
             fixed_ids.append(spec.user_id)
         elif spec.user_id is not None:
             raise RoleError("« Chaque destinataire » n'a pas de personne associée.")
     if len(set(fixed_ids)) != len(fixed_ids):
-        raise RoleError("Une même personne ne peut pas tenir deux rôles de signataire.")
+        raise RoleError("Une même personne ne peut pas signer deux fois dans la même campagne.")
     active = set(
         db.execute(select(User.id).where(User.id.in_(fixed_ids), User.active.is_(True))).scalars()
     )
     if active != set(fixed_ids):
         raise RoleError("Un signataire choisi n'existe pas ou est désactivé.")
-    return sorted(given, key=lambda spec: spec.role)
+    return ordered
+
+
+def validate_roles(
+    db: DbSession, campaign: Campaign, given: list[RoleSpec]
+) -> list[RoleSpec]:
+    """The signers of the campaign, checked against what its documents ask for.
+    With none given, a campaign whose documents have a single signer defaults to
+    "every recipient" (what it always did)."""
+    needed = roles_required(db, campaign)
+    if not given:
+        if needed > 1:
+            raise RoleError(
+                f"Ces documents prévoient {needed} signataires : indiquez qui signe, "
+                "dans l'ordre, avant de lancer."
+            )
+        return [RoleSpec(role=1, mode="EACH")]
+    ordered = check_signers(db, given)
+    if len(ordered) < needed:
+        raise RoleError(
+            f"Les documents prévoient {needed} signataires, il n'y en a que {len(ordered)} "
+            "dans la campagne."
+        )
+    per_version = roles_by_version(db, [d.document_version_id for d in campaign.documents])
+    used = {role for roles in per_version.values() for role in roles}
+    names = {
+        u.id: u.display_name
+        for u in db.execute(
+            select(User).where(User.id.in_([s.user_id for s in ordered if s.user_id]))
+        ).scalars()
+    }
+    for spec in ordered:
+        if spec.role not in used:
+            who = names.get(spec.user_id) if spec.user_id else "Chaque destinataire"
+            raise RoleError(
+                f"{who} n'a aucun élément à remplir : placez-lui des éléments "
+                "sur un document, ou retirez-le des signataires."
+            )
+    return ordered
+
+
+def replace_roles(db: DbSession, campaign: Campaign, specs: list[RoleSpec]) -> None:
+    for existing in load_roles(db, campaign.id):
+        db.delete(existing)
+    db.flush()
+    save_roles(db, campaign, specs)
 
 
 def save_roles(db: DbSession, campaign: Campaign, specs: list[RoleSpec]) -> None:

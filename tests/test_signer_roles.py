@@ -34,19 +34,65 @@ def new_campaign(operator, version_id) -> dict:
     return campaign
 
 
-def test_roles_carry_the_names_given_in_the_editor(tmp_path, mock_oidc_base_url):
-    _, _, operator, *_ = setup_campaign_fixture(tmp_path, mock_oidc_base_url)
-    version_id = prepare_two_role_document(operator)
-    got = operator.get(f"/api/documents/versions/{version_id}/fields").json()
-    assert got["role_labels"] == {"1": "RSSI", "2": "Collaborateur"}
+def test_signers_are_chosen_among_users_on_the_draft_and_checked(tmp_path, mock_oidc_base_url):
+    _, _, operator, signer1, signer2 = setup_campaign_fixture(tmp_path, mock_oidc_base_url)
+    rssi, other = get_user_id(signer1), get_user_id(signer2)
+    campaign = new_campaign(operator, prepare_two_role_document(operator))
+    url = f"/api/campaigns/{campaign['id']}/signers"
 
-    campaign = new_campaign(operator, version_id)
+    saved = operator.put(
+        url,
+        json={"signers": [
+            {"role": 1, "mode": "FIXED", "user_id": rssi},
+            {"role": 2, "mode": "EACH"},
+        ]},
+    )
+    assert saved.status_code == 200, saved.text
     shown = operator.get(f"/api/campaigns/{campaign['id']}").json()
-    assert shown["roles_required"] == 2
-    assert [(r["role"], r["label"], r["user_id"]) for r in shown["roles"]] == [
-        (1, "RSSI", None),
-        (2, "Collaborateur", None),
+    assert [(r["role"], r["mode"], r["user_display_name"] is not None) for r in shown["roles"]] == [
+        (1, "FIXED", True),
+        (2, "EACH", False),
     ]
+    assert shown["roles_required"] == 2
+
+    # Wrong shapes are refused, and the saved ones stay.
+    each_first = [{"role": 1, "mode": "EACH"}, {"role": 2, "mode": "FIXED", "user_id": rssi}]
+    assert operator.put(url, json={"signers": each_first}).status_code == 422
+    assert operator.put(url, json={"signers": [
+        {"role": 1, "mode": "FIXED", "user_id": rssi},
+        {"role": 2, "mode": "FIXED", "user_id": rssi},
+    ]}).status_code == 422
+    assert operator.put(url, json={"signers": [{"role": 2, "mode": "EACH"}]}).status_code == 422
+    assert len(operator.get(f"/api/campaigns/{campaign['id']}").json()["roles"]) == 2
+
+    # Launching with the saved signers needs nothing more than the recipients.
+    launched = operator.post(f"/api/campaigns/{campaign['id']}/launch", json={"user_ids": [other]})
+    assert launched.status_code == 200, launched.text
+    assert launched.json()["assignment_counts"]["WAITING"] == 1
+    # Once launched they can no longer be changed.
+    assert operator.put(url, json={"signers": []}).status_code == 409
+
+
+def test_a_signer_with_nothing_to_fill_is_refused_by_name(tmp_path, mock_oidc_base_url):
+    _, _, operator, signer1, signer2 = setup_campaign_fixture(tmp_path, mock_oidc_base_url)
+    version_id = upload(operator, title="Simple")
+    operator.put(
+        f"/api/documents/versions/{version_id}/fields",
+        json={"fields": [element("SIGNATURE", role=1)]},
+    )
+    campaign = new_campaign(operator, version_id)
+    operator.put(
+        f"/api/campaigns/{campaign['id']}/signers",
+        json={"signers": [
+            {"role": 1, "mode": "FIXED", "user_id": get_user_id(signer1)},
+            {"role": 2, "mode": "EACH"},
+        ]},
+    )
+    refused = operator.post(
+        f"/api/campaigns/{campaign['id']}/launch", json={"user_ids": [get_user_id(signer2)]}
+    )
+    assert refused.status_code == 422 and "Chaque destinataire" in refused.text
+    assert operator.get(f"/api/campaigns/{campaign['id']}").json()["status"] == "DRAFT"
 
 
 def test_launch_needs_every_signer_defined_and_in_a_sensible_shape(tmp_path, mock_oidc_base_url):
@@ -220,3 +266,56 @@ def test_a_single_signer_document_still_launches_the_old_way(tmp_path, mock_oidc
     assert signer1.post(
         f"/api/documents/versions/{version_id}/sign", json={"consent": True}
     ).status_code == 201
+
+
+def test_a_draft_is_prepared_from_the_campaign_and_published_at_launch(
+    tmp_path, mock_oidc_base_url
+):
+    _, _, operator, signer1, _ = setup_campaign_fixture(tmp_path, mock_oidc_base_url)
+    version_id = upload(operator, title="Annexe")  # a draft: never published by hand
+    operator.put(
+        f"/api/documents/versions/{version_id}/fields",
+        json={"fields": [element("SIGNATURE"), element("DATE", x=0.5)]},
+    )
+    campaign = new_campaign(operator, version_id)
+
+    shown = operator.get(f"/api/campaigns/{campaign['id']}").json()
+    assert shown["documents"] == [
+        {"version_id": version_id, "title": "Annexe", "version_label": "1.0",
+         "status": "DRAFT", "elements": 2}
+    ]
+    # A draft cannot be signed yet...
+    assert signer1.post(
+        f"/api/documents/versions/{version_id}/sign", json={"consent": True}
+    ).status_code == 409
+
+    launched = operator.post(
+        f"/api/campaigns/{campaign['id']}/launch", json={"user_ids": [get_user_id(signer1)]}
+    )
+    assert launched.status_code == 200, launched.text
+    # ... the launch froze it, elements included.
+    after = operator.get(f"/api/campaigns/{campaign['id']}").json()
+    assert after["documents"][0]["status"] == "PUBLISHED"
+    frozen = operator.put(f"/api/documents/versions/{version_id}/fields", json={"fields": []})
+    assert frozen.status_code == 409
+    assert signer1.post(
+        f"/api/documents/versions/{version_id}/sign", json={"consent": True}
+    ).status_code == 201
+
+
+def test_launch_refuses_cleanly_when_a_draft_cannot_be_published(tmp_path, mock_oidc_base_url):
+    _, _, operator, signer1, _ = setup_campaign_fixture(tmp_path, mock_oidc_base_url)
+    version_id = upload(operator, title="Avec logo")
+    operator.put(
+        f"/api/documents/versions/{version_id}/fields",
+        json={"fields": [element("LOGO"), element("SIGNATURE", y=0.5)]},
+    )
+    campaign = new_campaign(operator, version_id)  # no company logo configured
+    refused = operator.post(
+        f"/api/campaigns/{campaign['id']}/launch", json={"user_ids": [get_user_id(signer1)]}
+    )
+    assert refused.status_code == 409 and "logo" in refused.text
+    # Nothing half-done: still a draft, still editable, nobody asked.
+    assert operator.get(f"/api/campaigns/{campaign['id']}").json()["status"] == "DRAFT"
+    assert operator.get(f"/api/documents/versions/{version_id}/fields").json()["editable"] is True
+    assert operator.get(f"/api/campaigns/{campaign['id']}/assignments").json() == []

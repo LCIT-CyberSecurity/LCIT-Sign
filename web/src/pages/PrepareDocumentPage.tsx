@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type PointerEvent } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, CheckCircle2, Lock, Plus, Save, Trash2, UserRound } from "lucide-react";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { ArrowLeft, CheckCircle2, Lock, Save, Trash2, UserRound } from "lucide-react";
 import { api, ApiError } from "../api/client";
-import ConfirmButton from "../components/ConfirmButton";
 import PdfPages, { type PageSize } from "../prepare/PdfPages";
 import { clampRect, moveRect, placeCentered, pointToFraction, resizeRect, tidy, type Rect } from "../prepare/geometry";
-import { KIND_BY_ID, KINDS, MAX_RECIPIENTS, roleColor, type FieldKind } from "../prepare/kinds";
+import { KIND_BY_ID, KINDS, roleColor, type FieldKind } from "../prepare/kinds";
+import type { Campaign } from "../api/types";
 
 export interface EditorField extends Rect {
   id: string;
@@ -23,7 +23,6 @@ interface FieldsResponse {
   version_label: string;
   status: string;
   fields: EditorField[];
-  role_labels: Record<string, string>;
 }
 
 const DRAG_TYPE = "application/x-lcit-element";
@@ -122,14 +121,17 @@ function FieldBox({
 export default function PrepareDocumentPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [query] = useSearchParams();
+  const campaignId = query.get("campaign");
   const [info, setInfo] = useState<FieldsResponse | null>(null);
   const [pages, setPages] = useState<PageSize[]>([]);
   const [fields, setFields] = useState<EditorField[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [recipients, setRecipients] = useState(1);
   const [activeRole, setActiveRole] = useState(1);
-  // What each generic role is ("RSSI", "Collaborateur"), never who: people are chosen at launch.
-  const [roleLabels, setRoleLabels] = useState<Record<string, string>>({});
+  // The people who sign are the campaign's (chosen among the users before preparing):
+  // each element is given to one of them, or to "every recipient".
+  const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [armed, setArmed] = useState<FieldKind | null>(null);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -147,13 +149,29 @@ export default function PrepareDocumentPage() {
         setFields(loaded.fields);
         setPages(sizes);
         setRecipients(Math.max(1, ...loaded.fields.map((f) => f.role)));
-        setRoleLabels(loaded.role_labels ?? {});
       })
       .catch((err) => setLoadError(err instanceof ApiError ? err.message : "Document introuvable."));
   }, [id]);
 
+  useEffect(() => {
+    if (!campaignId) return;
+    api
+      .get<Campaign>(`/campaigns/${campaignId}`)
+      .then((loaded) => {
+        setCampaign(loaded);
+        setRecipients((n) => Math.max(n, loaded.roles.length, 1));
+      })
+      .catch((err) => setLoadError(err instanceof ApiError ? err.message : "Campagne introuvable."));
+  }, [campaignId]);
+
   const editable = info?.editable ?? false;
-  const roleName = (role: number) => roleLabels[String(role)]?.trim() || `Signataire ${role}`;
+  // Whoever the campaign says signs in this position — a person, or every recipient.
+  const roleName = (role: number) => {
+    const party = campaign?.roles.find((r) => r.role === role);
+    if (!party) return `Position ${role}`;
+    return party.mode === "EACH" ? "Chaque destinataire" : party.user_display_name ?? `Position ${role}`;
+  };
+  const backTo = campaignId ? `/campaigns/${campaignId}` : "/campaigns";
   const selected = fields.find((f) => f.id === selectedId) ?? null;
 
   const update = useCallback((fieldId: string, patch: Partial<EditorField>) => {
@@ -239,12 +257,8 @@ export default function PrepareDocumentPage() {
         fields: fields.map(({ id: fieldId, page, x, y, width, height, kind, label, required, role, group_key }) => ({
           id: fieldId, page, ...tidy({ x, y, width, height }), kind, label, required, role, group_key,
         })),
-        role_labels: Object.fromEntries(
-          Object.entries(roleLabels).filter(([key, value]) => Number(key) <= recipients && value.trim()),
-        ),
       });
       setFields(saved.fields);
-      setRoleLabels(saved.role_labels ?? {});
       setDirty(false);
       setMessage(`Enregistré — ${saved.fields.length} élément(s).`);
       return true;
@@ -256,15 +270,11 @@ export default function PrepareDocumentPage() {
     }
   };
 
-  const publish = async () => {
+  // Preparing is part of sending a document for signature: when done, back to the
+  // campaign, which freezes (publishes) the document when it is launched.
+  const finish = async () => {
     if (dirty && !(await save())) return;
-    setError(null);
-    try {
-      await api.post(`/documents/versions/${id}/publish`);
-      navigate("/documents");
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "La publication a échoué.");
-    }
+    navigate(backTo);
   };
 
   const onDrop = (page: number, overlay: HTMLDivElement) => (e: DragEvent<HTMLDivElement>) => {
@@ -280,15 +290,29 @@ export default function PrepareDocumentPage() {
     return byRole;
   }, [fields]);
 
+  if (!campaignId)
+    return (
+      <p className="muted">
+        Les éléments se préparent depuis une demande de signature : ouvrez <Link to="/campaigns">Faire signer</Link>,
+        choisissez qui signe, puis « Préparer » sur le document.
+      </p>
+    );
   if (loadError) return <p className="error-text">{loadError}</p>;
+  if (campaign && campaign.roles.length === 0)
+    return (
+      <p className="muted">
+        Choisissez d&apos;abord qui signe dans <Link to={backTo}>la campagne</Link>, puis revenez préparer le
+        document.
+      </p>
+    );
   if (!info) return <p className="muted">Chargement…</p>;
 
   const pagesWithFields = new Set(fields.map((f) => f.page)).size;
 
   return (
     <div className="stack prep">
-      <Link to="/documents" className="back-link">
-        <ArrowLeft size={14} aria-hidden="true" /> Documents
+      <Link to={backTo} className="back-link">
+        <ArrowLeft size={14} aria-hidden="true" /> {campaign ? campaign.name : "Faire signer"}
       </Link>
       <div className="page-header">
         <div>
@@ -308,13 +332,9 @@ export default function PrepareDocumentPage() {
             <button className="button button--secondary" onClick={() => void save()} disabled={saving || !dirty}>
               <Save size={14} aria-hidden="true" /> {saving ? "Enregistrement…" : "Enregistrer"}
             </button>
-            <ConfirmButton
-              className="button button--primary"
-              confirmLabel="Publier — les éléments seront figés"
-              onConfirm={publish}
-            >
-              <CheckCircle2 size={14} aria-hidden="true" /> Publier
-            </ConfirmButton>
+            <button className="button button--primary" onClick={() => void finish()} disabled={saving}>
+              <CheckCircle2 size={14} aria-hidden="true" /> Terminer
+            </button>
           </div>
         )}
       </div>
@@ -331,9 +351,8 @@ export default function PrepareDocumentPage() {
             <>
               <div className="prep-rail__title">Qui signe ?</div>
               <p className="muted small" style={{ margin: "0 0 8px" }}>
-                Donnez un nom à chaque rôle (ex : RSSI, Collaborateur), puis placez ses éléments. Les
-                personnes sont choisies plus tard, au lancement de la campagne. Les rôles signent dans
-                l&apos;ordre : le premier d&apos;abord, son tampon figure sur la copie du suivant.
+                Ce sont les signataires de la campagne, dans l&apos;ordre. Choisissez qui remplit, puis
+                placez ses éléments. Le tampon du premier figure sur la copie du suivant.
               </p>
               <ul className="prep-roles">
                 {Array.from({ length: recipients }, (_, i) => i + 1).map((role) => (
@@ -347,38 +366,15 @@ export default function PrepareDocumentPage() {
                     >
                       <span className="prep-role__dot" />
                       <UserRound size={14} aria-hidden="true" />
-                      <span className="prep-role__name">
-                        {role}. {roleName(role)}
-                      </span>
+                      <span className="prep-role__name">{roleName(role)}</span>
                       <span className="prep-role__count">{counts.get(role) ?? 0}</span>
                     </button>
                   </li>
                 ))}
               </ul>
-              <label className="prep-role-name">
-                Nom du rôle {activeRole}
-                <input
-                  value={roleLabels[String(activeRole)] ?? ""}
-                  maxLength={100}
-                  placeholder="ex : RSSI, Collaborateur, Manager"
-                  onChange={(e) => {
-                    setRoleLabels((all) => ({ ...all, [String(activeRole)]: e.target.value }));
-                    setDirty(true);
-                    setMessage(null);
-                  }}
-                />
-              </label>
-              <button
-                type="button"
-                className="button button--ghost button--sm"
-                disabled={recipients >= MAX_RECIPIENTS}
-                onClick={() => {
-                  setRecipients((n) => n + 1);
-                  setActiveRole(recipients + 1);
-                }}
-              >
-                <Plus size={13} aria-hidden="true" /> Ajouter un signataire
-              </button>
+              <Link to={backTo} className="muted small">
+                Modifier les signataires dans la campagne
+              </Link>
 
               <div className="prep-rail__title" style={{ marginTop: 18 }}>
                 Éléments à placer
@@ -474,7 +470,7 @@ export default function PrepareDocumentPage() {
                 >
                   {Array.from({ length: recipients }, (_, i) => i + 1).map((role) => (
                     <option key={role} value={role}>
-                      {role}. {roleName(role)}
+                      {roleName(role)}
                     </option>
                   ))}
                 </select>

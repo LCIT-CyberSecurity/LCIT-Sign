@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
-import OperatorCampaignDetailPage from "./OperatorCampaignDetailPage";
+import { MemoryRouter } from "react-router-dom";
+import CampaignSigners from "../components/CampaignSigners";
 import SignerAssignmentsPage from "./SignerAssignmentsPage";
 import { api } from "../api/client";
 
@@ -11,56 +11,75 @@ vi.mock("../api/client", () => ({
 }));
 vi.mock("../auth/AuthContext", () => ({ useAuth: () => ({ user: { display_name: "Erwan Petit" } }) }));
 
-const campaign = {
-  id: "c1", name: "PSSI 2026", description: "", status: "DRAFT", target_mode: "", created_at: "",
-  launch_at: null, deadline: null, closed_at: null, document_version_ids: ["v1"],
-  roles_required: 2,
-  roles: [
-    { role: 1, label: "RSSI", mode: null, user_id: null, user_display_name: null },
-    { role: 2, label: "Collaborateur", mode: null, user_id: null, user_display_name: null },
-  ],
-  assignment_counts: {}, policies: {}, renewal_of_campaign_id: null,
-};
+const users = [
+  { id: "u1", email: "rssi@lcit.fr", display_name: "Rita Rssi" },
+  { id: "u2", email: "bob@lcit.fr", display_name: "Bob Dupont" },
+];
 
-describe("signer roles at launch", () => {
+const draft = (roles: unknown[]) =>
+  ({
+    id: "c1", name: "PSSI 2026", status: "DRAFT", roles, documents: [], roles_required: 1,
+  }) as never;
+
+describe("choosing who signs, among the users", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(api.get).mockImplementation(async (path: string) => {
-      if (path === "/campaigns/c1") return campaign;
-      if (path === "/campaigns/_meta/users")
-        return [{ id: "u1", email: "rssi@lcit.fr", display_name: "Rita Rssi" }];
-      return [];
-    });
-    vi.mocked(api.post).mockResolvedValue({});
+    vi.mocked(api.put).mockResolvedValue({});
   });
 
-  it("asks who each named role is and sends the answer with the launch", async () => {
-    render(
-      <MemoryRouter initialEntries={["/campaigns/c1"]}>
-        <Routes>
-          <Route path="/campaigns/:id" element={<OperatorCampaignDetailPage />} />
-        </Routes>
-      </MemoryRouter>,
+  it("saves the people in order as soon as each is chosen, 'every recipient' last", async () => {
+    const onSaved = vi.fn();
+    render(<CampaignSigners campaign={draft([])} users={users} onSaved={onSaved} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Ajouter une personne/ }));
+    // A row with nobody chosen is not saved yet.
+    expect(api.put).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText("Qui signe en position 1 ?"), { target: { value: "u1" } });
+    await waitFor(() =>
+      expect(api.put).toHaveBeenLastCalledWith("/campaigns/c1/signers", {
+        signers: [{ role: 1, mode: "FIXED", user_id: "u1" }],
+      }),
     );
-    const card = await screen.findByTestId("roles-card");
-    expect(card).toHaveTextContent("1. RSSI");
-    expect(card).toHaveTextContent("2. Collaborateur");
 
-    // Launching without naming the RSSI is refused on the spot.
-    fireEvent.click(screen.getByRole("button", { name: /Lancer la campagne/ }));
-    expect(await screen.findByText(/Choisissez une personne pour le signataire 1 \(RSSI\)/)).toBeInTheDocument();
-    expect(api.post).not.toHaveBeenCalledWith("/campaigns/c1/launch", expect.anything());
+    fireEvent.click(screen.getByRole("button", { name: /Ajouter « Chaque destinataire »/ }));
+    await waitFor(() =>
+      expect(api.put).toHaveBeenLastCalledWith("/campaigns/c1/signers", {
+        signers: [
+          { role: 1, mode: "FIXED", user_id: "u1" },
+          { role: 2, mode: "EACH", user_id: null },
+        ],
+      }),
+    );
+    // Once the list of recipients is there, it cannot be added a second time,
+    // and a named person added afterwards goes before it.
+    expect(screen.queryByRole("button", { name: /Ajouter « Chaque destinataire »/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Ajouter une personne/ }));
+    fireEvent.change(screen.getByLabelText("Qui signe en position 2 ?"), { target: { value: "u2" } });
+    await waitFor(() =>
+      expect(api.put).toHaveBeenLastCalledWith("/campaigns/c1/signers", {
+        signers: [
+          { role: 1, mode: "FIXED", user_id: "u1" },
+          { role: 2, mode: "FIXED", user_id: "u2" },
+          { role: 3, mode: "EACH", user_id: null },
+        ],
+      }),
+    );
+  });
 
-    fireEvent.change(screen.getByLabelText("Qui est RSSI ?"), { target: { value: "u1" } });
-    fireEvent.click(screen.getByRole("button", { name: /Lancer la campagne/ }));
-    await waitFor(() => expect(api.post).toHaveBeenCalledWith("/campaigns/c1/launch", expect.anything()));
-    const body = vi.mocked(api.post).mock.calls.find((c) => c[0] === "/campaigns/c1/launch")![1] as {
-      roles: unknown[];
-    };
-    expect(body.roles).toEqual([
-      { role: 1, label: "RSSI", mode: "FIXED", user_id: "u1" },
-      { role: 2, label: "Collaborateur", mode: "EACH", user_id: null },
-    ]);
+  it("does not offer the same person twice", () => {
+    render(
+      <CampaignSigners
+        campaign={draft([
+          { role: 1, label: "", mode: "FIXED", user_id: "u1", user_display_name: "Rita Rssi" },
+          { role: 2, label: "", mode: "EACH", user_id: null, user_display_name: null },
+        ])}
+        users={users}
+        onSaved={vi.fn()}
+      />,
+    );
+    const second = screen.getByLabelText("Qui signe en position 2 ?");
+    expect(second.querySelector('option[value="u1"]')).toBeDisabled();
+    expect(second.querySelector('option[value="u2"]')).not.toBeDisabled();
   });
 });
 

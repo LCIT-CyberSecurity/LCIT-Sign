@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { FileText, CheckCircle2, Trash2, PencilRuler, Upload, X } from "lucide-react";
+import { FileText, CheckCircle2, Trash2, Upload, X } from "lucide-react";
 import { Link } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import ConfirmButton from "../components/ConfirmButton";
@@ -123,32 +123,45 @@ export default function OperatorDocumentsPage() {
         <FileText size={20} aria-hidden="true" /> Documents
       </h1>
 
+      <p className="muted">
+        La bibliothèque des documents. Pour faire signer, allez dans{" "}
+        <Link to="/campaigns">Faire signer</Link> : vous y choisissez qui signe, déposez ou reprenez les
+        documents et placez les éléments.
+      </p>
+
       <section className="card form" aria-label="Ajouter des documents">
-        <div className="form-row">
-          <label>
-            Titre <span className="muted small">(facultatif — repris du nom du fichier)</span>
-            <input value={title} onChange={(e) => setTitle(e.target.value)} />
-          </label>
-          <label>
-            Version
-            <input value={versionLabel} onChange={(e) => setVersionLabel(e.target.value)} required />
-          </label>
-        </div>
-        <div className="form-row">
-          <label>
-            Catégorie
-            <input value={category} onChange={(e) => setCategory(e.target.value)} maxLength={100} />
-          </label>
-          <label>
-            Description
-            <input
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              maxLength={2000}
-            />
-          </label>
-        </div>
         <UploadDropzone onFiles={stage} disabled={uploading} hint="PDF, plusieurs à la fois" />
+        <details className="upload-options">
+          <summary>
+            Options <span className="muted small">— titre, version, catégorie (facultatif)</span>
+          </summary>
+          <div className="stack" style={{ marginTop: 10 }}>
+            <div className="form-row">
+              <label>
+                Titre <span className="muted small">(repris du nom du fichier si vide)</span>
+                <input value={title} onChange={(e) => setTitle(e.target.value)} />
+              </label>
+              <label>
+                Version
+                <input value={versionLabel} onChange={(e) => setVersionLabel(e.target.value)} required />
+              </label>
+            </div>
+            <div className="form-row">
+              <label>
+                Catégorie
+                <input value={category} onChange={(e) => setCategory(e.target.value)} maxLength={100} />
+              </label>
+              <label>
+                Description
+                <input
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  maxLength={2000}
+                />
+              </label>
+            </div>
+          </div>
+        </details>
         {pending.length > 0 && (
           <div className="stack" data-testid="pending-files">
             <ul className="upload-results">
@@ -188,7 +201,7 @@ export default function OperatorDocumentsPage() {
                 </span>
                 <strong>{r.name}</strong>
                 <span className="muted small">
-                  {r.state === "done" && "ajouté en brouillon — à préparer puis publier"}
+                  {r.state === "done" && "ajouté à la bibliothèque"}
                   {r.state === "uploading" && "envoi…"}
                   {r.state === "waiting" && "en attente"}
                   {r.state === "error" && r.message}
@@ -254,13 +267,6 @@ export default function OperatorDocumentsPage() {
                     <td>{Math.round(v.file_size / 1024)} Ko</td>
                     <td>
                       <div className="row-actions">
-                        <Link
-                          className="button button--secondary button--sm"
-                          to={`/documents/versions/${v.id}/prepare`}
-                        >
-                          <PencilRuler size={14} aria-hidden="true" />{" "}
-                          {v.status === "DRAFT" ? "Préparer" : "Éléments"}
-                        </Link>
                         {v.status === "DRAFT" && (
                           <button className="button button--secondary button--sm" onClick={() => publish(v.id)}>
                             <CheckCircle2 size={14} aria-hidden="true" /> Publier

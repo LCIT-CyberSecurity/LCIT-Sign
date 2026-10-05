@@ -208,16 +208,12 @@ async def create_document_version(
     return _version_payload(version)
 
 
-@router.post("/versions/{version_id}/publish")
-def publish_version(
-    request: Request,
-    version_id: uuid.UUID,
-    user: User = Depends(_manage),
-    db: DbSession = Depends(get_db),
-) -> dict[str, Any]:
-    version = db.get(DocumentVersion, version_id)
-    if version is None:
-        raise HTTPException(404, "Document version not found")
+def publish_draft(
+    db: DbSession, storage: StorageService, user: User, version: DocumentVersion
+) -> None:
+    """Freeze a draft version (file and prepared elements) as the published one.
+    Used by the Publish button and by a campaign launch, which publishes the
+    drafts it was prepared with. Does not commit. Raises HTTPException."""
     if version.status != DocumentVersionStatus.DRAFT:
         raise HTTPException(409, "Only a draft version can be published")
 
@@ -226,7 +222,7 @@ def publish_version(
             select(DocumentField.kind).where(DocumentField.document_version_id == version.id)
         ).scalars()
     )
-    if FieldKind.LOGO in placed and branding.read_logo(request.app.state.storage) is None:
+    if FieldKind.LOGO in placed and branding.read_logo(storage) is None:
         raise HTTPException(
             409,
             "Ce document comporte un logo d'entreprise, mais aucun logo n'est configuré "
@@ -249,6 +245,19 @@ def publish_version(
         db, action="DOCUMENT_PUBLISHED", actor_id=user.id,
         target_type="document_version", target_id=str(version.id), document_id=version.document_id,
     )
+
+
+@router.post("/versions/{version_id}/publish")
+def publish_version(
+    request: Request,
+    version_id: uuid.UUID,
+    user: User = Depends(_manage),
+    db: DbSession = Depends(get_db),
+) -> dict[str, Any]:
+    version = db.get(DocumentVersion, version_id)
+    if version is None:
+        raise HTTPException(404, "Document version not found")
+    publish_draft(db, request.app.state.storage, user, version)
     db.commit()
     return _version_payload(version)
 

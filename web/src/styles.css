@@ -1291,3 +1291,10 @@ a.attention:hover strong { color: var(--primary); }
 .role-setup li { display: grid; grid-template-columns: minmax(140px, 220px) 1fr; gap: 12px; align-items: center; }
 @media (max-width: 640px) { .role-setup li { grid-template-columns: 1fr; } }
 .badge--waiting { background: var(--surface-muted, #eef0f4); color: var(--text-secondary); }
+.upload-options { border: 1px dashed var(--border); border-radius: var(--radius-sm); padding: 8px 12px; }
+.upload-options summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+.steps-list { margin: 0; padding-left: 20px; display: grid; gap: 6px; font-size: 14px; }
+.signer-rows { list-style: none; margin: 0 0 10px; padding: 0; display: grid; gap: 8px; }
+.signer-rows li { display: grid; grid-template-columns: 28px 1fr auto auto auto; gap: 8px; align-items: center; }
+.signer-rank { width: 24px; height: 24px; border-radius: 50%; display: inline-grid; place-items: center; background: var(--accent-soft, #ece8f6); color: var(--accent, #65459b); font-weight: 700; font-size: 13px; }
+@media (max-width: 640px) { .signer-rows li { grid-template-columns: 28px 1fr; } }

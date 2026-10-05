@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { ArrowLeft, Rocket, Bell, StopCircle, FileBarChart, Download } from "lucide-react";
 import { api, ApiError } from "../api/client";
-import ConfirmButton from "../components/ConfirmButton";
+import CampaignDocuments from "../components/CampaignDocuments";
+import CampaignSigners from "../components/CampaignSigners";
 import PolicyFields, {
   EMPTY_POLICY,
   buildPolicyPayload,
@@ -33,7 +34,6 @@ export default function OperatorCampaignDetailPage() {
   const [users, setUsers] = useState<TargetUserOption[] | null>(null);
   const [reports, setReports] = useState<ReportSummary[] | null>(null);
 
-  const [selectedVersionId, setSelectedVersionId] = useState("");
   const [allUsers, setAllUsers] = useState(false);
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
@@ -42,8 +42,6 @@ export default function OperatorCampaignDetailPage() {
   const [groupQuery, setGroupQuery] = useState("");
   const [recipientCount, setRecipientCount] = useState<number | null>(null);
   const [policy, setPolicy] = useState<PolicyForm>(EMPTY_POLICY);
-  // Who is each "Signataire N": a named person, or the list of people chosen below.
-  const [roleSetup, setRoleSetup] = useState<Record<number, { mode: "FIXED" | "EACH"; userId: string }>>({});
   const [filters, setFilters] = useState({
     status: "",
     document_version_id: "",
@@ -108,49 +106,17 @@ export default function OperatorCampaignDetailPage() {
 
   if (!campaign) return <p className="muted">Chargement…</p>;
 
-  const versionLabels = new Map(
-    (documents ?? []).flatMap((doc) =>
-      doc.versions.map((v) => [v.id, `${doc.title} — v${v.version_label}`] as const),
-    ),
-  );
-
-  // Alphabetical, so a long list stays findable. Versions already in the campaign
-  // are not offered twice; drafts are listed apart, with the reason they cannot be
-  // added yet, instead of silently missing.
-  const byLabel = (a: { label: string }, b: { label: string }) =>
-    a.label.localeCompare(b.label, "fr", { sensitivity: "base", numeric: true });
-  const versionsWith = (status: string) =>
-    (documents ?? [])
-      .flatMap((doc) =>
-        doc.versions
-          .filter((v) => v.status === status && !campaign.document_version_ids.includes(v.id))
-          .map((v) => ({ id: v.id, label: `${doc.title} — v${v.version_label}` })),
-      )
-      .sort(byLabel);
-  const publishedVersions = versionsWith("PUBLISHED");
-  const draftVersions = versionsWith("DRAFT");
-
-  const publishedAndUsed = (documents ?? []).flatMap((doc) =>
-    doc.versions
-      .filter((v) => campaign.document_version_ids.includes(v.id))
-      .map((v) => ({ id: v.id, label: `${doc.title} — v${v.version_label}` })),
-  );
-
-  const addDocument = async () => {
-    if (!selectedVersionId) return;
-    await api.post(`/campaigns/${id}/documents`, { document_version_id: selectedVersionId });
-    setSelectedVersionId("");
-    load();
-  };
-
   const toggle = (list: string[], value: string, setList: (v: string[]) => void) => {
     setList(list.includes(value) ? list.filter((v) => v !== value) : [...list, value]);
   };
 
-  const several = (campaign?.roles_required ?? 1) > 1;
-  const roleFor = (role: number, last: boolean) =>
-    roleSetup[role] ?? { mode: last ? ("EACH" as const) : ("FIXED" as const), userId: "" };
-  const hasList = !several || (campaign?.roles ?? []).some((r) => roleFor(r.role, r.role === campaign!.roles_required).mode === "EACH");
+  const publishedAndUsed = campaign.documents.map((d) => ({
+    id: d.version_id,
+    label: `${d.title} — v${d.version_label}`,
+  }));
+
+  // Nobody chosen yet means the usual case: everyone targeted signs their own copy.
+  const hasList = campaign.roles.length === 0 || campaign.roles.some((r) => r.mode === "EACH");
 
   const launch = async () => {
     const problem = policyProblem(policy);
@@ -158,23 +124,11 @@ export default function OperatorCampaignDetailPage() {
       setError(problem);
       return;
     }
-    const roles = several
-      ? (campaign?.roles ?? []).map((r) => {
-          const setup = roleFor(r.role, r.role === campaign!.roles_required);
-          return { role: r.role, label: r.label, mode: setup.mode, user_id: setup.mode === "FIXED" ? setup.userId || null : null };
-        })
-      : [];
-    const missing = roles.find((r) => r.mode === "FIXED" && !r.user_id);
-    if (missing) {
-      setError(`Choisissez une personne pour le signataire ${missing.role}${missing.label ? ` (${missing.label})` : ""}.`);
-      return;
-    }
     setBusy(true);
     setError(null);
     try {
       await api.post(`/campaigns/${id}/launch`, {
         ...buildPolicyPayload(policy),
-        roles,
         all_users: allUsers,
         group_ids: allUsers ? [] : selectedGroupIds,
         user_ids: allUsers ? [] : selectedUserIds,
@@ -226,105 +180,11 @@ export default function OperatorCampaignDetailPage() {
 
       {campaign.status === "DRAFT" && (
         <>
-          <div className="card">
-            <div className="card-title">Documents</div>
-            <ul className="plain-list">
-              {campaign.document_version_ids.length === 0 && (
-                <li className="muted">Aucun document pour le moment.</li>
-              )}
-              {campaign.document_version_ids.map((vid) => (
-                <li key={vid} className="report-row">
-                  {versionLabels.get(vid) ?? vid}
-                  <ConfirmButton
-                    confirmLabel="Retirer de la campagne"
-                    onConfirm={async () => {
-                      await api.del(`/campaigns/${id}/documents/${vid}`);
-                      load();
-                    }}
-                  >
-                    Retirer
-                  </ConfirmButton>
-                </li>
-              ))}
-            </ul>
-            <div className="form-row">
-              <select value={selectedVersionId} onChange={(e) => setSelectedVersionId(e.target.value)}>
-                <option value="">Sélectionner un document publié…</option>
-                {publishedVersions.map((v) => (
-                  <option key={v.id} value={v.id}>
-                    {v.label}
-                  </option>
-                ))}
-                {draftVersions.length > 0 && (
-                  <optgroup label="Brouillons — à publier avant de pouvoir être ajoutés">
-                    {draftVersions.map((v) => (
-                      <option key={v.id} value={v.id} disabled>
-                        {v.label}
-                      </option>
-                    ))}
-                  </optgroup>
-                )}
-              </select>
-              <button className="button button--secondary" onClick={addDocument} disabled={!selectedVersionId}>
-                Ajouter
-              </button>
-            </div>
-            {draftVersions.length > 0 && (
-              <p className="muted small" data-testid="draft-hint">
-                {draftVersions.length} document(s) en brouillon ne sont pas proposés : publiez-les depuis la page{" "}
-                <Link to="/documents">Documents</Link> pour pouvoir les ajouter.
-              </p>
-            )}
-          </div>
-
-          {several && campaign && (
-            <div className="card" data-testid="roles-card">
-              <div className="card-title">Qui signe ?</div>
-              <p className="muted small">
-                Ces documents prévoient {campaign.roles_required} signataires, dans cet ordre. Choisissez qui
-                tient chaque rôle : une personne précise (elle signe une fois, son tampon figure sur toutes
-                les copies) ou, pour le dernier, la liste de personnes ci-dessous (chacune reçoit sa copie).
-              </p>
-              <ul className="role-setup">
-                {campaign.roles.map((r) => {
-                  const last = r.role === campaign.roles_required;
-                  const setup = roleFor(r.role, last);
-                  const name = r.label || `Signataire ${r.role}`;
-                  return (
-                    <li key={r.role}>
-                      <strong>
-                        {r.role}. {name}
-                      </strong>
-                      <select
-                        aria-label={`Qui est ${name} ?`}
-                        value={setup.mode === "EACH" ? "EACH" : setup.userId}
-                        onChange={(e) =>
-                          setRoleSetup({
-                            ...roleSetup,
-                            [r.role]:
-                              e.target.value === "EACH"
-                                ? { mode: "EACH", userId: "" }
-                                : { mode: "FIXED", userId: e.target.value },
-                          })
-                        }
-                      >
-                        <option value="">— Choisir une personne —</option>
-                        {last && <option value="EACH">Une liste de personnes (chacune signe sa copie)</option>}
-                        {users?.map((u) => (
-                          <option key={u.id} value={u.id}>
-                            {u.display_name} — {u.email}
-                          </option>
-                        ))}
-                      </select>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          )}
+          <CampaignSigners campaign={campaign} users={users} onSaved={load} />
+          <CampaignDocuments campaign={campaign} library={documents} onChanged={load} />
 
           <div className="card">
-            <div className="card-title">{several ? "Liste de personnes" : "Ciblage"}</div>
+            <div className="card-title">3. {hasList ? "Pour quelles personnes ?" : "Récapitulatif"}</div>
             {!hasList && (
               <p className="muted small">
                 Chaque signataire est une personne précise : personne d&apos;autre n&apos;est sollicité.

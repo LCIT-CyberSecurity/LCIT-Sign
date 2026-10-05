@@ -61,7 +61,7 @@ export default function OperatorCampaignsPage() {
       <div className="page-header">
         <div>
           <h1 className="page-title" style={{ margin: 0 }}>
-            <Megaphone size={22} aria-hidden="true" /> Campagnes
+            <Megaphone size={22} aria-hidden="true" /> Faire signer
           </h1>
           <p className="page-subtitle" style={{ margin: "6px 0 0" }}>
             Diffusez des documents à signer et suivez l&apos;avancement de chaque campagne.

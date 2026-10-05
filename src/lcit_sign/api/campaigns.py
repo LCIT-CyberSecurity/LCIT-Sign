@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session as DbSession
 
+from lcit_sign.api.documents import publish_draft
 from lcit_sign.config import Settings
 from lcit_sign.deps import get_current_user, get_db, require_roles
 from lcit_sign.models.campaign import (
@@ -22,7 +23,12 @@ from lcit_sign.models.campaign import (
     SignatureAssignment,
 )
 from lcit_sign.models.directory import Group, GroupMembership
-from lcit_sign.models.document import Document, DocumentVersion, DocumentVersionStatus
+from lcit_sign.models.document import (
+    Document,
+    DocumentField,
+    DocumentVersion,
+    DocumentVersionStatus,
+)
 from lcit_sign.models.mail import Notification, NotificationType
 from lcit_sign.models.report import Report
 from lcit_sign.models.signature import Signature
@@ -32,14 +38,16 @@ from lcit_sign.services.campaign_launch import create_assignments
 from lcit_sign.services.campaign_roles import (
     RoleError,
     RoleSpec,
+    check_signers,
     load_roles,
+    replace_roles,
     role_label,
     roles_required,
-    save_roles,
     validate_roles,
     waiting_on,
 )
 from lcit_sign.services.notification_queue import enqueue_notification
+from lcit_sign.services.storage import StorageService
 
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])
 
@@ -149,6 +157,12 @@ class RoleIn(BaseModel):
     label: str = Field(default="", max_length=100)
 
 
+class SignersIn(BaseModel):
+    """The people who sign, in order: a named user, or "every recipient" (last)."""
+
+    signers: list[RoleIn] = Field(default=[], max_length=10)
+
+
 class LaunchRequest(TargetRequest):
     # Who is "Signataire N": a named person, or the list of recipients below.
     roles: list[RoleIn] = []
@@ -210,9 +224,32 @@ def _target_mode_label(
     return CampaignTargetMode.SPECIFIC_USERS.value
 
 
+def _documents_payload(db: DbSession, campaign: Campaign) -> list[dict[str, Any]]:
+    """What the campaign will have people sign, with how far each is prepared."""
+    result = []
+    for link in campaign.documents:
+        version = db.get(DocumentVersion, link.document_version_id)
+        document = db.get(Document, version.document_id) if version else None
+        if version is None or document is None:
+            continue
+        placed = db.execute(
+            select(func.count()).where(DocumentField.document_version_id == version.id)
+        ).scalar_one()
+        result.append(
+            {
+                "version_id": str(version.id),
+                "title": document.title,
+                "version_label": version.version_label,
+                "status": version.status.value,
+                "elements": placed,
+            }
+        )
+    return sorted(result, key=lambda d: d["title"].lower())
+
+
 def _roles_payload(db: DbSession, campaign: Campaign) -> list[dict[str, Any]]:
-    """The signer roles of a campaign. Launched: who each one is. Draft: what the
-    documents ask for, named as the editor named them (nobody chosen yet)."""
+    """Who signs, in order: a named person, or every recipient. Chosen on the draft
+    (the editor offers exactly these people) and frozen at launch."""
     configured = load_roles(db, campaign.id)
     names = {
         u.id: u.display_name
@@ -231,17 +268,7 @@ def _roles_payload(db: DbSession, campaign: Campaign) -> list[dict[str, Any]]:
             }
             for r in configured
         ]
-    labels: dict[int, str] = {}
-    for d in campaign.documents:
-        version = db.get(DocumentVersion, d.document_version_id)
-        for key, value in ((version.role_labels if version else None) or {}).items():
-            labels.setdefault(int(key), value)
-    needed = roles_required(db, campaign)
-    return [
-        {"role": n, "label": labels.get(n, ""), "mode": None, "user_id": None,
-         "user_display_name": None}
-        for n in range(1, needed + 1)
-    ]
+    return []
 
 
 def _campaign_payload(campaign: Campaign, db: DbSession) -> dict[str, Any]:
@@ -268,6 +295,7 @@ def _campaign_payload(campaign: Campaign, db: DbSession) -> dict[str, Any]:
             str(campaign.renewal_of_campaign_id) if campaign.renewal_of_campaign_id else None
         ),
         "document_version_ids": [str(d.document_version_id) for d in campaign.documents],
+        "documents": _documents_payload(db, campaign),
         "roles_required": roles_required(db, campaign),
         "roles": _roles_payload(db, campaign),
         "assignment_counts": {
@@ -309,8 +337,15 @@ def add_campaign_document(
 ) -> dict[str, Any]:
     campaign = _get_draft_campaign(db, campaign_id)
     version = db.get(DocumentVersion, body.document_version_id)
-    if version is None or version.status != DocumentVersionStatus.PUBLISHED:
-        raise HTTPException(400, "Only a published document version can be added to a campaign")
+    # A draft can be added and prepared from the campaign; it is published, frozen,
+    # when the campaign is launched. A superseded or archived one is not offered.
+    if version is None or version.status not in (
+        DocumentVersionStatus.PUBLISHED,
+        DocumentVersionStatus.DRAFT,
+    ):
+        raise HTTPException(
+            400, "Only a draft or published document version can be added to a campaign"
+        )
 
     exists = db.get(CampaignDocument, (campaign.id, version.id))
     if exists is None:
@@ -347,6 +382,32 @@ def remove_campaign_document(
     return _campaign_payload(campaign, db)
 
 
+@router.put("/{campaign_id}/signers")
+def put_signers(
+    campaign_id: uuid.UUID,
+    body: SignersIn,
+    user: User = Depends(_manage),
+    db: DbSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Who signs, in which order — decided before the documents are prepared, so
+    the editor can offer these very people for the elements."""
+    campaign = _get_draft_campaign(db, campaign_id)
+    specs = [RoleSpec(s.role, s.mode, s.user_id, s.label) for s in body.signers]
+    try:
+        ordered = check_signers(db, specs) if specs else []
+    except RoleError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    replace_roles(db, campaign, ordered)
+    append_audit_event(
+        db, action="CAMPAIGN_UPDATED", actor_id=user.id,
+        target_type="campaign", target_id=str(campaign.id), campaign_id=campaign.id,
+        metadata={"change": "signers", "count": len(ordered)},
+    )
+    db.commit()
+    db.refresh(campaign)
+    return _campaign_payload(campaign, db)
+
+
 @router.post("/{campaign_id}/targets/preview")
 def preview_targets(
     campaign_id: uuid.UUID,
@@ -373,12 +434,13 @@ def launch_campaign(
     if not campaign.documents:
         raise HTTPException(400, "Campaign has no documents to sign")
 
+    # The signers chosen on the draft; a launch request may still give them itself.
+    given = [RoleSpec(r.role, r.mode, r.user_id, r.label) for r in body.roles] or [
+        RoleSpec(r.role, r.mode, r.user_id, r.label)  # type: ignore[arg-type]
+        for r in load_roles(db, campaign.id)
+    ]
     try:
-        role_specs = validate_roles(
-            db,
-            campaign,
-            [RoleSpec(r.role, r.mode, r.user_id, r.label) for r in body.roles],
-        )
+        role_specs = validate_roles(db, campaign, given)
     except RoleError as exc:
         raise HTTPException(422, str(exc)) from exc
     has_list = any(spec.mode == "EACH" for spec in role_specs)
@@ -402,7 +464,18 @@ def launch_campaign(
             db.add(CampaignTargetUser(campaign_id=campaign.id, user_id=target_user_id))
 
     settings: Settings = request.app.state.settings
-    save_roles(db, campaign, role_specs)
+    # The drafts prepared for this campaign are published (frozen) now.
+    storage: StorageService = request.app.state.storage
+    for campaign_document in campaign.documents:
+        pending_version = db.get(DocumentVersion, campaign_document.document_version_id)
+        if pending_version is None or pending_version.status not in (
+            DocumentVersionStatus.DRAFT,
+            DocumentVersionStatus.PUBLISHED,
+        ):
+            raise HTTPException(409, "Un document de la campagne n'est plus utilisable")
+        if pending_version.status == DocumentVersionStatus.DRAFT:
+            publish_draft(db, storage, user, pending_version)
+    replace_roles(db, campaign, role_specs)
     create_assignments(
         db, campaign, population, deadline=body.deadline,
         public_base_url=settings.public_base_url, roles=role_specs,
