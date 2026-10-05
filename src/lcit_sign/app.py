@@ -12,6 +12,7 @@ from lcit_sign.api.admin import router as admin_router
 from lcit_sign.api.auth import router as auth_router
 from lcit_sign.api.documents import router as documents_router
 from lcit_sign.api.health import router as health_router
+from lcit_sign.api.signatures import router as signatures_router
 from lcit_sign.config import Settings, get_settings
 from lcit_sign.database import make_engine, make_session_factory
 from lcit_sign.logging_utils import configure_logging
@@ -77,5 +78,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(auth_router, prefix="/api")
     app.include_router(admin_router, prefix="/api")
     app.include_router(documents_router, prefix="/api")
+    app.include_router(signatures_router, prefix="/api")
 
     return app

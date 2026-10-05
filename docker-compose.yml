@@ -45,6 +45,9 @@ services:
       # Override with a real provider's values for anything but local dev.
       LCIT_SIGN_OIDC_ISSUER: ${LCIT_SIGN_OIDC_ISSUER:-http://mock-oidc:8080}
       LCIT_SIGN_OIDC_CLIENT_ID: ${LCIT_SIGN_OIDC_CLIENT_ID:-lcit-sign-dev}
+      # Signing keys are derived from this (never persisted) — replace for
+      # anything but local dev, and never commit a real value.
+      LCIT_SIGN_MASTER_KEY: ${LCIT_SIGN_MASTER_KEY:-dev-only-insecure-master-key-change-me}
       LCIT_SIGN_OIDC_CLIENT_SECRET: ${LCIT_SIGN_OIDC_CLIENT_SECRET:-dev-secret-not-for-prod}
       LCIT_SIGN_BOOTSTRAP_ADMIN: ${LCIT_SIGN_BOOTSTRAP_ADMIN:-alice.martin@lcit-test.local}
     volumes:

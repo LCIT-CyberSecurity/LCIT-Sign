@@ -3,15 +3,18 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
 
+from lcit_sign.config import Settings
 from lcit_sign.deps import get_db, require_roles, user_roles
 from lcit_sign.models.audit import AuditEvent
+from lcit_sign.models.signing_key import SigningKey
 from lcit_sign.models.user import Role, User, UserRole
 from lcit_sign.services.audit import append_audit_event, verify_audit_chain
+from lcit_sign.services.signing_keys import get_or_create_active_key, rotate_signing_key
 
 router = APIRouter(
     prefix="/admin", tags=["admin"], dependencies=[Depends(require_roles(Role.ADMIN))]
@@ -119,3 +122,36 @@ def list_audit_events(
 def check_audit_integrity(db: DbSession = Depends(get_db)) -> dict[str, Any]:
     is_valid, first_bad_sequence = verify_audit_chain(db)
     return {"valid": is_valid, "first_invalid_sequence": first_bad_sequence}
+
+
+def _signing_key_payload(key: SigningKey) -> dict[str, Any]:
+    return {
+        "key_id": key.key_id,
+        "public_key_hex": key.public_key_hex,
+        "status": key.status.value,
+        "created_at": key.created_at.isoformat(),
+        "activated_at": key.activated_at.isoformat() if key.activated_at else None,
+        "retired_at": key.retired_at.isoformat() if key.retired_at else None,
+    }
+
+
+@router.get("/signing-keys")
+def list_signing_keys(db: DbSession = Depends(get_db)) -> list[dict[str, Any]]:
+    keys = db.execute(select(SigningKey).order_by(SigningKey.created_at.desc())).scalars()
+    return [_signing_key_payload(k) for k in keys]
+
+
+@router.post("/signing-keys/rotate", status_code=201)
+def rotate_signing_keys(
+    request: Request,
+    user: User = Depends(require_roles(Role.ADMIN)),
+    db: DbSession = Depends(get_db),
+) -> dict[str, Any]:
+    settings: Settings = request.app.state.settings
+    if not settings.master_key:
+        raise HTTPException(503, "LCIT_SIGN_MASTER_KEY is not configured")
+    # Ensures a key exists at all before "rotating" it on a brand-new install.
+    get_or_create_active_key(db, settings.master_key)
+    new_key = rotate_signing_key(db, settings.master_key, actor_id=user.id)
+    db.commit()
+    return _signing_key_payload(new_key)

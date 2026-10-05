@@ -46,6 +46,13 @@ class Settings(BaseSettings):
     storage_root: str = "/var/lib/lcit-sign"
     max_upload_size_mb: int = 25
 
+    # Runtime-only secret (spec §64-65, §101): every signing key's Ed25519
+    # seed is derived from this via HKDF and a key_id, so the private key
+    # material itself is never persisted anywhere, in Postgres or on disk.
+    master_key: str = ""  # noqa: S105
+    consent_text: str = "J'atteste avoir pris connaissance de ce document."
+    consent_version: str = "1.0"
+
 
 @lru_cache
 def get_settings() -> Settings:
