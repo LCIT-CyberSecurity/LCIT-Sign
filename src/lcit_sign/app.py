@@ -6,9 +6,11 @@ import logging
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from lcit_sign import __version__
 from lcit_sign.api.admin import router as admin_router
@@ -26,6 +28,7 @@ from lcit_sign.database import make_engine, make_session_factory
 from lcit_sign.logging_utils import configure_logging
 from lcit_sign.request_context import set_request_id
 from lcit_sign.services.notification_queue import process_pending_notifications
+from lcit_sign.services.rate_limit import SlidingWindowLimiter
 from lcit_sign.services.storage import StorageService
 
 logger = logging.getLogger(__name__)
@@ -97,9 +100,87 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ) -> Response:
         request_id = request.headers.get("X-Request-Id") or str(uuid.uuid4())
         set_request_id(request_id)
+        request.state.request_id = request_id
         response = await call_next(request)
         response.headers["X-Request-Id"] = request_id
         return response
+
+    limiter = SlidingWindowLimiter()
+    # (path prefix, limit, window seconds): tighter on what is expensive or
+    # abusable (login, signing, outbound connectivity tests), loose overall.
+    limits = [
+        ("/api/auth/login", 20, 60.0),
+        ("/api/auth/callback", 20, 60.0),
+        ("/api/admin/mail-connector/", 10, 60.0),
+        ("/api/admin/directory/sync", 10, 60.0),
+        ("/api/documents/versions/", 60, 60.0),
+        ("/api/", 600, 60.0),
+    ]
+
+    def client_ip(request: Request) -> str:
+        # nginx appends the real peer as the LAST X-Forwarded-For entry;
+        # earlier entries are client-supplied and not trusted.
+        forwarded = request.headers.get("x-forwarded-for", "")
+        if forwarded:
+            return forwarded.split(",")[-1].strip()
+        return request.client.host if request.client else "unknown"
+
+    @app.middleware("http")
+    async def rate_limit(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        if settings.rate_limit_enabled and request.url.path.startswith("/api/"):
+            ip = client_ip(request)
+            for prefix, limit, window in limits:
+                if request.url.path.startswith(prefix) and not limiter.allow(
+                    f"{prefix}|{ip}", limit, window
+                ):
+                    return JSONResponse(
+                        {"detail": "Too many requests"},
+                        status_code=429,
+                        headers={"Retry-After": str(int(window))},
+                    )
+        return await call_next(request)
+
+    def allowed_origin(request: Request) -> bool:
+        origin = request.headers.get("origin")
+        if origin is None:
+            # Browsers always send Origin on cross-site unsafe requests;
+            # a request without one is not a cross-site browser request
+            # (and Sec-Fetch-Site, when present, must not say otherwise).
+            return request.headers.get("sec-fetch-site", "same-origin") in (
+                "same-origin",
+                "none",
+            )
+        if origin in settings.cors_allowed_origins:
+            return True
+        netloc = urlsplit(origin).netloc
+        public_netloc = urlsplit(settings.public_base_url).netloc
+        return netloc in (request.headers.get("host", ""), public_netloc)
+
+    @app.middleware("http")
+    async def csrf_origin_check(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        # SameSite cookies are the first line; this rejects cross-origin
+        # state-changing requests even if a cookie attribute is lost.
+        if (
+            request.method in ("POST", "PUT", "PATCH", "DELETE")
+            and request.url.path.startswith("/api/")
+            and not allowed_origin(request)
+        ):
+            return JSONResponse({"detail": "Cross-origin request rejected"}, status_code=403)
+        return await call_next(request)
+
+    @app.exception_handler(Exception)
+    async def unhandled_exception(request: Request, exc: Exception) -> JSONResponse:
+        # Full trace goes to the server log (with the request id); the
+        # client only ever gets an opaque message (spec §82).
+        logger.exception("unhandled error on %s %s", request.method, request.url.path)
+        request_id = getattr(request.state, "request_id", None)
+        return JSONResponse(
+            {"detail": "Internal server error", "request_id": request_id}, status_code=500
+        )
 
     @app.middleware("http")
     async def add_security_headers(
@@ -108,6 +189,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         response = await call_next(request)
         for name, value in SECURITY_HEADERS.items():
             response.headers[name] = value
+        if settings.cookie_secure:
+            response.headers["Strict-Transport-Security"] = (
+                "max-age=31536000; includeSubDomains"
+            )
         return response
 
     app.include_router(health_router, prefix="/api")

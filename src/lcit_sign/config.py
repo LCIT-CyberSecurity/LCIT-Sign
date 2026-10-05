@@ -61,6 +61,7 @@ class Settings(BaseSettings):
     # Base.metadata.create_all() has run.
     notification_worker_enabled: bool = True
     notification_worker_interval_seconds: int = 30
+    rate_limit_enabled: bool = True
 
     # Docker/Kubernetes secrets: LCIT_SIGN_<NAME>_FILE points at a file whose
     # content is the secret, so it never has to sit in an environment

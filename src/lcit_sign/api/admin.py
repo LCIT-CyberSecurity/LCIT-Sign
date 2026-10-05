@@ -23,6 +23,7 @@ from lcit_sign.services.mail import (
     send_email,
 )
 from lcit_sign.services.signing_keys import get_or_create_active_key, rotate_signing_key
+from lcit_sign.services.ssrf import OutboundTargetError, validate_outbound_target
 
 router = APIRouter(
     prefix="/admin", tags=["admin"], dependencies=[Depends(require_roles(Role.ADMIN))]
@@ -165,6 +166,13 @@ def rotate_signing_keys(
     return _signing_key_payload(new_key)
 
 
+def _check_mail_target(host: str, port: int) -> None:
+    try:
+        validate_outbound_target(host, port)
+    except OutboundTargetError as exc:
+        raise HTTPException(422, f"SMTP target rejected: {exc}") from exc
+
+
 class MailConnectorRequest(BaseModel):
     host: str
     port: int = 587
@@ -205,6 +213,7 @@ def put_mail_connector(
     user: User = Depends(require_roles(Role.ADMIN)),
     db: DbSession = Depends(get_db),
 ) -> dict[str, Any]:
+    _check_mail_target(body.host, body.port)
     settings: Settings = request.app.state.settings
     connector = db.get(MailConnector, 1)
     if connector is None:
@@ -243,6 +252,7 @@ def test_mail_connection(
     connector = db.get(MailConnector, 1)
     if connector is None:
         raise HTTPException(404, "Mail connector is not configured")
+    _check_mail_target(connector.host, connector.port)
 
     password = None
     if connector.encrypted_password and settings.master_key:
@@ -273,6 +283,7 @@ def send_test_email(
     connector = db.get(MailConnector, 1)
     if connector is None:
         raise HTTPException(404, "Mail connector is not configured")
+    _check_mail_target(connector.host, connector.port)
 
     password = None
     if connector.encrypted_password and settings.master_key:
