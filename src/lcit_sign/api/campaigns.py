@@ -33,6 +33,17 @@ router = APIRouter(prefix="/campaigns", tags=["campaigns"])
 _manage = require_roles(Role.OPERATOR, Role.ADMIN)
 
 
+@router.get("/_meta/users")
+def list_targetable_users(
+    user: User = Depends(_manage), db: DbSession = Depends(get_db)
+) -> list[dict[str, Any]]:
+    """A minimal, OPERATOR-reachable user picker for campaign targeting
+    (spec §33) — deliberately thinner than /admin/users (no roles/active
+    detail), which stays ADMIN-only for actual user administration."""
+    rows = db.execute(select(User).where(User.active.is_(True)).order_by(User.email)).scalars()
+    return [{"id": str(u.id), "email": u.email, "display_name": u.display_name} for u in rows]
+
+
 class CreateCampaignRequest(BaseModel):
     name: str
     description: str = ""

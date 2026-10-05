@@ -16,6 +16,10 @@ from lcit_sign.services.directory_sync import SOURCE, sync_local_directory
 router = APIRouter(prefix="/admin/directory", tags=["directory"])
 
 _admin = require_roles(Role.ADMIN)
+# Reading the roster is also an OPERATOR need (picking groups to target a
+# campaign at, spec §33); only mutating the directory (sync) stays
+# ADMIN-only, matching spec §12-13's split of responsibilities.
+_read = require_roles(Role.OPERATOR, Role.ADMIN)
 
 
 def _run_payload(run: DirectorySyncRun) -> dict[str, Any]:
@@ -57,7 +61,7 @@ def list_sync_runs(
 
 @router.get("/groups")
 def list_groups(
-    db: DbSession = Depends(get_db), user: User = Depends(_admin)
+    db: DbSession = Depends(get_db), user: User = Depends(_read)
 ) -> list[dict[str, Any]]:
     counts = dict(
         db.execute(
@@ -80,7 +84,7 @@ def list_groups(
 
 @router.get("/groups/{group_id}/members")
 def list_group_members(
-    group_id: uuid.UUID, db: DbSession = Depends(get_db), user: User = Depends(_admin)
+    group_id: uuid.UUID, db: DbSession = Depends(get_db), user: User = Depends(_read)
 ) -> list[dict[str, Any]]:
     rows = db.execute(
         select(User)

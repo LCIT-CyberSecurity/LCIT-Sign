@@ -1,47 +1,113 @@
-import { useEffect, useState } from "react";
-import { FileSignature, ShieldCheck } from "lucide-react";
+import type { ReactNode } from "react";
+import { Routes, Route, Navigate } from "react-router-dom";
+import { useAuth } from "./auth/AuthContext";
+import Shell from "./components/Shell";
+import LoginPage from "./pages/LoginPage";
+import SignerAssignmentsPage from "./pages/SignerAssignmentsPage";
+import SignerAssignmentDetailPage from "./pages/SignerAssignmentDetailPage";
+import OperatorDocumentsPage from "./pages/OperatorDocumentsPage";
+import OperatorCampaignsPage from "./pages/OperatorCampaignsPage";
+import OperatorCampaignDetailPage from "./pages/OperatorCampaignDetailPage";
+import AdminUsersPage from "./pages/AdminUsersPage";
+import AdminDirectoryPage from "./pages/AdminDirectoryPage";
+import AdminMailPage from "./pages/AdminMailPage";
+import AdminAuditPage from "./pages/AdminAuditPage";
+import AdminSigningKeysPage from "./pages/AdminSigningKeysPage";
 
-type ApiStatus = "checking" | "online" | "offline";
-
-async function checkApiHealth(): Promise<ApiStatus> {
-  try {
-    const response = await fetch("/api/health");
-    return response.ok ? "online" : "offline";
-  } catch {
-    return "offline";
-  }
+function RoleRoute({ allowed, children }: { allowed: boolean; children: ReactNode }) {
+  return allowed ? <>{children}</> : <Navigate to="/" replace />;
 }
 
 export default function App() {
-  const [apiStatus, setApiStatus] = useState<ApiStatus>("checking");
+  const { user, loading, hasRole } = useAuth();
 
-  useEffect(() => {
-    checkApiHealth().then(setApiStatus);
-  }, []);
+  if (loading) {
+    return (
+      <div className="centered-page">
+        <p className="muted">Chargement…</p>
+      </div>
+    );
+  }
+
+  if (!user) return <LoginPage />;
+
+  const isOperator = hasRole("OPERATOR") || hasRole("ADMIN");
+  const isAdmin = hasRole("ADMIN");
 
   return (
-    <div className="app-shell">
-      <header className="app-header">
-        <div className="brand">
-          <FileSignature size={22} aria-hidden="true" />
-          <span>LCIT Sign</span>
-        </div>
-        <div className={`status-pill status-pill--${apiStatus}`}>
-          <ShieldCheck size={14} aria-hidden="true" />
-          {apiStatus === "checking" && "Vérification..."}
-          {apiStatus === "online" && "API connectée"}
-          {apiStatus === "offline" && "API indisponible"}
-        </div>
-      </header>
-      <main className="app-main">
-        <div className="card">
-          <h1>Plateforme de signature interne</h1>
-          <p>
-            L&apos;interface signataire, opérateur et administration sera construite au fil des
-            prochaines phases du projet.
-          </p>
-        </div>
-      </main>
-    </div>
+    <Routes>
+      <Route element={<Shell />}>
+        <Route path="/" element={<SignerAssignmentsPage />} />
+        <Route path="/assignments/:id" element={<SignerAssignmentDetailPage />} />
+
+        <Route
+          path="/documents"
+          element={
+            <RoleRoute allowed={isOperator}>
+              <OperatorDocumentsPage />
+            </RoleRoute>
+          }
+        />
+        <Route
+          path="/campaigns"
+          element={
+            <RoleRoute allowed={isOperator}>
+              <OperatorCampaignsPage />
+            </RoleRoute>
+          }
+        />
+        <Route
+          path="/campaigns/:id"
+          element={
+            <RoleRoute allowed={isOperator}>
+              <OperatorCampaignDetailPage />
+            </RoleRoute>
+          }
+        />
+
+        <Route
+          path="/admin/users"
+          element={
+            <RoleRoute allowed={isAdmin}>
+              <AdminUsersPage />
+            </RoleRoute>
+          }
+        />
+        <Route
+          path="/admin/directory"
+          element={
+            <RoleRoute allowed={isAdmin}>
+              <AdminDirectoryPage />
+            </RoleRoute>
+          }
+        />
+        <Route
+          path="/admin/mail"
+          element={
+            <RoleRoute allowed={isAdmin}>
+              <AdminMailPage />
+            </RoleRoute>
+          }
+        />
+        <Route
+          path="/admin/audit"
+          element={
+            <RoleRoute allowed={isAdmin}>
+              <AdminAuditPage />
+            </RoleRoute>
+          }
+        />
+        <Route
+          path="/admin/signing-keys"
+          element={
+            <RoleRoute allowed={isAdmin}>
+              <AdminSigningKeysPage />
+            </RoleRoute>
+          }
+        />
+
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Route>
+    </Routes>
   );
 }
