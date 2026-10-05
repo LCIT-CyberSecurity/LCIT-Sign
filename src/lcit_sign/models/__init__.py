@@ -12,6 +12,7 @@ from lcit_sign.models.campaign import (
 from lcit_sign.models.directory import DirectorySyncRun, Group, GroupMembership
 from lcit_sign.models.document import Document, DocumentVersion, DocumentVersionStatus
 from lcit_sign.models.mail import MailConnector, Notification, NotificationStatus, NotificationType
+from lcit_sign.models.report import Report
 from lcit_sign.models.session import Session
 from lcit_sign.models.signature import Signature
 from lcit_sign.models.signing_key import SigningKey, SigningKeyStatus
@@ -37,6 +38,7 @@ __all__ = [
     "Notification",
     "NotificationStatus",
     "NotificationType",
+    "Report",
     "Role",
     "Session",
     "Signature",
