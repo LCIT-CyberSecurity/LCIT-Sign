@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any
+from collections.abc import Generator
+from typing import Any, Literal
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
 
@@ -18,10 +20,9 @@ from lcit_sign.services.audit import append_audit_event, verify_audit_chain
 from lcit_sign.services.crypto import decrypt_secret, encrypt_secret
 from lcit_sign.services.mail import (
     MailSendError,
-    credentials_from_connector,
-    diagnose_connection,
-    send_email,
+    build_sender,
 )
+from lcit_sign.services.mail_graph import GraphSender
 from lcit_sign.services.signing_keys import get_or_create_active_key, rotate_signing_key
 from lcit_sign.services.ssrf import OutboundTargetError, validate_outbound_target
 
@@ -173,8 +174,19 @@ def _check_mail_target(host: str, port: int) -> None:
         raise HTTPException(422, f"SMTP target rejected: {exc}") from exc
 
 
+def get_mail_http_client() -> Generator[httpx.Client]:
+    # A dependency so tests can swap in a mock transport.
+    with httpx.Client(timeout=15.0) as client:
+        yield client
+
+
 class MailConnectorRequest(BaseModel):
-    host: str
+    kind: Literal["smtp", "graph"] = "smtp"
+    # Microsoft Graph: the dedicated mailbox is `from_address`; the client
+    # secret goes in `password` and is stored encrypted like an SMTP one.
+    graph_tenant_id: str | None = None
+    graph_client_id: str | None = None
+    host: str = ""
     port: int = 587
     use_tls: bool = False
     use_starttls: bool = True
@@ -184,9 +196,20 @@ class MailConnectorRequest(BaseModel):
     reply_to: str | None = None
     timeout_seconds: int = 10
 
+    @model_validator(mode="after")
+    def _kind_requirements(self) -> MailConnectorRequest:
+        if self.kind == "smtp" and not self.host:
+            raise ValueError("host is required for an SMTP connector")
+        if self.kind == "graph" and not (self.graph_tenant_id and self.graph_client_id):
+            raise ValueError("graph_tenant_id and graph_client_id are required for Graph")
+        return self
+
 
 def _mail_connector_payload(connector: MailConnector) -> dict[str, Any]:
     return {
+        "kind": connector.kind,
+        "graph_tenant_id": connector.graph_tenant_id,
+        "graph_client_id": connector.graph_client_id,
         "host": connector.host,
         "port": connector.port,
         "use_tls": connector.use_tls,
@@ -213,12 +236,17 @@ def put_mail_connector(
     user: User = Depends(require_roles(Role.ADMIN)),
     db: DbSession = Depends(get_db),
 ) -> dict[str, Any]:
-    _check_mail_target(body.host, body.port)
+    if body.kind == "smtp":
+        _check_mail_target(body.host, body.port)
     settings: Settings = request.app.state.settings
     connector = db.get(MailConnector, 1)
     if connector is None:
         connector = MailConnector(id=1, from_address=body.from_address)
         db.add(connector)
+
+    connector.kind = body.kind
+    connector.graph_tenant_id = body.graph_tenant_id if body.kind == "graph" else None
+    connector.graph_client_id = body.graph_client_id if body.kind == "graph" else None
 
     connector.host = body.host
     connector.port = body.port
@@ -242,23 +270,27 @@ def put_mail_connector(
     return _mail_connector_payload(connector)
 
 
+def _stored_secret(connector: MailConnector, settings: Settings) -> str | None:
+    if connector.encrypted_password and settings.master_key:
+        return decrypt_secret(settings.master_key, connector.encrypted_password)
+    return None
+
+
 @router.post("/mail-connector/test-connection")
 def test_mail_connection(
     request: Request,
     user: User = Depends(require_roles(Role.ADMIN)),
     db: DbSession = Depends(get_db),
+    http_client: httpx.Client = Depends(get_mail_http_client),
 ) -> dict[str, Any]:
     settings: Settings = request.app.state.settings
     connector = db.get(MailConnector, 1)
     if connector is None:
         raise HTTPException(404, "Mail connector is not configured")
-    _check_mail_target(connector.host, connector.port)
+    if connector.kind == "smtp":
+        _check_mail_target(connector.host, connector.port)
 
-    password = None
-    if connector.encrypted_password and settings.master_key:
-        password = decrypt_secret(settings.master_key, connector.encrypted_password)
-    creds = credentials_from_connector(connector, password)
-    results = diagnose_connection(creds)
+    results = build_sender(connector, _stored_secret(connector, settings), http_client).diagnose()
 
     append_audit_event(
         db, action="MAIL_TEST_EXECUTED", actor_id=user.id,
@@ -278,23 +310,18 @@ def send_test_email(
     body: SendTestEmailRequest,
     user: User = Depends(require_roles(Role.ADMIN)),
     db: DbSession = Depends(get_db),
+    http_client: httpx.Client = Depends(get_mail_http_client),
 ) -> dict[str, Any]:
     settings: Settings = request.app.state.settings
     connector = db.get(MailConnector, 1)
     if connector is None:
         raise HTTPException(404, "Mail connector is not configured")
-    _check_mail_target(connector.host, connector.port)
-
-    password = None
-    if connector.encrypted_password and settings.master_key:
-        password = decrypt_secret(settings.master_key, connector.encrypted_password)
-    creds = credentials_from_connector(connector, password)
+    if connector.kind == "smtp":
+        _check_mail_target(connector.host, connector.port)
+    sender = build_sender(connector, _stored_secret(connector, settings), http_client)
 
     try:
-        send_email(
-            creds,
-            from_address=connector.from_address,
-            reply_to=connector.reply_to,
+        sender.send(
             to=body.to,
             subject="LCIT Sign — e-mail de test",
             body="Ceci est un e-mail de test envoyé depuis LCIT Sign.",
@@ -342,3 +369,45 @@ def list_notifications(
         }
         for n in rows
     ]
+
+
+class IsolationTestRequest(BaseModel):
+    other_mailbox: str
+    to: str
+
+
+@router.post("/mail-connector/test-isolation")
+def test_mail_isolation(
+    request: Request,
+    body: IsolationTestRequest,
+    user: User = Depends(require_roles(Role.ADMIN)),
+    db: DbSession = Depends(get_db),
+    http_client: httpx.Client = Depends(get_mail_http_client),
+) -> dict[str, Any]:
+    """Negative test required before trusting a Graph connector (spec §63
+    step 9): the application must NOT be able to send as another mailbox.
+    Sends nothing when the tenant is correctly confined."""
+    settings: Settings = request.app.state.settings
+    connector = db.get(MailConnector, 1)
+    if connector is None or connector.kind != "graph":
+        raise HTTPException(409, "Only a Microsoft Graph connector can be isolation-tested")
+    sender = build_sender(connector, _stored_secret(connector, settings), http_client)
+    assert isinstance(sender, GraphSender)  # noqa: S101
+    try:
+        isolated = sender.test_isolation(body.other_mailbox, body.to)
+    except MailSendError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    append_audit_event(
+        db, action="MAIL_TEST_EXECUTED", actor_id=user.id,
+        result="SUCCESS" if isolated else "FAILURE",
+        target_type="mail_connector", target_id="1",
+        metadata={"test": "isolation", "isolated": isolated},
+    )
+    db.commit()
+    return {
+        "isolated": isolated,
+        "detail": "Mail.Send is confined to the dedicated mailbox."
+        if isolated
+        else "WARNING: the application could send as another mailbox. "
+        "Restrict it with Exchange Online Application RBAC before using it.",
+    }

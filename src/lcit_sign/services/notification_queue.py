@@ -11,7 +11,7 @@ from lcit_sign.config import Settings
 from lcit_sign.models.mail import MailConnector, Notification, NotificationStatus, NotificationType
 from lcit_sign.services.audit import append_audit_event
 from lcit_sign.services.crypto import decrypt_secret
-from lcit_sign.services.mail import MailSendError, credentials_from_connector, send_email
+from lcit_sign.services.mail import MailSendError, build_sender
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +64,7 @@ def process_pending_notifications(db: DbSession, settings: Settings) -> int:
     password = None
     if connector.encrypted_password:
         password = decrypt_secret(settings.master_key, connector.encrypted_password)
-    creds = credentials_from_connector(connector, password)
+    sender = build_sender(connector, password)
 
     now = datetime.now(UTC)
     due = db.execute(
@@ -84,10 +84,7 @@ def process_pending_notifications(db: DbSession, settings: Settings) -> int:
         db.flush()
 
         try:
-            send_email(
-                creds,
-                from_address=connector.from_address,
-                reply_to=connector.reply_to,
+            sender.send(
                 to=notification.recipient_email,
                 subject=notification.subject,
                 body=notification.body_text,

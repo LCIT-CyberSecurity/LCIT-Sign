@@ -35,7 +35,12 @@ class MailConnector(Base):
     __tablename__ = "mail_connectors"
 
     id: Mapped[int] = mapped_column(primary_key=True, default=1)
-    host: Mapped[str] = mapped_column(String(255))
+    # "smtp" (generic relay) or "graph" (Microsoft Graph, one dedicated
+    # mailbox = from_address; the client secret lives in encrypted_password).
+    kind: Mapped[str] = mapped_column(String(10), default="smtp")
+    graph_tenant_id: Mapped[str | None] = mapped_column(String(100))
+    graph_client_id: Mapped[str | None] = mapped_column(String(100))
+    host: Mapped[str] = mapped_column(String(255), default="")
     port: Mapped[int] = mapped_column(Integer, default=587)
     use_tls: Mapped[bool] = mapped_column(Boolean, default=False)
     use_starttls: Mapped[bool] = mapped_column(Boolean, default=True)

@@ -5,6 +5,9 @@ import socket
 import ssl
 from dataclasses import dataclass
 from email.message import EmailMessage
+from typing import Protocol
+
+import httpx
 
 from lcit_sign.models.mail import MailConnector
 
@@ -123,3 +126,56 @@ def diagnose_connection(creds: SmtpCredentials) -> dict[str, str]:
             pass
 
     return results
+
+
+class MailSender(Protocol):
+    kind: str
+
+    def send(self, *, to: str, subject: str, body: str) -> None: ...
+
+    def diagnose(self) -> dict[str, str]: ...
+
+
+class SmtpSender:
+    kind = "smtp"
+
+    def __init__(self, creds: SmtpCredentials, *, from_address: str, reply_to: str | None) -> None:
+        self._creds = creds
+        self._from = from_address
+        self._reply_to = reply_to
+
+    def send(self, *, to: str, subject: str, body: str) -> None:
+        send_email(
+            self._creds,
+            from_address=self._from,
+            reply_to=self._reply_to,
+            to=to,
+            subject=subject,
+            body=body,
+        )
+
+    def diagnose(self) -> dict[str, str]:
+        return diagnose_connection(self._creds)
+
+
+def build_sender(
+    connector: MailConnector, secret: str | None, http_client: httpx.Client | None = None
+) -> MailSender:
+    """The one place that turns the stored connector row into something
+    that can send — SMTP or Microsoft Graph (spec §53)."""
+    if connector.kind == "graph":
+        from lcit_sign.services.mail_graph import GraphSender
+
+        return GraphSender(
+            http_client or httpx.Client(timeout=15.0),
+            tenant_id=connector.graph_tenant_id or "",
+            client_id=connector.graph_client_id or "",
+            client_secret=secret or "",
+            mailbox=connector.from_address,
+            reply_to=connector.reply_to,
+        )
+    return SmtpSender(
+        credentials_from_connector(connector, secret),
+        from_address=connector.from_address,
+        reply_to=connector.reply_to,
+    )
