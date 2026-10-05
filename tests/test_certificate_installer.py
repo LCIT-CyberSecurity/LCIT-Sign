@@ -423,3 +423,20 @@ def test_show_current_warns_when_expiry_is_near(env):
         assert "expires in less than 30 days" in result.stderr
     finally:
         server.close()
+
+
+def test_unwritable_certificate_directory_gives_an_actionable_error(env):
+    import os
+
+    if os.geteuid() == 0:
+        pytest.skip("root can write anywhere")
+    crt, key = good_cert(env)
+    env.certs.mkdir()
+    env.certs.chmod(0o500)
+    try:
+        result = env.run("copy-certificate", str(crt), str(key), str(env.certs))
+        assert result.returncode == 1
+        assert "not owned and writable" in result.stderr
+        assert "chown" in result.stderr
+    finally:
+        env.certs.chmod(0o700)

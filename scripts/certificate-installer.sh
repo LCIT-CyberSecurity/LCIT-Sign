@@ -213,6 +213,13 @@ wait_for_fingerprint() {
 copy_certificate() {  # cert key dest-dir
     local cert="$1" key="$2" dest="${3:?destination directory required}"
     mkdir -p "$dest" || return 1
+    if [[ ! -w "$dest" || ! -O "$dest" ]]; then
+        # Typically the directory was created by Docker (a bind mount of a
+        # missing path is created by root). Create it yourself beforehand:
+        #   mkdir -p -m 700 certs
+        fail "${dest} is not owned and writable by $(id -un); fix: sudo chown -R $(id -un) ${dest}"
+        return 1
+    fi
     chmod 700 "$dest" || return 1
     local tmp_crt tmp_key
     tmp_crt="$(mktemp "$dest/.${CRT}.XXXXXX")" || return 1
