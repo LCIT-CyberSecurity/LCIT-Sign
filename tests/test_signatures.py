@@ -85,6 +85,8 @@ def test_sign_produces_signed_pdf_certificate_evidence_and_verifies(tmp_path, mo
             "signed_document_hash": True,
             "evidence_hash": True,
             "cryptographic_signature": True,
+            "signing_key_trusted": True,
+            "metadata_consistent": True,
         },
     }
 

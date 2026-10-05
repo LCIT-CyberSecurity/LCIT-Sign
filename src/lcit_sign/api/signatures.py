@@ -6,7 +6,6 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from cryptography.exceptions import InvalidSignature
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -21,7 +20,6 @@ from lcit_sign.models.campaign import AssignmentStatus, SignatureAssignment
 from lcit_sign.models.document import Document, DocumentVersion, DocumentVersionStatus
 from lcit_sign.models.mail import NotificationType
 from lcit_sign.models.signature import Signature
-from lcit_sign.models.signing_key import SigningKey
 from lcit_sign.models.user import Role, User
 from lcit_sign.services.audit import append_audit_event
 from lcit_sign.services.evidence import canonical_evidence_fields, canonical_json
@@ -30,10 +28,9 @@ from lcit_sign.services.signature_pdf import append_signature_page, render_certi
 from lcit_sign.services.signing_keys import (
     derive_private_key,
     get_or_create_active_key,
-    load_public_key,
 )
 from lcit_sign.services.storage import StorageService
-from lcit_sign.time_utils import ensure_utc
+from lcit_sign.services.verification import verify_signature_record
 
 router = APIRouter(tags=["signatures"])
 
@@ -69,30 +66,6 @@ def _authorize_signature_access(signature: Signature, user: User, db: DbSession)
     if user_roles(db, user) & {Role.OPERATOR, Role.ADMIN}:
         return
     raise HTTPException(403, "Not authorized to access this signature")
-
-
-def _evidence_fields_for(signature: Signature, db: DbSession) -> dict[str, Any]:
-    version = db.get(DocumentVersion, signature.document_version_id)
-    return canonical_evidence_fields(
-        signature_id=signature.id,
-        campaign_id=signature.campaign_id,
-        document_id=signature.document_id,
-        document_version_id=signature.document_version_id,
-        version_label=version.version_label if version else "",
-        original_document_sha256=signature.original_file_sha256,
-        user_id=signature.user_id,
-        identity_provider=signature.identity_provider,
-        issuer=signature.issuer,
-        subject=signature.subject,
-        email=signature.email_snapshot,
-        display_name=signature.display_name_snapshot,
-        consent_text=signature.consent_text,
-        consent_version=signature.consent_version,
-        signed_at_utc=ensure_utc(signature.signed_at_utc),
-        signed_file_sha256=signature.signed_file_sha256,
-        application_version=signature.application_version,
-        signing_key_id=signature.signing_key_id,
-    )
 
 
 @router.post("/documents/versions/{version_id}/sign", status_code=201)
@@ -366,42 +339,7 @@ def verify_signature(
     _authorize_signature_access(signature, user, db)
 
     storage: StorageService = request.app.state.storage
-    checks: dict[str, bool] = {}
-
-    try:
-        original_bytes = storage.read(DOCUMENTS_BUCKET, signature.document_version_id, PDF_SUFFIX)
-        checks["original_document_hash"] = (
-            StorageService.sha256_hex(original_bytes) == signature.original_file_sha256
-        )
-    except OSError:
-        checks["original_document_hash"] = False
-
-    try:
-        signed_bytes = storage.read(SIGNED_BUCKET, signature.id, PDF_SUFFIX)
-        checks["signed_document_hash"] = (
-            StorageService.sha256_hex(signed_bytes) == signature.signed_file_sha256
-        )
-    except OSError:
-        checks["signed_document_hash"] = False
-
-    evidence_fields = _evidence_fields_for(signature, db)
-    recomputed_hash = hashlib.sha256(canonical_json(evidence_fields).encode("utf-8")).hexdigest()
-    checks["evidence_hash"] = recomputed_hash == signature.evidence_hash
-
-    signing_key = db.execute(
-        select(SigningKey).where(SigningKey.key_id == signature.signing_key_id)
-    ).scalar_one_or_none()
-    if signing_key is None:
-        checks["cryptographic_signature"] = False
-    else:
-        try:
-            load_public_key(signing_key.public_key_hex).verify(
-                bytes.fromhex(signature.cryptographic_signature),
-                bytes.fromhex(signature.evidence_hash),
-            )
-            checks["cryptographic_signature"] = True
-        except InvalidSignature:
-            checks["cryptographic_signature"] = False
+    checks = verify_signature_record(db, storage, signature)
 
     result = "VALID" if all(checks.values()) else "INVALID"
     append_audit_event(

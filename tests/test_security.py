@@ -290,3 +290,32 @@ def test_session_cookie_is_httponly_samesite_and_opaque(tmp_path, mock_oidc_base
         assert "samesite" in cookie.lower()
     # No OIDC token ever lands in a cookie or in the response body.
     assert "eyJ" not in "".join(cookies)
+
+
+def test_verify_all_cli_detects_tampering(tmp_path, mock_oidc_base_url, monkeypatch):
+    from lcit_sign import cli
+
+    app, operator, signer, _ = setup_operator_and_signer(
+        tmp_path, mock_oidc_base_url, master_key=TEST_MASTER_KEY
+    )
+    _, version_id, _ = publish_for_signing(operator)
+    signature_id = signer.post(
+        f"/api/documents/versions/{version_id}/sign", json={"consent": True}
+    ).json()["id"]
+
+    monkeypatch.setenv("LCIT_SIGN_DATABASE_URL", f"sqlite:///{tmp_path}/test.db")
+    monkeypatch.setenv("LCIT_SIGN_STORAGE_ROOT", str(tmp_path / "storage"))
+    from lcit_sign.config import get_settings
+
+    get_settings.cache_clear()
+    try:
+        clean = cli.verify_all()
+        assert clean["ok"] is True and clean["signatures"] == 1
+
+        signed = app.state.storage.path_for("signed", uuid.UUID(signature_id), ".pdf")
+        signed.write_bytes(b"%PDF-tampered")
+        broken = cli.verify_all()
+        assert broken["ok"] is False
+        assert "signed_document_hash" in str(broken["failures"])
+    finally:
+        get_settings.cache_clear()

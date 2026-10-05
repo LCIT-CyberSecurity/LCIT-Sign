@@ -4,7 +4,6 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from cryptography.exceptions import InvalidSignature
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
@@ -15,7 +14,6 @@ from lcit_sign.models.campaign import Campaign, SignatureAssignment
 from lcit_sign.models.document import Document, DocumentVersion
 from lcit_sign.models.report import Report
 from lcit_sign.models.signature import Signature
-from lcit_sign.models.signing_key import SigningKey
 from lcit_sign.models.user import Role, User
 from lcit_sign.services.audit import append_audit_event
 from lcit_sign.services.report_rendering import (
@@ -28,9 +26,9 @@ from lcit_sign.services.signing_keys import (
     SigningKeyError,
     derive_private_key,
     get_or_create_active_key,
-    load_public_key,
 )
 from lcit_sign.services.storage import StorageService
+from lcit_sign.services.verification import verify_report_record
 
 REPORTS_BUCKET = "reports"
 PDF_SUFFIX = ".pdf"
@@ -228,25 +226,5 @@ def verify_report(
     report = _get_report_or_404(db, report_id)
     storage: StorageService = request.app.state.storage
 
-    checks: dict[str, bool] = {}
-    try:
-        data = storage.read(REPORTS_BUCKET, report.id, PDF_SUFFIX)
-        checks["pdf_hash"] = StorageService.sha256_hex(data) == report.pdf_sha256
-    except OSError:
-        checks["pdf_hash"] = False
-
-    signing_key = db.execute(
-        select(SigningKey).where(SigningKey.key_id == report.signing_key_id)
-    ).scalar_one_or_none()
-    if signing_key is None:
-        checks["cryptographic_signature"] = False
-    else:
-        try:
-            load_public_key(signing_key.public_key_hex).verify(
-                bytes.fromhex(report.cryptographic_signature), bytes.fromhex(report.pdf_sha256)
-            )
-            checks["cryptographic_signature"] = True
-        except InvalidSignature:
-            checks["cryptographic_signature"] = False
-
+    checks = verify_report_record(db, storage, report)
     return {"valid": all(checks.values()), "checks": checks}
