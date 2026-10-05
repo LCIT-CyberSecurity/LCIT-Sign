@@ -264,6 +264,29 @@ def add_campaign_document(
     return _campaign_payload(campaign, db)
 
 
+@router.delete("/{campaign_id}/documents/{version_id}")
+def remove_campaign_document(
+    campaign_id: uuid.UUID,
+    version_id: uuid.UUID,
+    user: User = Depends(_manage),
+    db: DbSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Take a document back out of a campaign that has not started."""
+    campaign = _get_draft_campaign(db, campaign_id)
+    link = db.get(CampaignDocument, (campaign.id, version_id))
+    if link is None:
+        raise HTTPException(404, "This document is not in the campaign")
+    db.delete(link)
+    append_audit_event(
+        db, action="CAMPAIGN_UPDATED", actor_id=user.id,
+        target_type="campaign", target_id=str(campaign.id), campaign_id=campaign.id,
+        metadata={"change": "document_removed", "document_version_id": str(version_id)},
+    )
+    db.commit()
+    db.refresh(campaign)
+    return _campaign_payload(campaign, db)
+
+
 @router.post("/{campaign_id}/targets/preview")
 def preview_targets(
     campaign_id: uuid.UUID,

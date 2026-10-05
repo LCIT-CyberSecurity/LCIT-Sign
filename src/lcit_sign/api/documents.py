@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session as DbSession
 
 from lcit_sign.config import Settings
@@ -17,7 +17,13 @@ from lcit_sign.models.campaign import (
     CampaignStatus,
     SignatureAssignment,
 )
-from lcit_sign.models.document import Document, DocumentVersion, DocumentVersionStatus
+from lcit_sign.models.document import (
+    Document,
+    DocumentField,
+    DocumentVersion,
+    DocumentVersionStatus,
+)
+from lcit_sign.models.signature import Signature
 from lcit_sign.models.user import Role, User
 from lcit_sign.services.audit import append_audit_event
 from lcit_sign.services.document_validation import DocumentValidationError, validate_pdf_upload
@@ -35,8 +41,43 @@ PDF_SUFFIX = ".pdf"
 _manage = require_roles(Role.OPERATOR, Role.ADMIN)
 
 
-def _version_payload(version: DocumentVersion) -> dict[str, Any]:
+def delete_blockers(db: DbSession, version_ids: list[uuid.UUID]) -> dict[uuid.UUID, list[str]]:
+    """Why each version cannot be erased, in words an operator can act on.
+
+    A version that has been signed, or that a campaign refers to, is part of
+    the evidence trail: signatures name the exact version and its hash, and
+    reports list it. Erasing it would orphan that proof, so it can only be
+    archived. A version nobody has used can be removed for good.
+    """
+    blockers: dict[uuid.UUID, list[str]] = {vid: [] for vid in version_ids}
+    if not version_ids:
+        return blockers
+    signed = dict(
+        db.execute(
+            select(Signature.document_version_id, func.count())
+            .where(Signature.document_version_id.in_(version_ids))
+            .group_by(Signature.document_version_id)
+        ).all()
+    )
+    for vid, count in signed.items():
+        blockers[vid].append(f"{count} signature(s) enregistrée(s)")
+    for vid, name in db.execute(
+        select(CampaignDocument.document_version_id, Campaign.name)
+        .join(Campaign, Campaign.id == CampaignDocument.campaign_id)
+        .where(CampaignDocument.document_version_id.in_(version_ids))
+        .order_by(Campaign.name)
+    ):
+        blockers[vid].append(f"utilisé par la campagne « {name} »")
+    return blockers
+
+
+def _version_payload(
+    version: DocumentVersion, blockers: dict[uuid.UUID, list[str]] | None = None
+) -> dict[str, Any]:
+    reasons = (blockers or {}).get(version.id)
     return {
+        "can_delete": None if blockers is None else not reasons,
+        "delete_blockers": reasons or [],
         "id": str(version.id),
         "document_id": str(version.document_id),
         "version_label": version.version_label,
@@ -50,14 +91,19 @@ def _version_payload(version: DocumentVersion) -> dict[str, Any]:
     }
 
 
-def _document_payload(document: Document) -> dict[str, Any]:
+def _document_payload(
+    document: Document, blockers: dict[uuid.UUID, list[str]] | None = None
+) -> dict[str, Any]:
     return {
         "id": str(document.id),
         "title": document.title,
         "description": document.description,
         "category": document.category,
         "created_at": document.created_at.isoformat(),
-        "versions": [_version_payload(v) for v in document.versions],
+        "versions": [_version_payload(v, blockers) for v in document.versions],
+        "can_delete": None
+        if blockers is None
+        else all(not blockers.get(v.id) for v in document.versions),
     }
 
 
@@ -119,7 +165,7 @@ async def create_document(
         target_type="document_version", target_id=str(version.id), document_id=document.id,
     )
     db.commit()
-    return _document_payload(document)
+    return _document_payload(document, delete_blockers(db, [v.id for v in document.versions]))
 
 
 @router.post("/{document_id}/versions", status_code=201)
@@ -224,12 +270,109 @@ def archive_version(
     return _version_payload(version)
 
 
+def _erase_version(db: DbSession, storage: StorageService, version: DocumentVersion) -> None:
+    db.execute(delete(DocumentField).where(DocumentField.document_version_id == version.id))
+    db.delete(version)
+    storage.delete(DOCUMENTS_BUCKET, version.id, PDF_SUFFIX)
+
+
+@router.delete("/versions/{version_id}")
+def delete_version(
+    request: Request,
+    version_id: uuid.UUID,
+    user: User = Depends(_manage),
+    db: DbSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Erase a version nobody has signed or used (draft, or a stray upload).
+    Anything that is part of the evidence trail is refused with the reason and
+    must be archived instead."""
+    version = db.get(DocumentVersion, version_id)
+    if version is None:
+        raise HTTPException(404, "Document version not found")
+    reasons = delete_blockers(db, [version.id])[version.id]
+    if reasons:
+        raise HTTPException(
+            409,
+            "Cette version fait partie de la preuve et ne peut pas être supprimée ("
+            + " ; ".join(reasons)
+            + "). Archivez-la à la place.",
+        )
+    document = db.get(Document, version.document_id)
+    storage: StorageService = request.app.state.storage
+    metadata = {
+        "title": document.title if document else "",
+        "version": version.version_label,
+        "sha256": version.sha256,
+        "status": version.status.value,
+    }
+    document_id = version.document_id
+    _erase_version(db, storage, version)
+    db.flush()
+    # The last version going takes its (now empty) document with it.
+    remaining = db.execute(
+        select(func.count()).select_from(DocumentVersion).where(
+            DocumentVersion.document_id == document_id
+        )
+    ).scalar_one()
+    if remaining == 0 and document is not None:
+        db.delete(document)
+    append_audit_event(
+        db, action="DOCUMENT_DELETED", actor_id=user.id,
+        target_type="document_version", target_id=str(version_id), document_id=None,
+        metadata=metadata,
+    )
+    db.commit()
+    return {"deleted": str(version_id), "document_removed": remaining == 0}
+
+
+@router.delete("/{document_id}")
+def delete_document(
+    request: Request,
+    document_id: uuid.UUID,
+    user: User = Depends(_manage),
+    db: DbSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Erase a whole document — only if none of its versions is signed or used."""
+    document = db.get(Document, document_id)
+    if document is None:
+        raise HTTPException(404, "Document not found")
+    blockers = delete_blockers(db, [v.id for v in document.versions])
+    problems = [
+        f"v{v.version_label} : " + " ; ".join(blockers[v.id])
+        for v in document.versions
+        if blockers[v.id]
+    ]
+    if problems:
+        raise HTTPException(
+            409,
+            "Ce document contient des versions qui font partie de la preuve ("
+            + " | ".join(problems)
+            + "). Archivez les versions concernées à la place.",
+        )
+    storage: StorageService = request.app.state.storage
+    versions = list(document.versions)
+    metadata = {"title": document.title, "versions": [v.version_label for v in versions]}
+    for version in versions:
+        _erase_version(db, storage, version)
+    db.flush()
+    db.delete(document)
+    append_audit_event(
+        db, action="DOCUMENT_DELETED", actor_id=user.id,
+        target_type="document", target_id=str(document_id), metadata=metadata,
+    )
+    db.commit()
+    return {"deleted": str(document_id), "versions_removed": len(versions)}
+
+
 @router.get("")
 def list_documents(
     user: User = Depends(_manage), db: DbSession = Depends(get_db)
 ) -> list[dict[str, Any]]:
-    documents = db.execute(select(Document).order_by(Document.created_at.desc())).scalars()
-    return [_document_payload(doc) for doc in documents]
+    documents = list(
+        db.execute(select(Document).order_by(Document.created_at.desc())).scalars()
+    )
+    blockers = delete_blockers(db, [v.id for doc in documents for v in doc.versions])
+    return [_document_payload(doc, blockers) for doc in documents]
 
 
 @router.get("/{document_id}")
@@ -239,7 +382,7 @@ def get_document(
     document = db.get(Document, document_id)
     if document is None:
         raise HTTPException(404, "Document not found")
-    return _document_payload(document)
+    return _document_payload(document, delete_blockers(db, [v.id for v in document.versions]))
 
 
 @router.get("/versions/{version_id}/content")

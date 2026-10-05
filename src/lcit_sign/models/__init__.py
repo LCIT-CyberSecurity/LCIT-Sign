@@ -15,7 +15,13 @@ from lcit_sign.models.directory import (
     Group,
     GroupMembership,
 )
-from lcit_sign.models.document import Document, DocumentVersion, DocumentVersionStatus
+from lcit_sign.models.document import (
+    Document,
+    DocumentField,
+    DocumentVersion,
+    DocumentVersionStatus,
+    FieldKind,
+)
 from lcit_sign.models.mail import MailConnector, Notification, NotificationStatus, NotificationType
 from lcit_sign.models.report import Report
 from lcit_sign.models.session import Session
@@ -36,7 +42,9 @@ __all__ = [
     "CampaignTargetUser",
     "DirectorySyncRun",
     "Document",
+    "DocumentField",
     "DocumentVersion",
+    "FieldKind",
     "DocumentVersionStatus",
     "Group",
     "GroupMembership",

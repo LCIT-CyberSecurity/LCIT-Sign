@@ -24,6 +24,9 @@ export interface DocumentVersion {
   status: "DRAFT" | "PUBLISHED" | "SUPERSEDED" | "ARCHIVED";
   created_at: string;
   published_at: string | null;
+  // null when the server did not compute it; false = part of the evidence trail.
+  can_delete: boolean | null;
+  delete_blockers: string[];
 }
 
 export interface DocumentDetail {
@@ -31,6 +34,7 @@ export interface DocumentDetail {
   title: string;
   description: string;
   category: string;
+  can_delete: boolean | null;
   created_at: string;
   versions: DocumentVersion[];
 }

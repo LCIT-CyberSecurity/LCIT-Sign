@@ -153,3 +153,35 @@ test("the campaign document picker is alphabetical and explains drafts", async (
   await expect(page.locator("select option[disabled]", { hasText: `Mmm brouillon ${stamp}` })).toHaveCount(1);
   await expect(page.getByTestId("draft-hint")).toContainText("brouillon");
 });
+
+test("an operator deletes an unused document but not a signed one", async ({ page }) => {
+  await loginAs(page, "Diane");
+  const api = page.context().request;
+  const stamp = Date.now();
+  const upload = async (title: string) => {
+    const res = await api.post("/api/documents", {
+      multipart: {
+        title,
+        version_label: "1.0",
+        file: { name: "d.pdf", mimeType: "application/pdf", buffer: MINIMAL_PDF },
+      },
+    });
+    return (await res.json()).versions[0].id as string;
+  };
+  const doomed = `Jetable ${stamp}`;
+  await upload(doomed);
+
+  await page.goto("/documents");
+  await page.getByLabel("Rechercher un document").fill(doomed);
+  const card = page.locator(".card", { hasText: doomed });
+  await card.getByRole("button", { name: /Supprimer le document/ }).click();
+  await expect(card).toBeVisible(); // the first click only asks
+  await card.getByRole("button", { name: "Confirmer la suppression" }).click();
+  await expect(page.locator(".card", { hasText: doomed })).toHaveCount(0);
+
+  // A document that has been signed stays, with the reason, and cannot be deleted.
+  await page.getByLabel("Rechercher un document").fill("Charte informatique 2026");
+  const signed = page.locator(".card", { hasText: "Charte informatique 2026" }).first();
+  await expect(signed.getByText(/Conservée/).first()).toBeVisible();
+  await expect(signed.getByRole("button", { name: /Supprimer/ })).toHaveCount(0);
+});

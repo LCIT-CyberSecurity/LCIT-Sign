@@ -1203,3 +1203,10 @@ a.attention:hover strong { color: var(--primary); }
 .section-panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-card); padding: 20px 22px 22px; }
 .section-panel > .page-title { margin-bottom: 16px; font-size: 20px; line-height: 28px; }
 .section-panel > .page-title::after { display: none; }
+
+/* ===== Destructive actions ===== */
+.button--danger { color: #fff; background: var(--danger); border-color: var(--danger); }
+.button--danger:hover:not(:disabled) { filter: brightness(1.08); }
+.confirm-inline { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.row-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; align-items: center; }
+.blocker-note { margin: 4px 0 0; color: var(--text-secondary); font-size: 12.5px; text-align: right; }

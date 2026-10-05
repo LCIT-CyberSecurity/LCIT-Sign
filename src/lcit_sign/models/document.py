@@ -4,7 +4,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, func
+from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from lcit_sign.database import Base
@@ -65,3 +65,50 @@ class DocumentVersion(Base):
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     document: Mapped[Document] = relationship(back_populates="versions")
+
+
+class FieldKind(enum.StrEnum):
+    """What an element placed on a document is (DocuSign's "tabs")."""
+
+    SIGNATURE = "SIGNATURE"   # the signer's name, handwritten-style — automatic
+    DATE = "DATE"             # date of signing — automatic
+    FULL_NAME = "FULL_NAME"   # the signer's name — automatic
+    EMAIL = "EMAIL"           # the signer's address — automatic
+    TEXT = "TEXT"             # free text typed by the signer
+    LOGO = "LOGO"             # the company logo — automatic
+
+
+# Filled in by the platform from the authenticated identity: nothing to type.
+AUTOMATIC_KINDS = frozenset(
+    {FieldKind.SIGNATURE, FieldKind.DATE, FieldKind.FULL_NAME, FieldKind.EMAIL, FieldKind.LOGO}
+)
+
+
+class DocumentField(Base):
+    """One element the operator placed on a page of a document version.
+
+    Geometry is stored as fractions of the page (0..1, origin top-left), so it
+    does not depend on the resolution the editor happened to render at. The
+    set is editable while the version is a draft and frozen with publication,
+    like the file itself.
+    """
+
+    __tablename__ = "document_fields"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    document_version_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("document_versions.id"), index=True
+    )
+    page: Mapped[int] = mapped_column(Integer)
+    x: Mapped[float] = mapped_column(Float)
+    y: Mapped[float] = mapped_column(Float)
+    width: Mapped[float] = mapped_column(Float)
+    height: Mapped[float] = mapped_column(Float)
+    kind: Mapped[FieldKind] = mapped_column(Enum(FieldKind, native_enum=False, length=20))
+    label: Mapped[str] = mapped_column(String(120), default="")
+    required: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Which signer fills it (1 = first). One role until multi-signer routing.
+    role: Mapped[int] = mapped_column(Integer, default=1)
+    # Fields sharing a group key are filled once and apply everywhere.
+    group_key: Mapped[str | None] = mapped_column(String(60))
+    position: Mapped[int] = mapped_column(Integer, default=0)

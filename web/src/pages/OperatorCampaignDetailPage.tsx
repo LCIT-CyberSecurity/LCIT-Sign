@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { ArrowLeft, Rocket, Bell, StopCircle, FileBarChart, Download } from "lucide-react";
 import { api, ApiError } from "../api/client";
+import ConfirmButton from "../components/ConfirmButton";
 import PolicyFields, {
   EMPTY_POLICY,
   buildPolicyPayload,
@@ -213,7 +214,18 @@ export default function OperatorCampaignDetailPage() {
                 <li className="muted">Aucun document pour le moment.</li>
               )}
               {campaign.document_version_ids.map((vid) => (
-                <li key={vid}>{versionLabels.get(vid) ?? vid}</li>
+                <li key={vid} className="report-row">
+                  {versionLabels.get(vid) ?? vid}
+                  <ConfirmButton
+                    confirmLabel="Retirer de la campagne"
+                    onConfirm={async () => {
+                      await api.del(`/campaigns/${id}/documents/${vid}`);
+                      load();
+                    }}
+                  >
+                    Retirer
+                  </ConfirmButton>
+                </li>
               ))}
             </ul>
             <div className="form-row">

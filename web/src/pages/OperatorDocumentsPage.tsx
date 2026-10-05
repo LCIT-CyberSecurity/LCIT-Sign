@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { FileText, Upload, CheckCircle2 } from "lucide-react";
+import { FileText, Upload, CheckCircle2, Trash2 } from "lucide-react";
 import { api, ApiError } from "../api/client";
+import ConfirmButton from "../components/ConfirmButton";
 import type { DocumentDetail } from "../api/types";
 
 export default function OperatorDocumentsPage() {
@@ -45,6 +46,16 @@ export default function OperatorDocumentsPage() {
       setError(err instanceof ApiError ? err.message : "L'envoi a échoué.");
     } finally {
       setUploading(false);
+    }
+  };
+
+  const remove = async (path: string) => {
+    setError(null);
+    try {
+      await api.del(path);
+      load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "La suppression a échoué.");
     }
   };
 
@@ -111,7 +122,7 @@ export default function OperatorDocumentsPage() {
         </label>
         {error && <p className="error-text">{error}</p>}
         <button className="button button--primary" type="submit" disabled={uploading}>
-          <Upload size={14} aria-hidden="true" /> {uploading ? "Envoi…" : "Publier un document"}
+          <Upload size={14} aria-hidden="true" /> {uploading ? "Envoi…" : "Ajouter le document (brouillon)"}
         </button>
       </form>
 
@@ -138,9 +149,16 @@ export default function OperatorDocumentsPage() {
         )}
         {visibleDocuments.map((doc) => (
           <div key={doc.id} className="card">
-            <div className="card-title">
-              {doc.title}{" "}
-              {doc.category && <span className="badge badge--viewed">{doc.category}</span>}
+            <div className="page-title-row">
+              <div className="card-title" style={{ margin: 0 }}>
+                {doc.title}{" "}
+                {doc.category && <span className="badge badge--viewed">{doc.category}</span>}
+              </div>
+              {doc.can_delete && (
+                <ConfirmButton onConfirm={() => remove(`/documents/${doc.id}`)}>
+                  <Trash2 size={13} aria-hidden="true" /> Supprimer le document
+                </ConfirmButton>
+              )}
             </div>
             {doc.description && <p className="muted small">{doc.description}</p>}
             <table className="simple-table">
@@ -161,15 +179,27 @@ export default function OperatorDocumentsPage() {
                     </td>
                     <td>{Math.round(v.file_size / 1024)} Ko</td>
                     <td>
-                      {v.status === "DRAFT" && (
-                        <button className="button button--secondary button--sm" onClick={() => publish(v.id)}>
-                          <CheckCircle2 size={14} aria-hidden="true" /> Publier
-                        </button>
-                      )}
-                      {v.status !== "ARCHIVED" && v.status !== "DRAFT" && (
-                        <button className="button button--ghost button--sm" onClick={() => archive(v.id)}>
-                          Archiver
-                        </button>
+                      <div className="row-actions">
+                        {v.status === "DRAFT" && (
+                          <button className="button button--secondary button--sm" onClick={() => publish(v.id)}>
+                            <CheckCircle2 size={14} aria-hidden="true" /> Publier
+                          </button>
+                        )}
+                        {v.status !== "ARCHIVED" && v.status !== "DRAFT" && (
+                          <button className="button button--ghost button--sm" onClick={() => archive(v.id)}>
+                            Archiver
+                          </button>
+                        )}
+                        {v.can_delete && (
+                          <ConfirmButton onConfirm={() => remove(`/documents/versions/${v.id}`)}>
+                            <Trash2 size={13} aria-hidden="true" /> Supprimer
+                          </ConfirmButton>
+                        )}
+                      </div>
+                      {v.can_delete === false && (
+                        <p className="blocker-note" title="Une version signée ou utilisée fait partie de la preuve">
+                          Conservée — {v.delete_blockers.join(" ; ")}
+                        </p>
                       )}
                     </td>
                   </tr>

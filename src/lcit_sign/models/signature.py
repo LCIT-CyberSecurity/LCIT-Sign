@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, UniqueConstraint, func, text
+from sqlalchemy import JSON, DateTime, ForeignKey, Index, String, UniqueConstraint, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from lcit_sign.database import Base
@@ -59,6 +59,10 @@ class Signature(Base):
     signed_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     original_file_sha256: Mapped[str] = mapped_column(String(64))
     signed_file_sha256: Mapped[str] = mapped_column(String(64))
+
+    # What was stamped on the document (kind, place, final value), frozen at
+    # signing. None for a signature made on a document with no prepared elements.
+    field_values: Mapped[list[dict[str, object]] | None] = mapped_column(JSON)
 
     application_version: Mapped[str] = mapped_column(String(50))
     signing_key_id: Mapped[str] = mapped_column(String(64))

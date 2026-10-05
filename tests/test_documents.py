@@ -218,3 +218,94 @@ def test_document_metadata_is_stored_and_listed(tmp_path, mock_oidc_base_url):
         files={"file": ("a.pdf", make_minimal_pdf_bytes(), "application/pdf")},
     )
     assert too_long.status_code == 422
+
+
+def _upload(operator, title="À effacer", publish=False):
+    created = operator.post(
+        "/api/documents",
+        data={"title": title, "version_label": "1.0"},
+        files={"file": ("a.pdf", make_minimal_pdf_bytes(), "application/pdf")},
+    ).json()
+    version_id = created["versions"][0]["id"]
+    if publish:
+        assert operator.post(f"/api/documents/versions/{version_id}/publish").status_code == 200
+    return created["id"], version_id
+
+
+def test_an_unused_document_can_be_deleted_for_good(tmp_path, mock_oidc_base_url):
+    app, operator = setup_operator(tmp_path, mock_oidc_base_url)
+    document_id, version_id = _upload(operator)
+    listed = operator.get("/api/documents").json()
+    assert listed[0]["can_delete"] is True
+    assert listed[0]["versions"][0]["can_delete"] is True
+
+    import uuid as _uuid
+
+    path = app.state.storage.path_for("documents", _uuid.UUID(version_id), ".pdf")
+    assert path.exists()
+    deleted = operator.delete(f"/api/documents/{document_id}")
+    assert deleted.status_code == 200, deleted.text
+    assert operator.get("/api/documents").json() == []
+    assert not path.exists()  # the file goes too
+    assert operator.get(f"/api/documents/{document_id}").status_code == 404
+    audit = operator.get("/api/documents").status_code  # still reachable
+    assert audit == 200
+
+
+def test_deleting_the_last_version_removes_its_document(tmp_path, mock_oidc_base_url):
+    app, operator = setup_operator(tmp_path, mock_oidc_base_url)
+    document_id, version_id = _upload(operator, publish=True)
+    result = operator.delete(f"/api/documents/versions/{version_id}")
+    assert result.status_code == 200 and result.json()["document_removed"] is True
+    assert operator.get(f"/api/documents/{document_id}").status_code == 404
+
+
+def test_a_signed_version_cannot_be_deleted_only_archived(tmp_path, mock_oidc_base_url):
+    from test_signatures import setup_operator_and_signer
+
+    app, operator, signer, admin = setup_operator_and_signer(
+        tmp_path, mock_oidc_base_url, master_key="test-master-key-not-for-production-use"
+    )
+    document_id, version_id = _upload(operator, "Signé", publish=True)
+    assert signer.post(
+        f"/api/documents/versions/{version_id}/sign", json={"consent": True}
+    ).status_code == 201
+
+    listed = operator.get("/api/documents").json()
+    assert listed[0]["can_delete"] is False
+    assert "signature" in listed[0]["versions"][0]["delete_blockers"][0]
+    refused = operator.delete(f"/api/documents/versions/{version_id}")
+    assert refused.status_code == 409 and "Archivez" in refused.text
+    assert operator.delete(f"/api/documents/{document_id}").status_code == 409
+    # The document and its proof are intact; archiving is the way out.
+    assert operator.post(f"/api/documents/versions/{version_id}/archive").status_code == 200
+
+
+def test_a_version_used_by_a_campaign_cannot_be_deleted_until_removed_from_it(
+    tmp_path, mock_oidc_base_url
+):
+    from test_campaigns import setup_campaign_fixture
+
+    app, admin, operator, signer1, _ = setup_campaign_fixture(tmp_path, mock_oidc_base_url)
+    _, version_id = _upload(operator, "En campagne", publish=True)
+    campaign = operator.post("/api/campaigns", json={"name": "Brouillon de campagne"}).json()
+    operator.post(
+        f"/api/campaigns/{campaign['id']}/documents", json={"document_version_id": version_id}
+    )
+    refused = operator.delete(f"/api/documents/versions/{version_id}")
+    assert refused.status_code == 409 and "Brouillon de campagne" in refused.text
+
+    removed = operator.delete(f"/api/campaigns/{campaign['id']}/documents/{version_id}")
+    assert removed.status_code == 200 and removed.json()["document_version_ids"] == []
+    assert operator.delete(f"/api/documents/versions/{version_id}").status_code == 200
+    again = operator.delete(f"/api/campaigns/{campaign['id']}/documents/{version_id}")
+    assert again.status_code == 404
+
+
+def test_only_operators_and_admins_can_delete(tmp_path, mock_oidc_base_url):
+    from test_campaigns import setup_campaign_fixture
+
+    app, admin, operator, signer1, _ = setup_campaign_fixture(tmp_path, mock_oidc_base_url)
+    document_id, _ = _upload(operator, "Protégé")
+    assert signer1.delete(f"/api/documents/{document_id}").status_code == 403
+    assert admin.delete(f"/api/documents/{document_id}").status_code == 200
