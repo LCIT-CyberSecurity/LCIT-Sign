@@ -51,7 +51,7 @@ const TITLES: [prefix: string, label: string][] = [
   ["/signatures", "Mes signatures"],
   ["/assignments", "Document à signer"],
   ["/documents", "Documents"],
-  ["/sign", "Signer"],
+  ["/sign", "Faire signer"],
   ["/campaigns", "Suivi"],
   ["/admin/users", "Utilisateurs"],
   ["/admin/directory", "Annuaire"],
@@ -109,7 +109,7 @@ export default function Shell() {
             <>
               <div className="nav-heading">Opérateur</div>
               <NavItem to="/documents" icon={<FileText size={18} />} label="Documents" onNavigate={close} />
-              <NavItem to="/sign" icon={<PenLine size={18} />} label="Signer" onNavigate={close} />
+              <NavItem to="/sign" icon={<PenLine size={18} />} label="Faire signer" onNavigate={close} />
               <NavItem to="/campaigns" icon={<Megaphone size={18} />} label="Suivi" onNavigate={close} />
             </>
           )}

@@ -1298,3 +1298,14 @@ a.attention:hover strong { color: var(--primary); }
 .signer-rows li { display: grid; grid-template-columns: 28px 1fr auto auto auto; gap: 8px; align-items: center; }
 .signer-rank { width: 24px; height: 24px; border-radius: 50%; display: inline-grid; place-items: center; background: var(--accent-soft, #ece8f6); color: var(--accent, #65459b); font-weight: 700; font-size: 13px; }
 @media (max-width: 640px) { .signer-rows li { grid-template-columns: 28px 1fr; } }
+
+.wizard-steps { list-style: none; margin: 0; padding: 0; display: flex; gap: 8px; flex-wrap: wrap; }
+.wizard-steps li button { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--text-secondary); font: inherit; font-size: 14px; cursor: pointer; }
+.wizard-steps__n { width: 22px; height: 22px; border-radius: 50%; display: inline-grid; place-items: center; background: var(--surface-muted, #eef0f4); font-size: 12px; font-weight: 700; }
+.wizard-steps .is-current button { border-color: var(--accent, #65459b); color: var(--text-primary); font-weight: 600; box-shadow: inset 0 0 0 1px var(--accent, #65459b); }
+.wizard-steps .is-current .wizard-steps__n { background: var(--accent, #65459b); color: #fff; }
+.wizard-steps .is-done .wizard-steps__n { background: var(--success-soft, #dff3e6); color: var(--success, #1d7a46); }
+.recap { display: grid; gap: 14px; margin: 0; }
+.recap dt { font-weight: 600; margin-bottom: 4px; }
+.recap dd { margin: 0; }
+.link-button { background: none; border: 0; color: var(--accent, #65459b); cursor: pointer; font: inherit; font-size: 13px; padding: 0 0 0 8px; text-decoration: underline; }

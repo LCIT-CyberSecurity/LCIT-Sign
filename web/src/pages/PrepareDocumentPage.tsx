@@ -171,7 +171,7 @@ export default function PrepareDocumentPage() {
     if (!party) return `Position ${role}`;
     return party.mode === "EACH" ? "Chaque destinataire" : party.user_display_name ?? `Position ${role}`;
   };
-  const backTo = campaignId ? `/sign/${campaignId}` : "/sign";
+  const backTo = campaignId ? `/sign/${campaignId}?step=2` : "/sign";
   const selected = fields.find((f) => f.id === selectedId) ?? null;
 
   const update = useCallback((fieldId: string, patch: Partial<EditorField>) => {
@@ -272,9 +272,14 @@ export default function PrepareDocumentPage() {
 
   // Preparing is part of sending a document for signature: when done, back to the
   // campaign, which freezes (publishes) the document when it is launched.
+  const nextToPrepare = campaign?.documents.find((d) => d.version_id !== id && d.elements === 0);
   const finish = async () => {
     if (dirty && !(await save())) return;
-    navigate(backTo);
+    navigate(
+      nextToPrepare
+        ? `/documents/versions/${nextToPrepare.version_id}/prepare?campaign=${campaignId}`
+        : backTo,
+    );
   };
 
   const onDrop = (page: number, overlay: HTMLDivElement) => (e: DragEvent<HTMLDivElement>) => {
@@ -293,7 +298,7 @@ export default function PrepareDocumentPage() {
   if (!campaignId)
     return (
       <p className="muted">
-        Les éléments se préparent depuis une demande de signature : ouvrez <Link to="/sign">Signer</Link>,
+        Les éléments se préparent depuis une demande de signature : ouvrez <Link to="/sign">Faire signer</Link>,
         choisissez qui signe, puis « Préparer » sur le document.
       </p>
     );
@@ -312,7 +317,7 @@ export default function PrepareDocumentPage() {
   return (
     <div className="stack prep">
       <Link to={backTo} className="back-link">
-        <ArrowLeft size={14} aria-hidden="true" /> {campaign ? campaign.name : "Signer"}
+        <ArrowLeft size={14} aria-hidden="true" /> {campaign ? campaign.name : "Faire signer"}
       </Link>
       <div className="page-header">
         <div>
@@ -333,7 +338,8 @@ export default function PrepareDocumentPage() {
               <Save size={14} aria-hidden="true" /> {saving ? "Enregistrement…" : "Enregistrer"}
             </button>
             <button className="button button--primary" onClick={() => void finish()} disabled={saving}>
-              <CheckCircle2 size={14} aria-hidden="true" /> Terminer
+              <CheckCircle2 size={14} aria-hidden="true" />{" "}
+              {nextToPrepare ? `Document suivant : ${nextToPrepare.title}` : "Terminer"}
             </button>
           </div>
         )}

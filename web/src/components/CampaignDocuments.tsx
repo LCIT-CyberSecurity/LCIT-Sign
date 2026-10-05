@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { FileText, PencilRuler, Upload, X } from "lucide-react";
 import { api, ApiError } from "../api/client";
 import ConfirmButton from "./ConfirmButton";
@@ -24,6 +24,7 @@ export default function CampaignDocuments({
   library: DocumentDetail[] | null;
   onChanged: () => void;
 }) {
+  const navigate = useNavigate();
   const [pending, setPending] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [notes, setNotes] = useState<string[]>([]);
@@ -52,6 +53,7 @@ export default function CampaignDocuments({
     setBusy(true);
     setError(null);
     const messages: string[] = [];
+    const created: string[] = [];
     for (const file of pending) {
       if (!/\.pdf$/i.test(file.name)) {
         messages.push(`${file.name} : seuls les PDF sont acceptés pour le moment.`);
@@ -62,10 +64,11 @@ export default function CampaignDocuments({
         form.append("title", deriveTitle(file.name));
         form.append("version_label", "1.0");
         form.append("file", file);
-        const created = await api.postForm<DocumentDetail>("/documents", form);
+        const document = await api.postForm<DocumentDetail>("/documents", form);
         await api.post(`/campaigns/${campaign.id}/documents`, {
-          document_version_id: created.versions[0].id,
+          document_version_id: document.versions[0].id,
         });
+        created.push(document.versions[0].id);
       } catch (err) {
         messages.push(`${file.name} : ${err instanceof ApiError ? err.message : "l'envoi a échoué."}`);
       }
@@ -74,6 +77,10 @@ export default function CampaignDocuments({
     setNotes(messages);
     setBusy(false);
     onChanged();
+    // Straight to placing the elements: that is the next thing to do.
+    if (created.length > 0 && messages.length === 0 && hasSigners) {
+      navigate(`/documents/versions/${created[0]}/prepare?campaign=${campaign.id}`);
+    }
   };
 
   const addExisting = async () => {
@@ -90,7 +97,7 @@ export default function CampaignDocuments({
 
   return (
     <div className="card" data-testid="campaign-documents">
-      <div className="card-title">2. Quoi faire signer ?</div>
+      <div className="card-title">Documents à faire signer</div>
       <p className="muted small">
         Déposez un ou plusieurs PDF, puis « Préparer » chacun : vous placez la signature, la date, le nom…
         pour chaque personne de la liste ci-dessus.
@@ -104,13 +111,18 @@ export default function CampaignDocuments({
               <FileText size={14} aria-hidden="true" /> <strong>{d.title}</strong>{" "}
               <span className="muted small">
                 v{d.version_label} —{" "}
-                {d.elements > 0 ? `${d.elements} élément(s) placé(s)` : "aucun élément placé"}
+                {d.elements > 0 ? `${d.elements} élément(s) placé(s)` : ""}
               </span>
+              {d.elements === 0 && (
+                <span className="badge badge--pending" data-testid="to-prepare">
+                  À préparer : placez la signature, la date, le nom…
+                </span>
+              )}
             </span>
             <span className="row-actions">
               {hasSigners ? (
                 <Link
-                  className="button button--secondary button--sm"
+                  className={`button ${d.elements === 0 ? "button--primary" : "button--secondary"} button--sm`}
                   to={`/documents/versions/${d.version_id}/prepare?campaign=${campaign.id}`}
                 >
                   <PencilRuler size={14} aria-hidden="true" /> Préparer

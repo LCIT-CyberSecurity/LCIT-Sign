@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Rocket } from "lucide-react";
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { ArrowLeft, ArrowRight, Check, Rocket } from "lucide-react";
 import { api, ApiError } from "../api/client";
 import CampaignDocuments from "../components/CampaignDocuments";
 import CampaignSigners from "../components/CampaignSigners";
 import PolicyFields, {
   EMPTY_POLICY,
   buildPolicyPayload,
+  describePolicies,
   policyProblem,
   type PolicyForm,
 } from "../components/PolicyFields";
@@ -18,11 +19,16 @@ interface TargetUserOption {
   display_name: string;
 }
 
+const STEPS = ["Signataires et relances", "Documents et éléments", "Vérifier et envoyer"];
+
 /** Preparing and sending a request for signature: who signs, what, for which people.
  *  Once launched it is followed in Campagnes (the reporting). */
 export default function SignRequestPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [query, setQuery] = useSearchParams();
+  const step = Math.min(3, Math.max(1, Number(query.get("step")) || 1));
+  const goTo = (n: number) => setQuery({ step: String(n) }, { replace: false });
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [documents, setDocuments] = useState<DocumentDetail[] | null>(null);
   const [groups, setGroups] = useState<DirectoryGroup[] | null>(null);
@@ -78,6 +84,16 @@ export default function SignRequestPage() {
   // Nobody chosen yet means the usual case: everyone targeted signs their own copy.
   const hasList = campaign.roles.length === 0 || campaign.roles.some((r) => r.mode === "EACH");
 
+  const unprepared = campaign.documents.filter((d) => d.elements === 0);
+  const blocker =
+    hasList && recipientCount === 0
+      ? "Choisissez les personnes concernées (écran « Signataires et relances »)."
+      : campaign.documents.length === 0
+      ? "Ajoutez au moins un document."
+      : unprepared.length > 0
+        ? `Placez les éléments (signature, date, nom…) sur : ${unprepared.map((d) => d.title).join(", ")}.`
+        : null;
+
   const toggle = (list: string[], value: string, setList: (v: string[]) => void) => {
     setList(list.includes(value) ? list.filter((v) => v !== value) : [...list, value]);
   };
@@ -114,7 +130,7 @@ export default function SignRequestPage() {
   return (
     <div className="stack">
       <Link to="/sign" className="back-link">
-        <ArrowLeft size={14} aria-hidden="true" /> Signer
+        <ArrowLeft size={14} aria-hidden="true" /> Faire signer
       </Link>
 
       <div className="page-title-row">
@@ -122,11 +138,22 @@ export default function SignRequestPage() {
         <span className="badge badge--draft">En préparation</span>
       </div>
 
-      <CampaignSigners campaign={campaign} users={users} onSaved={load} />
-      <CampaignDocuments campaign={campaign} library={documents} onChanged={load} />
+      <ol className="wizard-steps" data-testid="wizard-steps">
+        {STEPS.map((label, i) => (
+          <li key={label} className={step === i + 1 ? "is-current" : step > i + 1 ? "is-done" : ""}>
+            <button type="button" onClick={() => goTo(i + 1)} aria-current={step === i + 1 ? "step" : undefined}>
+              <span className="wizard-steps__n">{step > i + 1 ? <Check size={13} aria-hidden="true" /> : i + 1}</span>
+              {label}
+            </button>
+          </li>
+        ))}
+      </ol>
 
+      {step === 1 && (
+        <>
+          <CampaignSigners campaign={campaign} users={users} onSaved={load} />
           <div className="card">
-            <div className="card-title">3. {hasList ? "Pour quelles personnes ?" : "Récapitulatif"}</div>
+            <div className="card-title">{hasList ? "Pour quelles personnes ? (publipostage)" : "Personnes sollicitées"}</div>
             {!hasList && (
               <p className="muted small">
                 Chaque signataire est une personne précise : personne d&apos;autre n&apos;est sollicité.
@@ -196,7 +223,7 @@ export default function SignRequestPage() {
           </div>
 
           <div className="card" data-testid="policy-card">
-            <div className="card-title">4. Échéance, relances et renouvellement</div>
+            <div className="card-title">Échéance, relances et renouvellement</div>
             <p className="muted small">
               Facultatif. Les relances partent toutes seules vers ceux qui n&apos;ont pas encore signé ; le
               renouvellement redemande les mêmes signatures à intervalle régulier.
@@ -212,18 +239,103 @@ export default function SignRequestPage() {
             </label>
             <PolicyFields value={policy} onChange={setPolicy} />
           </div>
+          <div className="row-actions">
+            <button type="button" className="button button--primary" onClick={() => goTo(2)} disabled={campaign.roles.length === 0}>
+              Suivant : les documents <ArrowRight size={14} aria-hidden="true" />
+            </button>
+          </div>
+        </>
+      )}
+
+      {step === 2 && (
+        <>
+          <CampaignDocuments campaign={campaign} library={documents} onChanged={load} />
+          <div className="row-actions">
+            <button type="button" className="button button--ghost" onClick={() => goTo(1)}>
+              <ArrowLeft size={14} aria-hidden="true" /> Les signataires
+            </button>
+            <button type="button" className="button button--primary" onClick={() => goTo(3)}>
+              Suivant : vérifier et envoyer <ArrowRight size={14} aria-hidden="true" />
+            </button>
+          </div>
+        </>
+      )}
+
+      {step === 3 && (
+        <>
+          <div className="card" data-testid="recap-card">
+            <div className="card-title">Récapitulatif</div>
+            <dl className="recap">
+              <div>
+                <dt>
+                  Signataires, dans l&apos;ordre <button className="link-button" onClick={() => goTo(1)}>Modifier</button>
+                </dt>
+                <dd>
+                  <ol className="plain-list">
+                    {campaign.roles.map((r) => (
+                      <li key={r.role}>
+                        {r.role}.{" "}
+                        {r.mode === "EACH"
+                          ? `Chaque destinataire${recipientCount !== null ? ` (${recipientCount} personne(s))` : ""}`
+                          : r.user_display_name}
+                      </li>
+                    ))}
+                  </ol>
+                </dd>
+              </div>
+              <div>
+                <dt>
+                  Documents <button className="link-button" onClick={() => goTo(2)}>Modifier</button>
+                </dt>
+                <dd>
+                  <ul className="plain-list">
+                    {campaign.documents.map((d) => (
+                      <li key={d.version_id}>
+                        {d.title} — {d.elements} élément(s) placé(s)
+                      </li>
+                    ))}
+                  </ul>
+                </dd>
+              </div>
+              <div>
+                <dt>
+                  Échéance et relances <button className="link-button" onClick={() => goTo(1)}>Modifier</button>
+                </dt>
+                <dd>
+                  <ul className="plain-list">
+                    <li>{deadline ? `Échéance : ${new Date(deadline).toLocaleDateString("fr-FR")}` : "Sans échéance"}</li>
+                    {describePolicies(buildPolicyPayload(policy)).map((line) => (
+                      <li key={line}>{line}</li>
+                    ))}
+                  </ul>
+                </dd>
+              </div>
+            </dl>
+          </div>
 
           <div className="card" data-testid="launch-card">
-            <div className="card-title">5. Envoyer</div>
+            <div className="card-title">Envoyer</div>
             <p className="muted small">
               Une fois envoyée, la demande ne se modifie plus : pour changer quelque chose, on l&apos;annule
               et on en crée une autre. Elle se suit ensuite dans Suivi.
             </p>
+            {blocker && (
+              <p className="muted small" data-testid="launch-blocker">
+                {blocker}
+              </p>
+            )}
             {error && <p className="error-text">{error}</p>}
-            <button className="button button--primary" onClick={launch} disabled={busy}>
-              <Rocket size={14} aria-hidden="true" /> Envoyer pour signature
-            </button>
+            <div className="row-actions">
+              <button type="button" className="button button--ghost" onClick={() => goTo(2)}>
+                <ArrowLeft size={14} aria-hidden="true" /> Les documents
+              </button>
+              <button className="button button--primary" onClick={launch} disabled={busy || blocker !== null}>
+                <Rocket size={14} aria-hidden="true" /> Envoyer pour signature
+              </button>
+            </div>
           </div>
+        </>
+      )}
     </div>
   );
 }

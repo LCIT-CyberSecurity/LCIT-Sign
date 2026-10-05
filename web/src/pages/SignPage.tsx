@@ -38,7 +38,7 @@ export default function SignPage() {
       <div className="page-header">
         <div>
           <h1 className="page-title" style={{ margin: 0 }}>
-            <PenLine size={22} aria-hidden="true" /> Signer
+            <PenLine size={22} aria-hidden="true" /> Faire signer
           </h1>
           <p className="page-subtitle" style={{ margin: "6px 0 0" }}>
             Faites signer un ou plusieurs documents : choisissez qui signe, déposez les documents, placez

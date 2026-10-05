@@ -27,21 +27,21 @@ describe("choosing who signs, among the users", () => {
     vi.mocked(api.put).mockResolvedValue({});
   });
 
-  it("saves the people in order as soon as each is chosen, 'every recipient' last", async () => {
+  it("proposes 'every recipient' at once, then saves the people in order as each is chosen", async () => {
     const onSaved = vi.fn();
     render(<CampaignSigners campaign={draft([])} users={users} onSaved={onSaved} />);
 
-    fireEvent.click(screen.getByRole("button", { name: /Ajouter une personne/ }));
-    // A row with nobody chosen is not saved yet.
-    expect(api.put).not.toHaveBeenCalled();
-    fireEvent.change(screen.getByLabelText("Qui signe en position 1 ?"), { target: { value: "u1" } });
+    // Nothing chosen yet: everyone signs their own copy, saved so documents can be prepared.
     await waitFor(() =>
       expect(api.put).toHaveBeenLastCalledWith("/campaigns/c1/signers", {
-        signers: [{ role: 1, mode: "FIXED", user_id: "u1" }],
+        signers: [{ role: 1, mode: "EACH", user_id: null }],
       }),
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /Ajouter « Chaque destinataire »/ }));
+    // A named person goes before the list of recipients, which always signs last.
+    fireEvent.click(screen.getByRole("button", { name: /Ajouter une personne/ }));
+    expect(api.put).toHaveBeenCalledTimes(1); // a row with nobody chosen is not saved
+    fireEvent.change(screen.getByLabelText("Qui signe en position 1 ?"), { target: { value: "u1" } });
     await waitFor(() =>
       expect(api.put).toHaveBeenLastCalledWith("/campaigns/c1/signers", {
         signers: [
@@ -50,9 +50,9 @@ describe("choosing who signs, among the users", () => {
         ],
       }),
     );
-    // Once the list of recipients is there, it cannot be added a second time,
-    // and a named person added afterwards goes before it.
+    // The list of recipients cannot be added a second time.
     expect(screen.queryByRole("button", { name: /Ajouter « Chaque destinataire »/ })).toBeNull();
+
     fireEvent.click(screen.getByRole("button", { name: /Ajouter une personne/ }));
     fireEvent.change(screen.getByLabelText("Qui signe en position 2 ?"), { target: { value: "u2" } });
     await waitFor(() =>

@@ -42,6 +42,16 @@ export default function CampaignSigners({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [campaign.id, campaign.roles.length]);
 
+  // Nothing chosen yet: the usual case is that everyone targeted signs their own copy.
+  // Propose it (and save it) so the documents can be prepared straight away.
+  const [defaulted, setDefaulted] = useState(false);
+  useEffect(() => {
+    if (defaulted || campaign.roles.length > 0 || rows.length > 0) return;
+    setDefaulted(true);
+    void persist([{ key: nextKey++, mode: "EACH", userId: "" }]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [campaign.id]);
+
   const complete = rows.every((r) => r.mode === "EACH" || r.userId);
 
   const persist = async (next: Row[]) => {
@@ -99,7 +109,7 @@ export default function CampaignSigners({
 
   return (
     <div className="card" data-testid="signers-card">
-      <div className="card-title">1. Qui signe, dans l&apos;ordre ?</div>
+      <div className="card-title">Qui signe, dans l&apos;ordre ?</div>
       <p className="muted small">
         Choisissez les personnes dans la liste des utilisateurs : elles signent l&apos;une après l&apos;autre.
         Pour un document que <strong>chaque personne</strong> doit signer (le RSSI signe d&apos;abord, puis
