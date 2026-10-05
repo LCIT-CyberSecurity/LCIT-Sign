@@ -122,3 +122,34 @@ test("an operator targets a whole directory group in one click", async ({ page }
   // The IT group of the CrashTests directory has four members.
   await expect(page.getByTestId("recipient-count")).toContainText("4 destinataire(s)");
 });
+
+test("the campaign document picker is alphabetical and explains drafts", async ({ page }) => {
+  await loginAs(page, "Diane");
+  const api = page.context().request;
+  const stamp = Date.now();
+  const upload = async (title: string, publish: boolean) => {
+    const res = await api.post("/api/documents", {
+      multipart: {
+        title,
+        version_label: "1.0",
+        file: { name: "p.pdf", mimeType: "application/pdf", buffer: MINIMAL_PDF },
+      },
+    });
+    const versionId = (await res.json()).versions[0].id as string;
+    if (publish) await api.post(`/api/documents/versions/${versionId}/publish`);
+  };
+  await upload(`Zzz ordre ${stamp}`, true);
+  await upload(`Aaa ordre ${stamp}`, true);
+  await upload(`Mmm brouillon ${stamp}`, false);
+  const campaign = await (await api.post("/api/campaigns", { data: { name: `Ordre ${stamp}` } })).json();
+
+  await page.goto(`/campaigns/${campaign.id}`);
+  // The documents load asynchronously: wait for them before reading the list.
+  await expect(page.locator("select option", { hasText: `Zzz ordre ${stamp}` })).toHaveCount(1);
+  const options = await page.locator("select option:not([disabled])").allTextContents();
+  const ours = options.filter((o) => o.includes(`ordre ${stamp}`));
+  expect(ours).toEqual([`Aaa ordre ${stamp} — v1.0`, `Zzz ordre ${stamp} — v1.0`]); // A before Z
+  // The draft is not silently missing: it is listed, disabled, with the reason.
+  await expect(page.locator("select option[disabled]", { hasText: `Mmm brouillon ${stamp}` })).toHaveCount(1);
+  await expect(page.getByTestId("draft-hint")).toContainText("brouillon");
+});

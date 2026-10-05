@@ -11,6 +11,8 @@ export default function OperatorDocumentsPage() {
   const [category, setCategory] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<"alpha" | "recent">("alpha");
   const fileInput = useRef<HTMLInputElement>(null);
 
   const load = () => {
@@ -61,6 +63,17 @@ export default function OperatorDocumentsPage() {
     load();
   };
 
+  const visibleDocuments = [...(documents ?? [])]
+    .filter((doc) => {
+      const q = query.trim().toLowerCase();
+      return !q || `${doc.title} ${doc.category} ${doc.description}`.toLowerCase().includes(q);
+    })
+    .sort((a, b) =>
+      sort === "alpha"
+        ? a.title.localeCompare(b.title, "fr", { sensitivity: "base", numeric: true })
+        : b.created_at.localeCompare(a.created_at),
+    );
+
   return (
     <div className="stack">
       <h1 className="page-title">
@@ -102,8 +115,28 @@ export default function OperatorDocumentsPage() {
         </button>
       </form>
 
+      <div className="filter-bar">
+        <input
+          type="search"
+          placeholder="Rechercher un document, une catégorie…"
+          aria-label="Rechercher un document"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        <label>
+          Tri
+          <select value={sort} onChange={(e) => setSort(e.target.value as "alpha" | "recent")}>
+            <option value="alpha">Ordre alphabétique</option>
+            <option value="recent">Plus récents d&apos;abord</option>
+          </select>
+        </label>
+      </div>
+
       <div className="card-list">
-        {documents?.map((doc) => (
+        {visibleDocuments.length === 0 && documents && (
+          <p className="muted">Aucun document ne correspond.</p>
+        )}
+        {visibleDocuments.map((doc) => (
           <div key={doc.id} className="card">
             <div className="card-title">
               {doc.title}{" "}

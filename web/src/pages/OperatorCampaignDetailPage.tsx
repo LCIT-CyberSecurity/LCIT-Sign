@@ -111,11 +111,21 @@ export default function OperatorCampaignDetailPage() {
     ),
   );
 
-  const publishedVersions = (documents ?? []).flatMap((doc) =>
-    doc.versions
-      .filter((v) => v.status === "PUBLISHED")
-      .map((v) => ({ id: v.id, label: `${doc.title} — v${v.version_label}` })),
-  );
+  // Alphabetical, so a long list stays findable. Versions already in the campaign
+  // are not offered twice; drafts are listed apart, with the reason they cannot be
+  // added yet, instead of silently missing.
+  const byLabel = (a: { label: string }, b: { label: string }) =>
+    a.label.localeCompare(b.label, "fr", { sensitivity: "base", numeric: true });
+  const versionsWith = (status: string) =>
+    (documents ?? [])
+      .flatMap((doc) =>
+        doc.versions
+          .filter((v) => v.status === status && !campaign.document_version_ids.includes(v.id))
+          .map((v) => ({ id: v.id, label: `${doc.title} — v${v.version_label}` })),
+      )
+      .sort(byLabel);
+  const publishedVersions = versionsWith("PUBLISHED");
+  const draftVersions = versionsWith("DRAFT");
 
   const publishedAndUsed = (documents ?? []).flatMap((doc) =>
     doc.versions
@@ -214,11 +224,26 @@ export default function OperatorCampaignDetailPage() {
                     {v.label}
                   </option>
                 ))}
+                {draftVersions.length > 0 && (
+                  <optgroup label="Brouillons — à publier avant de pouvoir être ajoutés">
+                    {draftVersions.map((v) => (
+                      <option key={v.id} value={v.id} disabled>
+                        {v.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
-              <button className="button button--secondary" onClick={addDocument}>
+              <button className="button button--secondary" onClick={addDocument} disabled={!selectedVersionId}>
                 Ajouter
               </button>
             </div>
+            {draftVersions.length > 0 && (
+              <p className="muted small" data-testid="draft-hint">
+                {draftVersions.length} document(s) en brouillon ne sont pas proposés : publiez-les depuis la page{" "}
+                <Link to="/documents">Documents</Link> pour pouvoir les ajouter.
+              </p>
+            )}
           </div>
 
           <div className="card">
