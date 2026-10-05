@@ -32,3 +32,4 @@ certs.backup/
 *.key
 *.pem
 certificate-installer.log
+backups/
