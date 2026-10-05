@@ -35,12 +35,78 @@ class DirGroup:
     external_id: str
     name: str
     description: str = ""
+    # Groups that are members of this group (spec §17): their members are
+    # members of this one too. Resolved by expand_nested_groups().
+    child_group_ids: set[str] = field(default_factory=set)
 
 
 @dataclass
 class DirectorySnapshot:
     users: list[DirUser]
     groups: list[DirGroup]
+
+
+MAX_GROUP_DEPTH = 10
+
+
+def expand_nested_groups(
+    snapshot: DirectorySnapshot, max_depth: int = MAX_GROUP_DEPTH
+) -> list[str]:
+    """Make every user a member of the ancestors of their groups (spec §17).
+
+    Each user ends up with each reachable group once (no duplicates); a
+    cycle (A contains B contains A) is detected and cut rather than
+    followed; chains deeper than `max_depth` stop there. Returns
+    human-readable diagnostics for the sync log — group ids only, nothing
+    sensitive.
+    """
+    diagnostics: list[str] = []
+    parents: dict[str, set[str]] = {}
+    for group in snapshot.groups:
+        for child in group.child_group_ids:
+            parents.setdefault(child, set()).add(group.external_id)
+
+    known = {g.external_id for g in snapshot.groups}
+    reported: set[str] = set()
+    for user in snapshot.users:
+        resolved = set(user.group_ids)
+        frontier = {(g, 0) for g in user.group_ids}
+        while frontier:
+            current, depth = frontier.pop()
+            for parent in parents.get(current, ()):
+                if parent not in known or parent in resolved:
+                    continue
+                if depth + 1 > max_depth:
+                    key = f"depth:{parent}"
+                    if key not in reported:
+                        reported.add(key)
+                        diagnostics.append(
+                            f"nested group chain too deep, stopped before {parent!r}"
+                        )
+                    continue
+                resolved.add(parent)
+                frontier.add((parent, depth + 1))
+        user.group_ids = resolved
+
+    # Cycle report (membership stays correct either way: the `resolved`
+    # set above never revisits a group, so a loop cannot spin).
+    state: dict[str, int] = {}
+    children = {g.external_id: g.child_group_ids & known for g in snapshot.groups}
+
+    def visit(node: str, stack: list[str]) -> None:
+        state[node] = 1
+        for child in children.get(node, ()):
+            if state.get(child, 0) == 0:
+                visit(child, [*stack, node])
+            elif state.get(child) == 1:
+                cycle = " -> ".join([*stack, node, child])
+                diagnostics.append(f"nested group cycle detected: {cycle}")
+        state[node] = 2
+
+    for group_id in children:
+        if state.get(group_id, 0) == 0:
+            visit(group_id, [])
+    return diagnostics
 
 
 class DirectoryConnector(Protocol):
@@ -137,8 +203,11 @@ class EntraConnector:
             groups.append(DirGroup(raw["id"], name, raw.get("description") or ""))
             members_url = f"{self.GRAPH}/groups/{raw['id']}/members?$select=id&$top=999"
             for member in self._pages(members_url, headers):
-                if member.get("@odata.type") == "#microsoft.graph.user" and member["id"] in users:
+                kind = member.get("@odata.type")
+                if kind == "#microsoft.graph.user" and member["id"] in users:
                     users[member["id"]].group_ids.add(raw["id"])
+                elif kind == "#microsoft.graph.group":
+                    groups[-1].child_group_ids.add(member["id"])
         return DirectorySnapshot(users=list(users.values()), groups=groups)
 
 
@@ -240,6 +309,8 @@ class GoogleWorkspaceConnector:
             for member in self._pages(members_url, "members", headers):
                 if member.get("type") == "USER" and member.get("id") in users:
                     users[member["id"]].group_ids.add(raw["id"])
+                elif member.get("type") == "GROUP" and member.get("id"):
+                    groups[-1].child_group_ids.add(member["id"])
         return DirectorySnapshot(users=list(users.values()), groups=groups)
 
 

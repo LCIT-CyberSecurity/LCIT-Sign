@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 from typing import TypedDict
 
@@ -15,7 +16,10 @@ from lcit_sign.services.directory_connectors import (
     DirectorySnapshot,
     DirGroup,
     DirUser,
+    expand_nested_groups,
 )
+
+logger = logging.getLogger(__name__)
 
 SOURCE = "local"  # the bundled fictional directory
 
@@ -108,6 +112,9 @@ def sync_directory(db: DbSession, connector: DirectoryConnector) -> DirectorySyn
         )
         db.commit()
         return run
+
+    for line in expand_nested_groups(snapshot):
+        logger.warning("directory sync %s: %s", source, line)
 
     groups_by_external_id: dict[str, Group] = {}
     for entry in snapshot.groups:

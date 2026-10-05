@@ -265,3 +265,92 @@ def test_config_requires_admin_and_valid_source(tmp_path, mock_oidc_base_url):
     assert admin.put("/api/admin/directory/sources/nope/config", json=body).status_code == 404
     bad = {"fields": {"bogus": "1"}, "secret": "x"}
     assert admin.put("/api/admin/directory/sources/entra/config", json=bad).status_code == 422
+
+
+def test_nested_groups_are_expanded_without_duplicates():
+    from lcit_sign.services.directory_connectors import (
+        DirectorySnapshot,
+        DirGroup,
+        DirUser,
+        expand_nested_groups,
+    )
+
+    # All -> Sales -> Sales-EMEA ; Alice is only in Sales-EMEA.
+    snapshot = DirectorySnapshot(
+        groups=[
+            DirGroup("all", "All", child_group_ids={"sales"}),
+            DirGroup("sales", "Sales", child_group_ids={"emea"}),
+            DirGroup("emea", "Sales EMEA"),
+        ],
+        users=[DirUser("u1", "alice@corp.test", "Alice", "A", group_ids={"emea"})],
+    )
+    assert expand_nested_groups(snapshot) == []
+    assert snapshot.users[0].group_ids == {"emea", "sales", "all"}
+
+
+def test_nested_group_cycle_is_cut_and_reported():
+    from lcit_sign.services.directory_connectors import (
+        DirectorySnapshot,
+        DirGroup,
+        DirUser,
+        expand_nested_groups,
+    )
+
+    snapshot = DirectorySnapshot(
+        groups=[
+            DirGroup("a", "A", child_group_ids={"b"}),
+            DirGroup("b", "B", child_group_ids={"a"}),
+        ],
+        users=[DirUser("u1", "bob@corp.test", "Bob", "B", group_ids={"b"})],
+    )
+    diagnostics = expand_nested_groups(snapshot)
+    assert snapshot.users[0].group_ids == {"a", "b"}
+    assert any("cycle" in line for line in diagnostics)
+
+
+def test_nested_group_depth_is_limited():
+    from lcit_sign.services.directory_connectors import (
+        DirectorySnapshot,
+        DirGroup,
+        DirUser,
+        expand_nested_groups,
+    )
+
+    groups = [DirGroup(f"g{i}", f"G{i}", child_group_ids={f"g{i + 1}"}) for i in range(30)]
+    groups.append(DirGroup("g30", "G30"))
+    snapshot = DirectorySnapshot(
+        groups=groups, users=[DirUser("u", "c@corp.test", "C", "C", group_ids={"g30"})]
+    )
+    diagnostics = expand_nested_groups(snapshot, max_depth=5)
+    assert len(snapshot.users[0].group_ids) == 6  # g30 + 5 ancestors
+    assert any("too deep" in line for line in diagnostics)
+
+
+def test_entra_sync_resolves_nested_groups(tmp_path, mock_oidc_base_url):
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "oauth2/v2.0/token" in url:
+            return httpx.Response(200, json={"access_token": "tok"})
+        if "/users?" in url:
+            return httpx.Response(200, json={"value": [
+                {"id": "e1", "mail": "ann@corp.test", "givenName": "Ann", "surname": "One"}]})
+        if "/groups?" in url:
+            return httpx.Response(200, json={"value": [
+                {"id": "parent", "displayName": "Parent"},
+                {"id": "child", "displayName": "Child"}]})
+        if "/groups/parent/members" in url:
+            return httpx.Response(200, json={"value": [
+                {"@odata.type": "#microsoft.graph.group", "id": "child"}]})
+        if "/groups/child/members" in url:
+            return httpx.Response(200, json={"value": [
+                {"@odata.type": "#microsoft.graph.user", "id": "e1"}]})
+        return httpx.Response(404)
+
+    app = _entra_app(tmp_path, mock_oidc_base_url, handler)
+    admin = _admin(app, mock_oidc_base_url)
+    _configure_entra(admin)
+    run = admin.post("/api/admin/directory/sync?source=entra").json()
+    assert run["status"] == "SUCCESS", run
+    assert run["memberships_added"] == 2
+    groups = {g["name"]: g["member_count"] for g in admin.get("/api/admin/directory/groups").json()}
+    assert groups == {"Parent": 1, "Child": 1}
