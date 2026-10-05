@@ -88,7 +88,7 @@ export default function OperatorCampaignDetailPage() {
         <span className={`badge badge--${campaign.status.toLowerCase()}`}>{campaign.status}</span>
       </div>
 
-      {campaign.status !== "DRAFT" && describePolicies(campaign.policies).length > 0 && (
+      {describePolicies(campaign.policies).length > 0 && (
         <div className="card">
           <div className="card-title">Politiques</div>
           <ul className="plain-list">
@@ -110,7 +110,7 @@ export default function OperatorCampaignDetailPage() {
         </div>
       )}
 
-      {campaign.status !== "DRAFT" && (
+      {(
         <div className="card">
           <div className="card-title">Suivi</div>
           <div className="filter-bar">
@@ -217,7 +217,7 @@ export default function OperatorCampaignDetailPage() {
         </div>
       )}
 
-      {campaign.status !== "DRAFT" && (
+      {(
         <div className="card">
           <div className="card-title">
             <FileBarChart size={16} aria-hidden="true" /> Procès-verbaux
