@@ -71,6 +71,8 @@ class DirectoryConnectorConfig(Base):
     source: Mapped[str] = mapped_column(String(50), primary_key=True)
     settings_json: Mapped[str] = mapped_column(String(2000), default="{}")
     encrypted_secret: Mapped[str | None] = mapped_column(String(10000))
+    # Scheduled sync (spec §15): run this source every N minutes; None = manual.
+    sync_interval_minutes: Mapped[int | None] = mapped_column(Integer)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )

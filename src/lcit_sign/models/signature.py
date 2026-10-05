@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint, func
+from sqlalchemy import DateTime, ForeignKey, Index, String, UniqueConstraint, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from lcit_sign.database import Base
@@ -23,7 +23,20 @@ class Signature(Base):
 
     __tablename__ = "signatures"
     __table_args__ = (
-        UniqueConstraint("user_id", "document_version_id", name="uq_signature_user_version"),
+        UniqueConstraint(
+            "user_id",
+            "document_version_id",
+            "campaign_id",
+            name="uq_signature_user_version_campaign",
+        ),
+        Index(
+            "uq_signature_user_version_no_campaign",
+            "user_id",
+            "document_version_id",
+            unique=True,
+            postgresql_where=text("campaign_id IS NULL"),
+            sqlite_where=text("campaign_id IS NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)

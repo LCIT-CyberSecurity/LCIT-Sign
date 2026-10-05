@@ -67,6 +67,20 @@ class Campaign(Base):
     deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
+    # Reminder policy (spec §50): first reminder N days after assignment,
+    # then every M days, at most K times; optionally one more N days before
+    # the deadline. All None = no automatic reminders.
+    reminder_first_days: Mapped[int | None] = mapped_column(Integer)
+    reminder_interval_days: Mapped[int | None] = mapped_column(Integer)
+    reminder_max_count: Mapped[int | None] = mapped_column(Integer)
+    reminder_before_deadline_days: Mapped[int | None] = mapped_column(Integer)
+    # Renewal (spec §51): every N DAYS/MONTHS after launch a follow-up
+    # campaign re-asks the same people. `renewed_at` makes it happen once.
+    renewal_every: Mapped[int | None] = mapped_column(Integer)
+    renewal_unit: Mapped[str | None] = mapped_column(String(10))
+    renewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    renewal_of_campaign_id: Mapped[uuid.UUID | None]
+
     documents: Mapped[list[CampaignDocument]] = relationship(
         back_populates="campaign", cascade="all, delete-orphan"
     )

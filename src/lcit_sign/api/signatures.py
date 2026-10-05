@@ -54,6 +54,7 @@ def _signature_payload(signature: Signature) -> dict[str, Any]:
     return {
         "id": str(signature.id),
         "display_id": signature.display_id,
+        "campaign_id": str(signature.campaign_id) if signature.campaign_id else None,
         "document_id": str(signature.document_id),
         "document_version_id": str(signature.document_version_id),
         "signed_at_utc": signature.signed_at_utc.isoformat(),
@@ -111,11 +112,31 @@ def sign_document_version(
     if version.status != DocumentVersionStatus.PUBLISHED:
         raise HTTPException(409, "Only a published version can be signed")
 
-    already_signed = db.execute(
-        select(Signature).where(
-            Signature.user_id == user.id, Signature.document_version_id == version.id
-        )
-    ).scalar_one_or_none()
+    # The campaign this signature answers: the oldest outstanding assignment
+    # for this user and version (spec §125 — "dans quelle campagne"). With
+    # none, the signature is campaign-less and can only happen once.
+    pending_assignments = list(
+        db.execute(
+            select(SignatureAssignment)
+            .where(
+                SignatureAssignment.document_version_id == version.id,
+                SignatureAssignment.user_id == user.id,
+                SignatureAssignment.status.in_([AssignmentStatus.PENDING, AssignmentStatus.VIEWED]),
+            )
+            .order_by(SignatureAssignment.assigned_at)
+        ).scalars()
+    )
+    campaign_id = pending_assignments[0].campaign_id if pending_assignments else None
+    # With an outstanding assignment, only a signature for that same
+    # campaign counts as "already signed" (a renewal asks again). Without
+    # one, any earlier signature of this version means there is nothing
+    # left to ask.
+    already_signed_query = select(Signature.id).where(
+        Signature.user_id == user.id, Signature.document_version_id == version.id
+    )
+    if campaign_id is not None:
+        already_signed_query = already_signed_query.where(Signature.campaign_id == campaign_id)
+    already_signed = db.execute(already_signed_query).first()
     if already_signed is not None:
         raise HTTPException(409, "You have already signed this document version")
 
@@ -149,7 +170,7 @@ def sign_document_version(
 
     evidence_fields = canonical_evidence_fields(
         signature_id=signature_id,
-        campaign_id=None,
+        campaign_id=campaign_id,
         document_id=document.id,
         document_version_id=version.id,
         version_label=version.version_label,
@@ -183,6 +204,7 @@ def sign_document_version(
 
     signature = Signature(
         id=signature_id,
+        campaign_id=campaign_id,
         document_id=document.id,
         document_version_id=version.id,
         user_id=user.id,
@@ -222,13 +244,6 @@ def sign_document_version(
     )
     storage.save(CERTIFICATES_BUCKET, signature.id, PDF_SUFFIX, certificate_pdf)
 
-    pending_assignments = db.execute(
-        select(SignatureAssignment).where(
-            SignatureAssignment.document_version_id == version.id,
-            SignatureAssignment.user_id == user.id,
-            SignatureAssignment.status.in_([AssignmentStatus.PENDING, AssignmentStatus.VIEWED]),
-        )
-    ).scalars()
     for assignment in pending_assignments:
         assignment.status = AssignmentStatus.SIGNED
         assignment.signed_at = signed_at

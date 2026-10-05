@@ -7,7 +7,7 @@ from typing import Any
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as DbSession
 
@@ -68,13 +68,22 @@ def _config_payload(source: str, config: DirectoryConnectorConfig | None) -> dic
         "source": source,
         "configured": bool(config and config.encrypted_secret),
         "fields": fields,
+        "sync_interval_minutes": config.sync_interval_minutes if config else None,
         "updated_at": config.updated_at.isoformat() if config and config.updated_at else None,
     }
 
 
 @router.get("/sources")
 def list_sources(db: DbSession = Depends(get_db), user: User = Depends(_admin)) -> list[Any]:
-    payloads: list[dict[str, Any]] = [{"source": "local", "configured": True, "fields": {}}]
+    local = db.get(DirectoryConnectorConfig, "local")
+    payloads: list[dict[str, Any]] = [
+        {
+            "source": "local",
+            "configured": True,
+            "fields": {},
+            "sync_interval_minutes": local.sync_interval_minutes if local else None,
+        }
+    ]
     for source in REMOTE_SOURCES:
         payloads.append(_config_payload(source, db.get(DirectoryConnectorConfig, source)))
     return payloads
@@ -85,6 +94,8 @@ class ConnectorConfigRequest(BaseModel):
     # The single secret (Entra client secret / Google service-account JSON).
     # Omitted keeps the stored ciphertext; the API never returns it.
     secret: str | None = None
+    # Run this source automatically every N minutes (None = manual only).
+    sync_interval_minutes: int | None = Field(default=None, ge=5, le=10080)
 
 
 @router.put("/sources/{source}/config")
@@ -95,9 +106,10 @@ def put_source_config(
     db: DbSession = Depends(get_db),
     user: User = Depends(_admin),
 ) -> dict[str, Any]:
-    if source not in REMOTE_SOURCES:
+    if source != "local" and source not in REMOTE_SOURCES:
         raise HTTPException(status_code=404, detail=f"unknown directory source {source!r}")
-    allowed_fields, _secret_name = REMOTE_SOURCES[source]
+    # `local` has no credentials: its row only carries the sync schedule.
+    allowed_fields = REMOTE_SOURCES[source][0] if source in REMOTE_SOURCES else ()
     unknown = set(body.fields) - set(allowed_fields)
     if unknown:
         raise HTTPException(status_code=422, detail=f"unknown fields: {sorted(unknown)}")
@@ -106,7 +118,10 @@ def put_source_config(
         config = DirectoryConnectorConfig(source=source)
         db.add(config)
     config.settings_json = json.dumps(body.fields)
+    config.sync_interval_minutes = body.sync_interval_minutes
     config.updated_by = user.id
+    if body.secret and source == "local":
+        raise HTTPException(status_code=422, detail="the local directory has no secret")
     if body.secret:
         master_key = request.app.state.settings.master_key
         if not master_key:

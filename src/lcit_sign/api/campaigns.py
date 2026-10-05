@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as DbSession
 
@@ -26,6 +26,7 @@ from lcit_sign.models.document import Document, DocumentVersion, DocumentVersion
 from lcit_sign.models.mail import NotificationType
 from lcit_sign.models.user import Role, User
 from lcit_sign.services.audit import append_audit_event
+from lcit_sign.services.campaign_launch import create_assignments
 from lcit_sign.services.notification_queue import enqueue_notification
 
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])
@@ -61,8 +62,33 @@ class TargetRequest(BaseModel):
     user_ids: list[uuid.UUID] = []
 
 
+POLICY_FIELDS = (
+    "reminder_first_days",
+    "reminder_interval_days",
+    "reminder_max_count",
+    "reminder_before_deadline_days",
+    "renewal_every",
+    "renewal_unit",
+)
+
+
 class LaunchRequest(TargetRequest):
     deadline: datetime | None = None
+    # Reminder policy (spec §50) and renewal (spec §51); all optional.
+    reminder_first_days: int | None = Field(default=None, ge=0, le=365)
+    reminder_interval_days: int | None = Field(default=None, ge=1, le=365)
+    reminder_max_count: int | None = Field(default=None, ge=0, le=50)
+    reminder_before_deadline_days: int | None = Field(default=None, ge=0, le=365)
+    renewal_every: int | None = Field(default=None, ge=1, le=3650)
+    renewal_unit: Literal["DAYS", "MONTHS"] | None = None
+
+    @model_validator(mode="after")
+    def _coherent_policies(self) -> LaunchRequest:
+        if (self.renewal_every is None) != (self.renewal_unit is None):
+            raise ValueError("renewal_every and renewal_unit go together")
+        if self.reminder_first_days is not None and self.reminder_interval_days is None:
+            raise ValueError("reminder_interval_days is required with reminder_first_days")
+        return self
 
 
 def _resolve_population(
@@ -123,6 +149,10 @@ def _campaign_payload(campaign: Campaign, db: DbSession) -> dict[str, Any]:
         "launch_at": campaign.launch_at.isoformat() if campaign.launch_at else None,
         "deadline": campaign.deadline.isoformat() if campaign.deadline else None,
         "closed_at": campaign.closed_at.isoformat() if campaign.closed_at else None,
+        "policies": {field: getattr(campaign, field) for field in POLICY_FIELDS},
+        "renewal_of_campaign_id": (
+            str(campaign.renewal_of_campaign_id) if campaign.renewal_of_campaign_id else None
+        ),
         "document_version_ids": [str(d.document_version_id) for d in campaign.documents],
         "assignment_counts": {
             status.value: raw_counts.get(status, 0) for status in AssignmentStatus
@@ -220,39 +250,11 @@ def launch_campaign(
             db.add(CampaignTargetUser(campaign_id=campaign.id, user_id=target_user_id))
 
     settings: Settings = request.app.state.settings
-    population_users = db.execute(select(User).where(User.id.in_(population))).scalars()
-    users_by_id = {u.id: u for u in population_users}
-
-    for campaign_document in campaign.documents:
-        version = db.get(DocumentVersion, campaign_document.document_version_id)
-        document = db.get(Document, version.document_id) if version else None
-        document_title = document.title if document else "document"
-
-        for target_user_id in population:
-            db.add(
-                SignatureAssignment(
-                    campaign_id=campaign.id,
-                    document_version_id=campaign_document.document_version_id,
-                    user_id=target_user_id,
-                    deadline=body.deadline,
-                )
-            )
-            target_user = users_by_id.get(target_user_id)
-            if target_user is not None:
-                enqueue_notification(
-                    db,
-                    notification_type=NotificationType.DOCUMENT_TO_SIGN,
-                    recipient_email=target_user.email,
-                    recipient_user_id=target_user.id,
-                    subject=f"Document à signer : {document_title}",
-                    body_text=(
-                        f"Bonjour {target_user.display_name},\n\n"
-                        f'Un document "{document_title}" ({campaign.name}) '
-                        f"attend votre signature.\n"
-                        f"Connectez-vous à LCIT Sign pour le consulter et le signer : "
-                        f"{settings.public_base_url}\n"
-                    ),
-                )
+    create_assignments(
+        db, campaign, population, deadline=body.deadline, public_base_url=settings.public_base_url
+    )
+    for field in POLICY_FIELDS:
+        setattr(campaign, field, getattr(body, field))
 
     campaign.status = CampaignStatus.ACTIVE
     campaign.launch_at = datetime.now(UTC)

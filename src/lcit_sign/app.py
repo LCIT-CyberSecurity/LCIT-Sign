@@ -6,8 +6,10 @@ import logging
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from urllib.parse import urlsplit
 
+import httpx
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -17,6 +19,7 @@ from lcit_sign.api.admin import router as admin_router
 from lcit_sign.api.auth import router as auth_router
 from lcit_sign.api.campaigns import me_router as me_assignments_router
 from lcit_sign.api.campaigns import router as campaigns_router
+from lcit_sign.api.diagnostics import router as diagnostics_router
 from lcit_sign.api.directory import router as directory_router
 from lcit_sign.api.documents import router as documents_router
 from lcit_sign.api.health import router as health_router
@@ -29,6 +32,11 @@ from lcit_sign.logging_utils import configure_logging
 from lcit_sign.request_context import set_request_id
 from lcit_sign.services.notification_queue import process_pending_notifications
 from lcit_sign.services.rate_limit import SlidingWindowLimiter
+from lcit_sign.services.scheduler import (
+    process_directory_syncs,
+    process_reminders,
+    process_renewals,
+)
 from lcit_sign.services.storage import StorageService
 
 logger = logging.getLogger(__name__)
@@ -59,9 +67,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     def _process_notifications_once(app: FastAPI) -> None:
         db = app.state.session_factory()
+        http_client = httpx.Client(timeout=30.0)
         try:
+            # Scheduled work first, so reminders queued now go out in this
+            # same cycle. Each job commits on its own and is idempotent.
+            jobs: list[tuple[str, Callable[[], object]]] = [
+                ("reminders", lambda: process_reminders(db, settings)),
+                ("renewals", lambda: process_renewals(db, settings)),
+                ("directory sync", lambda: process_directory_syncs(db, settings, http_client)),
+            ]
+            for job_name, job in jobs:
+                try:
+                    job()
+                except Exception:
+                    db.rollback()
+                    logger.exception("scheduled job failed: %s", job_name)
             process_pending_notifications(db, settings)
+            app.state.worker_last_run = datetime.now(UTC)
         finally:
+            http_client.close()
             db.close()
 
     @asynccontextmanager
@@ -69,6 +93,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.engine = make_engine(settings.database_url)
         app.state.session_factory = make_session_factory(app.state.engine)
         app.state.storage = StorageService(settings.storage_root)
+        app.state.worker_last_run = None
 
         worker_task = None
         if settings.notification_worker_enabled:
@@ -203,6 +228,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(campaigns_router, prefix="/api")
     app.include_router(me_assignments_router, prefix="/api")
     app.include_router(directory_router, prefix="/api")
+    app.include_router(diagnostics_router, prefix="/api")
     app.include_router(campaign_reports_router, prefix="/api")
     app.include_router(reports_router, prefix="/api")
 
