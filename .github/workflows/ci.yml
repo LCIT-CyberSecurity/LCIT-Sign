@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    - cron: "17 5 * * 1"   # weekly: new advisories appear without any commit
+
+permissions:
+  contents: read
 
 jobs:
   backend:
@@ -28,6 +33,51 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - run: npm install
+      - run: npm ci
       - run: npm run build
       - run: npm test
+
+  dependency-audit:
+    # Known-vulnerability checks on what is actually installed (spec §120).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install . pip-audit
+      - run: pip-audit --strict
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm audit --audit-level=high
+        working-directory: web
+
+  scripts-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        run: |
+          shellcheck scripts/*.sh tests/UAT/CrashTests-Sign/*.sh tests/integration/*.sh \
+            web/nginx/40-lcit-sign-tls.sh docker/entrypoint.sh docker/postfix-test/entrypoint.sh
+      - name: docker compose files are valid
+        run: |
+          docker compose -f docker-compose.yml config -q
+          docker compose -f docker-compose.yml -f docker-compose.test.yml config -q
+      - name: Kubernetes manifests are valid
+        run: |
+          docker run --rm -v "$PWD/k8s:/k:ro" ghcr.io/yannh/kubeconform:latest \
+            -strict -summary -ignore-missing-schemas -skip Kustomization /k
+
+  secret-scan:
+    # The repository is public: no secret may ever be committed (spec §2).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: gitleaks (full history)
+        run: |
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:latest \
+            detect --source /repo --redact --no-banner --exit-code 1

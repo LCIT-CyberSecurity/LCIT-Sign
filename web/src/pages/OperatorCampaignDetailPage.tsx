@@ -2,6 +2,13 @@ import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { ArrowLeft, Rocket, Bell, StopCircle, FileBarChart, Download } from "lucide-react";
 import { api, ApiError } from "../api/client";
+import PolicyFields, {
+  EMPTY_POLICY,
+  buildPolicyPayload,
+  describePolicies,
+  policyProblem,
+  type PolicyForm,
+} from "../components/PolicyFields";
 import type {
   Campaign,
   CampaignAssignment,
@@ -31,6 +38,7 @@ export default function OperatorCampaignDetailPage() {
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [policy, setPolicy] = useState<PolicyForm>(EMPTY_POLICY);
 
   const load = () => {
     if (!id) return;
@@ -67,10 +75,16 @@ export default function OperatorCampaignDetailPage() {
   };
 
   const launch = async () => {
+    const problem = policyProblem(policy);
+    if (problem) {
+      setError(problem);
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
       await api.post(`/campaigns/${id}/launch`, {
+        ...buildPolicyPayload(policy),
         all_users: allUsers,
         group_ids: allUsers ? [] : selectedGroupIds,
         user_ids: allUsers ? [] : selectedUserIds,
@@ -108,6 +122,17 @@ export default function OperatorCampaignDetailPage() {
         <h1 className="page-title">{campaign.name}</h1>
         <span className={`badge badge--${campaign.status.toLowerCase()}`}>{campaign.status}</span>
       </div>
+
+      {campaign.status !== "DRAFT" && describePolicies(campaign.policies).length > 0 && (
+        <div className="card">
+          <div className="card-title">Politiques</div>
+          <ul className="plain-list">
+            {describePolicies(campaign.policies).map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {campaign.status === "DRAFT" && (
         <>
@@ -171,6 +196,8 @@ export default function OperatorCampaignDetailPage() {
                 </div>
               </>
             )}
+
+            <PolicyFields value={policy} onChange={setPolicy} />
 
             {error && <p className="error-text">{error}</p>}
             <button className="button button--primary" onClick={launch} disabled={busy}>

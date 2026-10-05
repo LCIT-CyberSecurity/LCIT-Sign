@@ -68,6 +68,11 @@ export default function SignerAssignmentDetailPage() {
           <div className="card-title">
             <FileCheck size={18} aria-hidden="true" /> Document signé
           </div>
+          {signature && (
+            <p className="muted">
+              Identifiant : <strong data-testid="signature-id">{signature.display_id}</strong>
+            </p>
+          )}
           <div className="button-row">
             <a
               className="button button--secondary"

@@ -1,0 +1,85 @@
+import { expect, test, type Browser, type Page } from "@playwright/test";
+
+// Fictional CrashTest identities of the mock OIDC provider. The stack must
+// hold the CrashTests dataset (scripts/integration-seed.sh).
+async function loginAs(page: Page, name: string) {
+  await page.goto("/");
+  await page.getByRole("link", { name: /Se connecter avec le SSO/ }).click();
+  await page.getByRole("link", { name: new RegExp(name) }).click();
+  // The login page also says "LCIT Sign": wait for something only a session shows.
+  await expect(page.getByRole("button", { name: /Déconnexion/ })).toBeVisible();
+}
+
+test("a signer sees nothing of the operator and admin areas", async ({ page }) => {
+  await loginAs(page, "Erwan");
+  await expect(page.getByText("Mes documents")).toBeVisible();
+  await expect(page.getByText("Administration")).toHaveCount(0);
+  await page.goto("/admin/diagnostics");
+  await expect(page).toHaveURL(/\/$/); // bounced back by the route guard
+});
+
+// A one-page PDF generated with pypdf (the server validates PDF structure).
+const MINIMAL_PDF = Buffer.from(
+  "JVBERi0xLjMKJeLjz9MKMSAwIG9iago8PAovUHJvZHVjZXIgKHB5cGRmKQo+PgplbmRvYmoKMiAwIG9iago8PAovVHlwZSAvUGFnZXMKL0NvdW50IDEKL0tpZHMgWyA0IDAgUiBdCj4+CmVuZG9iagozIDAgb2JqCjw8Ci9UeXBlIC9DYXRhbG9nCi9QYWdlcyAyIDAgUgo+PgplbmRvYmoKNCAwIG9iago8PAovVHlwZSAvUGFnZQovUmVzb3VyY2VzIDw8Cj4+Ci9NZWRpYUJveCBbIDAuMCAwLjAgMjAwIDIwMCBdCi9QYXJlbnQgMiAwIFIKPj4KZW5kb2JqCnhyZWYKMCA1CjAwMDAwMDAwMDAgNjU1MzUgZiAKMDAwMDAwMDAxNSAwMDAwMCBuIAowMDAwMDAwMDU0IDAwMDAwIG4gCjAwMDAwMDAxMTMgMDAwMDAgbiAKMDAwMDAwMDE2MiAwMDAwMCBuIAp0cmFpbGVyCjw8Ci9TaXplIDUKL1Jvb3QgMyAwIFIKL0luZm8gMSAwIFIKPj4Kc3RhcnR4cmVmCjI1NgolJUVPRgo=",
+  "base64",
+);
+
+/** As an operator, publish a fresh document and ask `signerEmail` to sign it,
+ *  so the test never depends on what earlier runs already signed. */
+async function askToSign(browser: Browser, signerEmail: string, title: string) {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await loginAs(page, "Diane");
+  const api = context.request;
+
+  const created = await api.post("/api/documents", {
+    multipart: {
+      title,
+      version_label: "1.0",
+      file: { name: "e2e.pdf", mimeType: "application/pdf", buffer: MINIMAL_PDF },
+    },
+  });
+  expect(created.status()).toBe(201);
+  const versionId = (await created.json()).versions[0].id as string;
+  expect((await api.post(`/api/documents/versions/${versionId}/publish`)).status()).toBe(200);
+
+  const users = (await (await api.get("/api/campaigns/_meta/users")).json()) as {
+    id: string;
+    email: string;
+  }[];
+  const signer = users.find((u) => u.email === signerEmail);
+  expect(signer, `${signerEmail} must exist (run the seed first)`).toBeTruthy();
+
+  const campaign = await (await api.post("/api/campaigns", { data: { name: title } })).json();
+  await api.post(`/api/campaigns/${campaign.id}/documents`, {
+    data: { document_version_id: versionId },
+  });
+  const launch = await api.post(`/api/campaigns/${campaign.id}/launch`, {
+    data: { user_ids: [signer!.id] },
+  });
+  expect(launch.status()).toBe(200);
+  await context.close();
+}
+
+test("a signer reads a document, consents and signs", async ({ page, browser }) => {
+  const title = `E2E ${Date.now()}`;
+  await askToSign(browser, "bob.dupont@lcit-test.local", title);
+
+  await loginAs(page, "Bob");
+  await page.getByRole("link", { name: new RegExp(title) }).click();
+
+  const sign = page.getByRole("button", { name: /^Signer/ });
+  await expect(sign).toBeDisabled(); // no signature without consent
+  await page.getByRole("checkbox").check();
+  await expect(sign).toBeEnabled();
+  await sign.click();
+  await expect(page.getByText("Document signé")).toBeVisible();
+  await expect(page.getByTestId("signature-id")).toHaveText(/^SIG-[0-9A-F]{12}$/);
+});
+
+test("an administrator reaches the diagnostics page", async ({ page }) => {
+  await loginAs(page, "Alice");
+  await page.getByRole("link", { name: "Diagnostic" }).click();
+  await expect(page.getByRole("heading", { name: /Diagnostic/ })).toBeVisible();
+  await expect(page.getByTestId("check-database")).toBeVisible();
+});

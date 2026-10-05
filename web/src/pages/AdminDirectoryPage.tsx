@@ -8,9 +8,10 @@ export default function AdminDirectoryPage() {
   const [groups, setGroups] = useState<DirectoryGroup[] | null>(null);
   const [runs, setRuns] = useState<DirectorySyncRun[] | null>(null);
   const [syncing, setSyncing] = useState(false);
-  const [sources, setSources] = useState<DirectorySource[]>([{ source: "local", configured: true, fields: {} }]);
+  const [sources, setSources] = useState<DirectorySource[]>([{ source: "local", configured: true, fields: {}, sync_interval_minutes: null }]);
   const [source, setSource] = useState("local");
   const [error, setError] = useState<string | null>(null);
+  const [interval, setIntervalMinutes] = useState<string>("");
 
   const load = () => {
     api.get<DirectoryGroup[]>("/admin/directory/groups").then(setGroups);
@@ -19,6 +20,24 @@ export default function AdminDirectoryPage() {
   };
 
   useEffect(load, []);
+
+  const current = sources.find((s) => s.source === source);
+  useEffect(() => {
+    setIntervalMinutes(current?.sync_interval_minutes ? String(current.sync_interval_minutes) : "");
+  }, [current?.source, current?.sync_interval_minutes]);
+
+  const saveSchedule = async () => {
+    setError(null);
+    try {
+      await api.put(`/admin/directory/sources/${source}/config`, {
+        fields: current?.fields ?? {},
+        sync_interval_minutes: interval ? Number(interval) : null,
+      });
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Échec de l'enregistrement.");
+    }
+  };
 
   const sync = async () => {
     setSyncing(true);
@@ -53,6 +72,21 @@ export default function AdminDirectoryPage() {
           <RefreshCw size={14} aria-hidden="true" /> {syncing ? "Synchronisation…" : "Synchroniser maintenant"}
         </button>
         {error && <p role="alert">{error}</p>}
+        <div className="form-row">
+          <label>
+            Synchronisation automatique toutes les (minutes, vide = manuelle)
+            <input
+              type="number"
+              min={5}
+              value={interval}
+              onChange={(e) => setIntervalMinutes(e.target.value)}
+              aria-label="Intervalle de synchronisation"
+            />
+          </label>
+          <button className="button button--secondary" type="button" onClick={saveSchedule}>
+            Enregistrer la planification
+          </button>
+        </div>
       </div>
 
       {sources

@@ -77,6 +77,8 @@ export interface Campaign {
   closed_at: string | null;
   document_version_ids: string[];
   assignment_counts: Record<AssignmentStatus, number>;
+  policies: CampaignPolicies;
+  renewal_of_campaign_id: string | null;
 }
 
 export interface SignatureSummary {
@@ -136,6 +138,9 @@ export interface DirectorySyncRun {
 }
 
 export interface MailConnectorConfig {
+  kind: "smtp" | "graph";
+  graph_tenant_id: string | null;
+  graph_client_id: string | null;
   host: string;
   port: number;
   use_tls: boolean;
@@ -170,4 +175,26 @@ export interface DirectorySource {
   source: string;
   configured: boolean;
   fields: Record<string, string>;
+  sync_interval_minutes: number | null;
+}
+
+export interface DiagnosticCheck {
+  name: string;
+  status: "OK" | "WARN" | "ERROR" | "DISABLED";
+  detail: string;
+}
+
+export interface DiagnosticsReport {
+  status: "OK" | "WARN" | "ERROR";
+  checked_at: string;
+  checks: DiagnosticCheck[];
+}
+
+export interface CampaignPolicies {
+  reminder_first_days: number | null;
+  reminder_interval_days: number | null;
+  reminder_max_count: number | null;
+  reminder_before_deadline_days: number | null;
+  renewal_every: number | null;
+  renewal_unit: "DAYS" | "MONTHS" | null;
 }

@@ -15,5 +15,9 @@ uat() {
 echo "##### smoke"; uat smoke.py
 echo "##### smtp scenarios (needs the test Postfix)"; if docker inspect lcit-sign-postfix-test >/dev/null 2>&1; then tests/integration/run-smtp-scenarios.sh; else echo "SKIP: postfix-test is not running"; fi
 echo "##### seed";  uat seed.py
+echo "##### browser end-to-end (Playwright)"
+docker run --rm --network host -v "$PWD/web":/src:ro -e LCIT_SIGN_E2E_BASE_URL="$BASE" \
+    "mcr.microsoft.com/playwright:v$(sed -n 's/.*"@playwright\/test": "\^\{0,1\}\([0-9.]*\)".*/\1/p' web/package.json)-noble" \
+    bash -c "cp -r /src /w && cd /w && npm ci --silent && npx playwright test"
 echo "##### restore"; tests/UAT/CrashTests-Sign/restore-test.sh
 echo; echo "CrashTests-Sign: all passed."

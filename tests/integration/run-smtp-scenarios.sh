@@ -38,9 +38,15 @@ echo "mailbox deliveries during the run: $DELIVERED (expected 3)"
 # The environment must never have tried to reach the Internet: nothing is
 # queued for outbound delivery, and the external recipient was refused at RCPT.
 QUEUE="$(docker exec "$PF" postqueue -p)"
-echo "$QUEUE" | grep -q "Mail queue is empty" \
-    && echo "PASS: mail queue empty (nothing left for outbound delivery)" \
-    || { echo "FAIL: mail is queued"; echo "$QUEUE"; exit 1; }
-docker logs "$PF" 2>&1 | grep -qi "Relay access denied" \
-    && echo "PASS: relay attempts were denied" \
-    || { echo "FAIL: no relay denial logged"; exit 1; }
+if echo "$QUEUE" | grep -q "Mail queue is empty"; then
+    echo "PASS: mail queue empty (nothing left for outbound delivery)"
+else
+    echo "FAIL: mail is queued"; echo "$QUEUE"; exit 1
+fi
+# Captured first: `grep -q` closing the pipe early would trip pipefail on docker logs.
+PF_LOGS="$(docker logs "$PF" 2>&1)"
+if grep -qi "Relay access denied" <<<"$PF_LOGS"; then
+    echo "PASS: relay attempts were denied"
+else
+    echo "FAIL: no relay denial logged"; exit 1
+fi

@@ -13,6 +13,7 @@ import AdminDirectoryPage from "./pages/AdminDirectoryPage";
 import AdminMailPage from "./pages/AdminMailPage";
 import AdminAuditPage from "./pages/AdminAuditPage";
 import AdminSigningKeysPage from "./pages/AdminSigningKeysPage";
+import AdminDiagnosticsPage from "./pages/AdminDiagnosticsPage";
 
 function RoleRoute({ allowed, children }: { allowed: boolean; children: ReactNode }) {
   return allowed ? <>{children}</> : <Navigate to="/" replace />;
@@ -102,6 +103,15 @@ export default function App() {
           element={
             <RoleRoute allowed={isAdmin}>
               <AdminSigningKeysPage />
+            </RoleRoute>
+          }
+        />
+
+        <Route
+          path="/admin/diagnostics"
+          element={
+            <RoleRoute allowed={isAdmin}>
+              <AdminDiagnosticsPage />
             </RoleRoute>
           }
         />

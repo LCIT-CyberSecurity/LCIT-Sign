@@ -9,6 +9,7 @@ import {
   Mail,
   ScrollText,
   KeyRound,
+  Activity,
   LogOut,
 } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
@@ -66,6 +67,7 @@ export default function Shell() {
               <NavItem to="/admin/mail" icon={<Mail size={16} />} label="Email" />
               <NavItem to="/admin/audit" icon={<ScrollText size={16} />} label="Audit" />
               <NavItem to="/admin/signing-keys" icon={<KeyRound size={16} />} label="Clés de signature" />
+              <NavItem to="/admin/diagnostics" icon={<Activity size={16} />} label="Diagnostic" />
             </>
           )}
         </nav>

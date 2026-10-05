@@ -30,7 +30,7 @@ step() { printf '\n==> %s\n' "$*"; }
 
 step "1. Backup of the live stack"
 LCIT_SIGN_BACKUP_DIR="$BACKUP_ROOT" scripts/backup.sh >/dev/null
-BACKUP="$(ls -d "$BACKUP_ROOT"/lcit-sign-* | head -1)"
+BACKUP="$(find "$BACKUP_ROOT" -mindepth 1 -maxdepth 1 -name 'lcit-sign-*' | head -1)"
 ( cd "$BACKUP" && sha256sum -c SHA256SUMS >/dev/null ) && echo "checksums OK"
 
 LIVE_SIGNATURES="$(docker compose exec -T postgres psql -U lcit_sign -d lcit_sign -Atc \

@@ -594,3 +594,7 @@ input[type="checkbox"] {
   text-decoration: none;
   font-size: 0.86rem;
 }
+
+.status-ok { color: var(--success); }
+.status-warn { color: var(--warning); }
+.status-error { color: var(--danger); }

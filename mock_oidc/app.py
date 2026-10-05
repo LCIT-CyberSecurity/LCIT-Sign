@@ -96,7 +96,7 @@ def authorize(
         f"&nonce={nonce}&code_challenge={code_challenge}"
     )
     options = "".join(
-        f'<li><a href="/authorize/choose?{params}&sub={sub}">'
+        f'<li><a href="authorize/choose?{params}&sub={sub}">'
         f"{user['given_name']} {user['family_name']} — {user['group']}</a></li>"
         for sub, user in TEST_USERS.items()
     )

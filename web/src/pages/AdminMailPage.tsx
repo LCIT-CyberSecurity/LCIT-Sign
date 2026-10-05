@@ -6,6 +6,9 @@ import type { MailConnectorConfig } from "../api/types";
 export default function AdminMailPage() {
   const [config, setConfig] = useState<MailConnectorConfig | null>(null);
   const [form, setForm] = useState({
+    kind: "smtp" as "smtp" | "graph",
+    graph_tenant_id: "",
+    graph_client_id: "",
     host: "",
     port: 587,
     use_tls: false,
@@ -19,6 +22,8 @@ export default function AdminMailPage() {
   const [diagnostics, setDiagnostics] = useState<Record<string, string> | null>(null);
   const [testEmail, setTestEmail] = useState("");
   const [message, setMessage] = useState<string | null>(null);
+  const [probeMailbox, setProbeMailbox] = useState("");
+  const [isolation, setIsolation] = useState<{ isolated: boolean; detail: string } | null>(null);
 
   useEffect(() => {
     api
@@ -28,6 +33,9 @@ export default function AdminMailPage() {
         if (existing) {
           setForm((f) => ({
             ...f,
+            kind: existing.kind,
+            graph_tenant_id: existing.graph_tenant_id ?? "",
+            graph_client_id: existing.graph_client_id ?? "",
             host: existing.host,
             port: existing.port,
             use_tls: existing.use_tls,
@@ -43,10 +51,16 @@ export default function AdminMailPage() {
 
   const save = async (e: FormEvent) => {
     e.preventDefault();
-    const body = { ...form, password: form.password || null };
+    const body = {
+      ...form,
+      graph_tenant_id: form.kind === "graph" ? form.graph_tenant_id : null,
+      graph_client_id: form.kind === "graph" ? form.graph_client_id : null,
+      password: form.password || null,
+    };
     const saved = await api.put<MailConnectorConfig>("/admin/mail-connector", body);
     setConfig(saved);
-    setMessage("Configuration enregistrée.");
+    setForm((f) => ({ ...f, password: "" }));
+    setMessage("Configuration enregistrée (secret chiffré).");
   };
 
   const testConnection = async () => {
@@ -63,13 +77,61 @@ export default function AdminMailPage() {
     }
   };
 
+  const testIsolation = async () => {
+    setIsolation(null);
+    try {
+      setIsolation(
+        await api.post<{ isolated: boolean; detail: string }>("/admin/mail-connector/test-isolation", {
+          other_mailbox: probeMailbox,
+          to: testEmail,
+        }),
+      );
+    } catch (err) {
+      setMessage(err instanceof ApiError ? err.message : "Le test d'isolation a échoué.");
+    }
+  };
+
+  const isGraph = form.kind === "graph";
+
   return (
     <div className="stack">
       <h1 className="page-title">
-        <Mail size={20} aria-hidden="true" /> Configuration SMTP
+        <Mail size={20} aria-hidden="true" /> Configuration e-mail
       </h1>
 
       <form className="card form" onSubmit={save}>
+        <label>
+          Type de connecteur
+          <select
+            value={form.kind}
+            onChange={(e) => setForm({ ...form, kind: e.target.value as "smtp" | "graph" })}
+          >
+            <option value="smtp">SMTP</option>
+            <option value="graph">Microsoft 365 (Graph)</option>
+          </select>
+        </label>
+        {isGraph && (
+          <div className="form-row">
+            <label>
+              ID du tenant
+              <input
+                value={form.graph_tenant_id}
+                onChange={(e) => setForm({ ...form, graph_tenant_id: e.target.value })}
+                required
+              />
+            </label>
+            <label>
+              ID de l&apos;application (client)
+              <input
+                value={form.graph_client_id}
+                onChange={(e) => setForm({ ...form, graph_client_id: e.target.value })}
+                required
+              />
+            </label>
+          </div>
+        )}
+        {!isGraph && (
+        <>
         <div className="form-row">
           <label>
             Hôte
@@ -103,7 +165,10 @@ export default function AdminMailPage() {
             STARTTLS
           </label>
         </div>
+        </>
+        )}
         <div className="form-row">
+          {!isGraph && (
           <label>
             Utilisateur
             <input
@@ -111,8 +176,10 @@ export default function AdminMailPage() {
               onChange={(e) => setForm({ ...form, username: e.target.value })}
             />
           </label>
+          )}
           <label>
-            Mot de passe {config?.password_configured && <span className="muted small">(déjà configuré)</span>}
+            {isGraph ? "Secret client" : "Mot de passe"}{" "}
+            {config?.password_configured && <span className="muted small">(déjà configuré)</span>}
             <input
               type="password"
               value={form.password}
@@ -123,7 +190,7 @@ export default function AdminMailPage() {
         </div>
         <div className="form-row">
           <label>
-            Adresse d&apos;expédition
+            {isGraph ? "Boîte d'envoi dédiée" : "Adresse d'expédition"}
             <input
               value={form.from_address}
               onChange={(e) => setForm({ ...form, from_address: e.target.value })}
@@ -159,6 +226,34 @@ export default function AdminMailPage() {
           </ul>
         )}
       </div>
+
+      {config?.kind === "graph" && (
+        <div className="card">
+          <div className="card-title">Test d&apos;isolation (obligatoire avant mise en service)</div>
+          <p className="muted small">
+            Tente d&apos;envoyer en tant qu&apos;une AUTRE boîte vers l&apos;adresse de test ci-dessous. Exchange doit
+            refuser : sinon l&apos;application peut envoyer au nom de n&apos;importe qui. Voir
+            docs/microsoft-graph-setup.md.
+          </p>
+          <div className="form-row">
+            <input
+              placeholder="autre.boite@example.com"
+              aria-label="Autre boîte à tester"
+              value={probeMailbox}
+              onChange={(e) => setProbeMailbox(e.target.value)}
+            />
+            <button className="button button--secondary" onClick={testIsolation}>
+              Tester l&apos;isolation
+            </button>
+          </div>
+          {isolation && (
+            <p role="status" className={isolation.isolated ? "status-ok" : "status-error"}>
+              {isolation.isolated ? "✓ " : "✕ "}
+              {isolation.detail}
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="card">
         <div className="card-title">E-mail de test</div>

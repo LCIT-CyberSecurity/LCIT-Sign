@@ -49,6 +49,7 @@ export default function DirectoryConnectorForm({
       await api.put(`/admin/directory/sources/${source.source}/config`, {
         fields,
         secret: secret || undefined,
+        sync_interval_minutes: source.sync_interval_minutes,
       });
       // The secret never stays in the page once it has been sent.
       setSecret("");
