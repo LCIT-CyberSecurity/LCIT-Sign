@@ -1,9 +1,22 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
-import { FileText, Upload, CheckCircle2, Trash2, PencilRuler } from "lucide-react";
+import { useEffect, useState } from "react";
+import { FileText, CheckCircle2, Trash2, PencilRuler } from "lucide-react";
 import { Link } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import ConfirmButton from "../components/ConfirmButton";
+import UploadDropzone from "../components/UploadDropzone";
 import type { DocumentDetail } from "../api/types";
+
+interface UploadResult {
+  name: string;
+  state: "waiting" | "uploading" | "done" | "error";
+  message?: string;
+}
+
+/** "charte_informatique-2026.pdf" -> "Charte informatique 2026". */
+export function deriveTitle(fileName: string): string {
+  const base = fileName.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+  return base ? base.charAt(0).toUpperCase() + base.slice(1) : "Document";
+}
 
 export default function OperatorDocumentsPage() {
   const [documents, setDocuments] = useState<DocumentDetail[] | null>(null);
@@ -15,7 +28,7 @@ export default function OperatorDocumentsPage() {
   const [uploading, setUploading] = useState(false);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<"alpha" | "recent">("alpha");
-  const fileInput = useRef<HTMLInputElement>(null);
+  const [results, setResults] = useState<UploadResult[]>([]);
 
   const load = () => {
     api.get<DocumentDetail[]>("/documents").then(setDocuments);
@@ -23,31 +36,38 @@ export default function OperatorDocumentsPage() {
 
   useEffect(load, []);
 
-  const upload = async (e: FormEvent) => {
-    e.preventDefault();
-    const file = fileInput.current?.files?.[0];
-    if (!file || !title) return;
+  const upload = async (files: File[]) => {
     setUploading(true);
     setError(null);
-    const form = new FormData();
-    form.append("title", title);
-    form.append("version_label", versionLabel);
-    form.append("description", description);
-    form.append("category", category);
-    form.append("file", file);
-    try {
-      await api.postForm("/documents", form);
-      setTitle("");
-      setVersionLabel("1.0");
-      setDescription("");
-      setCategory("");
-      if (fileInput.current) fileInput.current.value = "";
-      load();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "L'envoi a échoué.");
-    } finally {
-      setUploading(false);
+    const batch: UploadResult[] = files.map((file) => ({ name: file.name, state: "waiting" }));
+    setResults(batch);
+    const update = (index: number, patch: Partial<UploadResult>) => {
+      batch[index] = { ...batch[index], ...patch };
+      setResults([...batch]);
+    };
+    for (const [index, file] of files.entries()) {
+      if (!/\.pdf$/i.test(file.name)) {
+        update(index, { state: "error", message: "Seuls les PDF sont acceptés pour le moment." });
+        continue;
+      }
+      update(index, { state: "uploading" });
+      const form = new FormData();
+      // One file may take the title typed above; several are named after their files.
+      form.append("title", files.length === 1 && title.trim() ? title.trim() : deriveTitle(file.name));
+      form.append("version_label", versionLabel);
+      form.append("description", description);
+      form.append("category", category);
+      form.append("file", file);
+      try {
+        await api.postForm("/documents", form);
+        update(index, { state: "done" });
+      } catch (err) {
+        update(index, { state: "error", message: err instanceof ApiError ? err.message : "L'envoi a échoué." });
+      }
     }
+    if (files.length === 1 && batch[0].state === "done") setTitle("");
+    setUploading(false);
+    load();
   };
 
   const remove = async (path: string) => {
@@ -92,11 +112,11 @@ export default function OperatorDocumentsPage() {
         <FileText size={20} aria-hidden="true" /> Documents
       </h1>
 
-      <form className="card form" onSubmit={upload}>
+      <section className="card form" aria-label="Ajouter des documents">
         <div className="form-row">
           <label>
-            Titre
-            <input value={title} onChange={(e) => setTitle(e.target.value)} required />
+            Titre <span className="muted small">(facultatif — repris du nom du fichier)</span>
+            <input value={title} onChange={(e) => setTitle(e.target.value)} />
           </label>
           <label>
             Version
@@ -117,15 +137,27 @@ export default function OperatorDocumentsPage() {
             />
           </label>
         </div>
-        <label>
-          Fichier PDF
-          <input type="file" accept="application/pdf" ref={fileInput} required />
-        </label>
+        <UploadDropzone onFiles={(files) => void upload(files)} disabled={uploading} hint="PDF, plusieurs à la fois" />
+        {results.length > 0 && (
+          <ul className="upload-results" aria-live="polite" data-testid="upload-results">
+            {results.map((r, i) => (
+              <li key={`${r.name}-${i}`}>
+                <span className={r.state === "error" ? "status-error" : r.state === "done" ? "status-ok" : "muted"}>
+                  {r.state === "done" ? "✓" : r.state === "error" ? "✕" : "…"}
+                </span>
+                <strong>{r.name}</strong>
+                <span className="muted small">
+                  {r.state === "done" && "ajouté en brouillon — à préparer puis publier"}
+                  {r.state === "uploading" && "envoi…"}
+                  {r.state === "waiting" && "en attente"}
+                  {r.state === "error" && r.message}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
         {error && <p className="error-text">{error}</p>}
-        <button className="button button--primary" type="submit" disabled={uploading}>
-          <Upload size={14} aria-hidden="true" /> {uploading ? "Envoi…" : "Ajouter le document (brouillon)"}
-        </button>
-      </form>
+      </section>
 
       <div className="filter-bar">
         <input

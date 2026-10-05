@@ -389,3 +389,24 @@ test("directory settings explain themselves with a bubble and an example", async
   await expect(page.getByRole("tooltip").filter({ hasText: "ID de locataire" })).toBeVisible();
   await expect(page.getByRole("tooltip").filter({ hasText: "1b2c3d4e-5f60" })).toBeVisible();
 });
+
+test("an operator drops several PDFs on the documents page", async ({ page }) => {
+  await loginAs(page, "Diane");
+  const stamp = Date.now();
+  await page.goto("/documents");
+  await page.getByTestId("dropzone-input").setInputFiles([
+    { name: `contrat_alpha-${stamp}.pdf`, mimeType: "application/pdf", buffer: MINIMAL_PDF },
+    { name: `contrat_beta-${stamp}.pdf`, mimeType: "application/pdf", buffer: MINIMAL_PDF },
+    { name: `notes-${stamp}.txt`, mimeType: "text/plain", buffer: Buffer.from("not a pdf") },
+  ]);
+  const results = page.getByTestId("upload-results");
+  await expect(results).toContainText(`contrat_alpha-${stamp}.pdf`);
+  await expect(results.locator("li").nth(0)).toContainText("ajouté en brouillon");
+  await expect(results.locator("li").nth(1)).toContainText("ajouté en brouillon");
+  await expect(results.locator("li").nth(2)).toContainText("Seuls les PDF");
+
+  // Each became its own draft document, titled from its file name.
+  await page.getByLabel("Rechercher un document").fill(`${stamp}`);
+  await expect(page.locator(".card", { hasText: `Contrat alpha ${stamp}` })).toHaveCount(1);
+  await expect(page.locator(".card", { hasText: `Contrat beta ${stamp}` })).toHaveCount(1);
+});

@@ -1274,3 +1274,12 @@ a.attention:hover strong { color: var(--primary); }
 .field { display: grid; gap: 4px; }
 .field > .label-line > label { font-weight: 600; font-size: 14px; }
 .field input, .field textarea { width: 100%; }
+
+/* ===== Drop zone ===== */
+.dropzone { display: grid; justify-items: center; gap: 4px; padding: 26px 16px; border: 2px dashed var(--primary-line); border-radius: var(--radius-lg); background: var(--primary-soft); color: var(--primary); cursor: pointer; text-align: center; transition: background 140ms ease, border-color 140ms ease; }
+.dropzone strong { color: var(--text-primary); font-size: 15.5px; }
+.dropzone:hover, .dropzone:focus-visible, .dropzone--over { border-color: var(--primary); background: color-mix(in srgb, var(--primary-soft) 70%, var(--surface)); outline: none; }
+.dropzone--over { box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 18%, transparent); }
+.dropzone--disabled { opacity: 0.6; cursor: progress; }
+.upload-results { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.upload-results li { display: flex; align-items: center; gap: 10px; font-size: 14px; }
