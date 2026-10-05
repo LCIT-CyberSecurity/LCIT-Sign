@@ -434,7 +434,7 @@ mail_connectors, notifications
 directory_connector_configs (+ sync schedule), directory_sync_runs
 ```
 
-Schema changes go through Alembic (`migrations/versions/0001`–`0010`). The
+Schema changes go through Alembic (`migrations/versions/0001`–`0011`). The
 container entrypoint runs migrations at start.
 
 ## 14. API overview
@@ -445,9 +445,9 @@ All routes sit under `/api`.
 |---|---|
 | Health/config | `GET /health`, `/ready`, `/config` |
 | Auth | `GET /auth/login`, `/auth/callback`, `POST /auth/logout`, `GET /auth/me` |
-| Documents | `POST /documents`, `POST /documents/{id}/versions`, `POST /documents/versions/{id}/publish`, `POST /documents/versions/{id}/archive`, `GET /documents`, `GET /documents/{id}`, `GET /documents/versions/{id}/content` |
+| Documents | `POST /documents`, `POST /documents/{id}/versions`, `POST /documents/versions/{id}/publish`, `POST /documents/versions/{id}/archive`, `GET /documents` (title, description, category), `GET /documents/{id}`, `GET /documents/versions/{id}/content` |
 | Signing | `POST /documents/versions/{id}/sign`, `GET /signatures/me`, `/signatures/{id}`, `/signed-pdf`, `/certificate`, `/evidence`, `/verify` |
-| Campaigns | `POST /campaigns`, `/{id}/documents`, `/{id}/targets/preview`, `/{id}/launch`, `/{id}/remind`, `/{id}/close`, `/{id}/cancel`, `GET /campaigns`, `/{id}`, `/{id}/assignments` |
+| Campaigns | `GET /campaigns/_meta/dashboard` (overview figures), `POST /campaigns`, `/{id}/documents`, `/{id}/targets/preview`, `/{id}/launch`, `/{id}/remind`, `/{id}/close`, `/{id}/cancel`, `GET /campaigns`, `/{id}`, `/{id}/assignments` (filters: status, document, group, viewed, overdue) |
 | Reports | `POST /campaigns/{id}/reports`, `GET /campaigns/{id}/reports`, `GET /reports/{id}/pdf`, `/csv`, `/verify` |
 | Admin | users and roles, audit and audit integrity, signing keys (rotate, revoke), mail connector (get, put, test-connection, send-test, test-isolation), notifications |
 | Diagnostics (admin) | `GET /admin/diagnostics` — application, database, filesystem, signing key, OIDC, directory, SMTP, worker; fixed phrases only |
@@ -548,14 +548,12 @@ Deliberate deviations (design choices):
 
 Not implemented:
 
-- Document metadata beyond title and version (description, category,
-  periodicity, per-document consent text — spec §26); a single consent text is
-  configured globally.
-- Operator dashboard widgets and campaign-table filters of spec §65-66 beyond
-  per-status counts and the assignments list; reports cover one campaign, not
-  an arbitrary document/period/population selection (§67).
+- Per-document periodicity and consent-text override (spec §26): documents
+  carry a title, description and category, renewal is a campaign property, and
+  one consent text is configured globally.
+- Reports cover one campaign, not an arbitrary document / period / population
+  selection (spec §67).
 - Google Workspace *mail* sending (SMTP and Microsoft Graph exist).
-- Archiving/revocation have API endpoints and audit events but no UI button.
 
 Untested against the real world:
 

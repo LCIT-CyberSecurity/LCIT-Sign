@@ -54,6 +54,8 @@ def _document_payload(document: Document) -> dict[str, Any]:
     return {
         "id": str(document.id),
         "title": document.title,
+        "description": document.description,
+        "category": document.category,
         "created_at": document.created_at.isoformat(),
         "versions": [_version_payload(v) for v in document.versions],
     }
@@ -79,6 +81,8 @@ async def create_document(
     request: Request,
     title: str = Form(...),
     version_label: str = Form("1.0"),
+    description: str = Form("", max_length=2000),
+    category: str = Form("", max_length=100),
     file: UploadFile = File(...),
     user: User = Depends(_manage),
     db: DbSession = Depends(get_db),
@@ -86,7 +90,9 @@ async def create_document(
     data, sha256 = await _validated_upload(request, file)
     storage: StorageService = request.app.state.storage
 
-    document = Document(title=title, created_by=user.id)
+    document = Document(
+        title=title, description=description, category=category.strip(), created_by=user.id
+    )
     db.add(document)
     db.flush()
 

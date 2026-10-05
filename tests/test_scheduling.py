@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, datetime, timedelta
 
 import httpx
@@ -197,3 +198,53 @@ def test_diagnostics_reports_components_without_secrets(tmp_path, mock_oidc_base
     assert names["oidc"] == "OK"
     assert "FAKE-DIAG-SECRET-1" not in response.text
     assert operator.get("/api/admin/diagnostics").status_code == 403
+
+
+def test_dashboard_and_assignment_filters(tmp_path, mock_oidc_base_url):
+    from test_directory import find_group_id, sync_directory
+
+    app, admin, operator, signer1, signer2 = setup_campaign_fixture(tmp_path, mock_oidc_base_url)
+    sync_directory(admin)
+    it_group = find_group_id(admin, "IT")
+    _, version_id = publish_a_document(operator)
+    past = (datetime.now(UTC) - timedelta(days=1)).isoformat()
+    campaign = create_campaign_with_document(operator, version_id, "Suivi")
+    launched = operator.post(
+        f"/api/campaigns/{campaign['id']}/launch",
+        json={"group_ids": [it_group], "user_ids": [get_user_id(signer2)], "deadline": past},
+    )
+    assert launched.status_code == 200, launched.text
+    expected = launched.json()["assignment_counts"]["PENDING"]  # 4 IT members + signer2 = 5
+
+    # One person opens the document, another signs.
+    assert signer1.get(f"/api/documents/versions/{version_id}/content").status_code == 200
+    assert signer2.post(
+        f"/api/documents/versions/{version_id}/sign", json={"consent": True}
+    ).status_code == 201
+
+    board = operator.get("/api/campaigns/_meta/dashboard").json()
+    assert board["campaigns"]["active"] == 1
+    assert board["assignments"]["expected"] == expected
+    assert board["assignments"]["signed"] == 1
+    assert board["assignments"]["outstanding"] == expected - 1
+    assert board["assignments"]["not_viewed"] == expected - 2  # signer1 viewed, signer2 signed
+    assert board["assignments"]["overdue"] == expected - 1      # the deadline has passed
+    assert board["signature_rate"] == round(100 / expected)
+    assert admin.get("/api/campaigns/_meta/dashboard").status_code == 200
+    assert signer1.get("/api/campaigns/_meta/dashboard").status_code == 403
+
+    base = f"/api/campaigns/{campaign['id']}/assignments"
+    everyone = operator.get(base).json()
+    assert len(everyone) == expected
+    assert {"groups", "document_title"} <= set(everyone[0])
+    assert everyone[0]["document_title"].startswith("Charte informatique")
+
+    assert len(operator.get(base, params={"status": "SIGNED"}).json()) == 1
+    assert len(operator.get(base, params={"overdue": "true"}).json()) == expected - 1
+    assert len(operator.get(base, params={"viewed": "true"}).json()) >= 1
+    assert len(operator.get(base, params={"viewed": "false"}).json()) == expected - 1
+    in_group = operator.get(base, params={"group_id": it_group}).json()
+    assert len(in_group) == 4 and all("IT" in row["groups"] for row in in_group)
+    assert operator.get(base, params={"document_version_id": version_id}).json() == everyone
+    other = str(uuid.uuid4())
+    assert operator.get(base, params={"document_version_id": other}).json() == []

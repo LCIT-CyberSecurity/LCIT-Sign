@@ -29,6 +29,8 @@ export interface DocumentVersion {
 export interface DocumentDetail {
   id: string;
   title: string;
+  description: string;
+  category: string;
   created_at: string;
   versions: DocumentVersion[];
 }
@@ -52,6 +54,8 @@ export interface MyAssignment {
 export interface CampaignAssignment {
   id: string;
   document_version_id: string;
+  document_title: string;
+  groups: string[];
   user_id: string;
   user_email: string;
   user_display_name: string;
@@ -154,6 +158,7 @@ export interface MailConnectorConfig {
 }
 
 export interface SigningKeyInfo {
+  revoked_at: string | null;
   key_id: string;
   public_key_hex: string;
   status: "ACTIVE" | "RETIRED" | "REVOKED";
@@ -176,6 +181,19 @@ export interface DirectorySource {
   configured: boolean;
   fields: Record<string, string>;
   sync_interval_minutes: number | null;
+}
+
+export interface OperatorDashboard {
+  campaigns: { active: number; closed: number; draft: number };
+  assignments: {
+    expected: number;
+    signed: number;
+    outstanding: number;
+    not_viewed: number;
+    overdue: number;
+  };
+  signature_rate: number | null;
+  reminders_sent: number;
 }
 
 export interface DiagnosticCheck {

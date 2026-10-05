@@ -44,10 +44,15 @@ docker volume create "$VOL" >/dev/null
 docker run -d --name "$PG" --network "$NET" \
     -e POSTGRES_USER=lcit_sign -e POSTGRES_PASSWORD="$PG_PASSWORD" -e POSTGRES_DB=lcit_sign \
     postgres:16-alpine >/dev/null
-for _ in $(seq 1 30); do
-    docker exec "$PG" pg_isready -U lcit_sign >/dev/null 2>&1 && break
+# The image first runs a temporary server (unix socket only) to initialise the
+# database, stops it, then starts the real one. Wait on TCP, which only the
+# real server answers, so we never restore into the one that is shutting down.
+READY=0
+for _ in $(seq 1 60); do
+    if docker exec "$PG" pg_isready -h 127.0.0.1 -U lcit_sign >/dev/null 2>&1; then READY=1; break; fi
     sleep 1
 done
+[[ "$READY" -eq 1 ]] || { echo "FAIL: the throwaway PostgreSQL did not start"; exit 1; }
 
 step "3. Restore the database and the files"
 docker exec -i "$PG" pg_restore -U lcit_sign -d lcit_sign --no-owner <"$BACKUP/db.dump"

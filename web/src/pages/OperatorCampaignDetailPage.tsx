@@ -39,11 +39,36 @@ export default function OperatorCampaignDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [policy, setPolicy] = useState<PolicyForm>(EMPTY_POLICY);
+  const [filters, setFilters] = useState({
+    status: "",
+    document_version_id: "",
+    group_id: "",
+    viewed: "",
+    overdue: false,
+  });
+
+  const loadAssignments = (f = filters) => {
+    if (!id) return;
+    const query = new URLSearchParams();
+    if (f.status) query.set("status", f.status);
+    if (f.document_version_id) query.set("document_version_id", f.document_version_id);
+    if (f.group_id) query.set("group_id", f.group_id);
+    if (f.viewed) query.set("viewed", f.viewed);
+    if (f.overdue) query.set("overdue", "true");
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    api.get<CampaignAssignment[]>(`/campaigns/${id}/assignments${suffix}`).then(setAssignments);
+  };
+
+  const changeFilters = (patch: Partial<typeof filters>) => {
+    const next = { ...filters, ...patch };
+    setFilters(next);
+    loadAssignments(next);
+  };
 
   const load = () => {
     if (!id) return;
     api.get<Campaign>(`/campaigns/${id}`).then(setCampaign);
-    api.get<CampaignAssignment[]>(`/campaigns/${id}/assignments`).then(setAssignments);
+    loadAssignments();
     api.get<ReportSummary[]>(`/campaigns/${id}/reports`).then(setReports);
   };
 
@@ -60,6 +85,12 @@ export default function OperatorCampaignDetailPage() {
   const publishedVersions = (documents ?? []).flatMap((doc) =>
     doc.versions
       .filter((v) => v.status === "PUBLISHED")
+      .map((v) => ({ id: v.id, label: `${doc.title} — v${v.version_label}` })),
+  );
+
+  const publishedAndUsed = (documents ?? []).flatMap((doc) =>
+    doc.versions
+      .filter((v) => campaign.document_version_ids.includes(v.id))
       .map((v) => ({ id: v.id, label: `${doc.title} — v${v.version_label}` })),
   );
 
@@ -221,13 +252,69 @@ export default function OperatorCampaignDetailPage() {
       {campaign.status !== "DRAFT" && (
         <div className="card">
           <div className="card-title">Suivi</div>
+          <div className="filter-bar">
+            <label>
+              Statut
+              <select value={filters.status} onChange={(e) => changeFilters({ status: e.target.value })}>
+                <option value="">Tous</option>
+                <option value="PENDING">En attente</option>
+                <option value="VIEWED">Consulté</option>
+                <option value="SIGNED">Signé</option>
+                <option value="EXPIRED">Expiré</option>
+              </select>
+            </label>
+            <label>
+              Document
+              <select
+                value={filters.document_version_id}
+                onChange={(e) => changeFilters({ document_version_id: e.target.value })}
+              >
+                <option value="">Tous</option>
+                {publishedAndUsed.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Groupe
+              <select value={filters.group_id} onChange={(e) => changeFilters({ group_id: e.target.value })}>
+                <option value="">Tous</option>
+                {groups?.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Consultation
+              <select value={filters.viewed} onChange={(e) => changeFilters({ viewed: e.target.value })}>
+                <option value="">Tous</option>
+                <option value="true">Consulté</option>
+                <option value="false">Non consulté</option>
+              </select>
+            </label>
+            <label className="consent-row">
+              <input
+                type="checkbox"
+                checked={filters.overdue}
+                onChange={(e) => changeFilters({ overdue: e.target.checked })}
+              />
+              En retard
+            </label>
+          </div>
           <table className="simple-table">
             <thead>
               <tr>
                 <th>Destinataire</th>
+                <th>Groupe</th>
+                <th>Document</th>
                 <th>Statut</th>
                 <th>Consulté</th>
                 <th>Signé</th>
+                <th>Relances</th>
               </tr>
             </thead>
             <tbody>
@@ -237,11 +324,14 @@ export default function OperatorCampaignDetailPage() {
                     {a.user_display_name}
                     <div className="muted small">{a.user_email}</div>
                   </td>
+                  <td>{a.groups.join(", ") || "—"}</td>
+                  <td>{a.document_title}</td>
                   <td>
                     <span className={`badge badge--${a.status.toLowerCase()}`}>{a.status}</span>
                   </td>
                   <td>{a.first_viewed_at ? new Date(a.first_viewed_at).toLocaleDateString("fr-FR") : "—"}</td>
                   <td>{a.signed_at ? new Date(a.signed_at).toLocaleDateString("fr-FR") : "—"}</td>
+                  <td>{a.reminder_count}</td>
                 </tr>
               ))}
             </tbody>

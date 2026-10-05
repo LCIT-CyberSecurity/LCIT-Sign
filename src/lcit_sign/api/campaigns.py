@@ -21,7 +21,7 @@ from lcit_sign.models.campaign import (
     CampaignTargetUser,
     SignatureAssignment,
 )
-from lcit_sign.models.directory import GroupMembership
+from lcit_sign.models.directory import Group, GroupMembership
 from lcit_sign.models.document import Document, DocumentVersion, DocumentVersionStatus
 from lcit_sign.models.mail import NotificationType
 from lcit_sign.models.user import Role, User
@@ -43,6 +43,62 @@ def list_targetable_users(
     detail), which stays ADMIN-only for actual user administration."""
     rows = db.execute(select(User).where(User.active.is_(True)).order_by(User.email)).scalars()
     return [{"id": str(u.id), "email": u.email, "display_name": u.display_name} for u in rows]
+
+
+@router.get("/_meta/dashboard")
+def operator_dashboard(
+    user: User = Depends(_manage), db: DbSession = Depends(get_db)
+) -> dict[str, Any]:
+    """Figures for the operator's overview (spec §65). `overdue` counts
+    outstanding assignments whose deadline has passed; `not_viewed` those
+    nobody has opened yet."""
+    now = datetime.now(UTC)
+    campaign_counts = dict(
+        db.execute(select(Campaign.status, func.count()).group_by(Campaign.status)).all()
+    )
+    active_ids = select(Campaign.id).where(Campaign.status == CampaignStatus.ACTIVE)
+    status_counts = dict(
+        db.execute(
+            select(SignatureAssignment.status, func.count())
+            .where(SignatureAssignment.campaign_id.in_(active_ids))
+            .group_by(SignatureAssignment.status)
+        ).all()
+    )
+    signed = status_counts.get(AssignmentStatus.SIGNED, 0)
+    pending = status_counts.get(AssignmentStatus.PENDING, 0)
+    viewed = status_counts.get(AssignmentStatus.VIEWED, 0)
+    expected = sum(status_counts.values())
+    overdue = db.execute(
+        select(func.count())
+        .select_from(SignatureAssignment)
+        .where(
+            SignatureAssignment.campaign_id.in_(active_ids),
+            SignatureAssignment.status.in_([AssignmentStatus.PENDING, AssignmentStatus.VIEWED]),
+            SignatureAssignment.deadline.is_not(None),
+            SignatureAssignment.deadline < now,
+        )
+    ).scalar_one()
+    reminders = db.execute(
+        select(func.coalesce(func.sum(SignatureAssignment.reminder_count), 0)).where(
+            SignatureAssignment.campaign_id.in_(active_ids)
+        )
+    ).scalar_one()
+    return {
+        "campaigns": {
+            "active": campaign_counts.get(CampaignStatus.ACTIVE, 0),
+            "closed": campaign_counts.get(CampaignStatus.CLOSED, 0),
+            "draft": campaign_counts.get(CampaignStatus.DRAFT, 0),
+        },
+        "assignments": {
+            "expected": expected,
+            "signed": signed,
+            "outstanding": pending + viewed,
+            "not_viewed": pending,
+            "overdue": overdue,
+        },
+        "signature_rate": round(100 * signed / expected) if expected else None,
+        "reminders_sent": int(reminders),
+    }
 
 
 class CreateCampaignRequest(BaseModel):
@@ -386,9 +442,15 @@ def get_campaign(
 def list_campaign_assignments(
     campaign_id: uuid.UUID,
     status: AssignmentStatus | None = None,
+    document_version_id: uuid.UUID | None = None,
+    group_id: uuid.UUID | None = None,
+    viewed: bool | None = None,
+    overdue: bool | None = None,
     user: User = Depends(_manage),
     db: DbSession = Depends(get_db),
 ) -> list[dict[str, Any]]:
+    """Follow-up table (spec §66), filterable by status, document, group,
+    viewed / not viewed and overdue."""
     campaign = db.get(Campaign, campaign_id)
     if campaign is None:
         raise HTTPException(404, "Campaign not found")
@@ -400,11 +462,48 @@ def list_campaign_assignments(
     )
     if status is not None:
         stmt = stmt.where(SignatureAssignment.status == status)
-    rows = db.execute(stmt).all()
+    if document_version_id is not None:
+        stmt = stmt.where(SignatureAssignment.document_version_id == document_version_id)
+    if group_id is not None:
+        stmt = stmt.where(
+            SignatureAssignment.user_id.in_(
+                select(GroupMembership.user_id).where(GroupMembership.group_id == group_id)
+            )
+        )
+    if viewed is True:
+        stmt = stmt.where(SignatureAssignment.first_viewed_at.is_not(None))
+    elif viewed is False:
+        stmt = stmt.where(SignatureAssignment.first_viewed_at.is_(None))
+    if overdue:
+        stmt = stmt.where(
+            SignatureAssignment.status.in_([AssignmentStatus.PENDING, AssignmentStatus.VIEWED]),
+            SignatureAssignment.deadline.is_not(None),
+            SignatureAssignment.deadline < datetime.now(UTC),
+        )
+    rows = db.execute(stmt.order_by(User.display_name)).all()
+
+    group_names: dict[uuid.UUID, list[str]] = {}
+    for member_id, group_name in db.execute(
+        select(GroupMembership.user_id, Group.name)
+        .join(Group, Group.id == GroupMembership.group_id)
+        .where(GroupMembership.user_id.in_({a.user_id for a, _ in rows}))
+        .order_by(Group.name)
+    ):
+        group_names.setdefault(member_id, []).append(group_name)
+    titles = {
+        v.id: f"{d.title} v{v.version_label}"
+        for v, d in db.execute(
+            select(DocumentVersion, Document)
+            .join(Document, Document.id == DocumentVersion.document_id)
+            .where(DocumentVersion.id.in_({a.document_version_id for a, _ in rows}))
+        )
+    }
     return [
         {
             "id": str(assignment.id),
             "document_version_id": str(assignment.document_version_id),
+            "document_title": titles.get(assignment.document_version_id, ""),
+            "groups": group_names.get(assignment.user_id, []),
             "user_id": str(assignment.user_id),
             "user_email": target_user.email,
             "user_display_name": target_user.display_name,

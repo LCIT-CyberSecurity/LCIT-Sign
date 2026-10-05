@@ -7,6 +7,8 @@ export default function OperatorDocumentsPage() {
   const [documents, setDocuments] = useState<DocumentDetail[] | null>(null);
   const [title, setTitle] = useState("");
   const [versionLabel, setVersionLabel] = useState("1.0");
+  const [description, setDescription] = useState("");
+  const [category, setCategory] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -26,17 +28,31 @@ export default function OperatorDocumentsPage() {
     const form = new FormData();
     form.append("title", title);
     form.append("version_label", versionLabel);
+    form.append("description", description);
+    form.append("category", category);
     form.append("file", file);
     try {
       await api.postForm("/documents", form);
       setTitle("");
       setVersionLabel("1.0");
+      setDescription("");
+      setCategory("");
       if (fileInput.current) fileInput.current.value = "";
       load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "L'envoi a échoué.");
     } finally {
       setUploading(false);
+    }
+  };
+
+  const archive = async (versionId: string) => {
+    setError(null);
+    try {
+      await api.post(`/documents/versions/${versionId}/archive`);
+      load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "L'archivage a échoué.");
     }
   };
 
@@ -62,6 +78,20 @@ export default function OperatorDocumentsPage() {
             <input value={versionLabel} onChange={(e) => setVersionLabel(e.target.value)} required />
           </label>
         </div>
+        <div className="form-row">
+          <label>
+            Catégorie
+            <input value={category} onChange={(e) => setCategory(e.target.value)} maxLength={100} />
+          </label>
+          <label>
+            Description
+            <input
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              maxLength={2000}
+            />
+          </label>
+        </div>
         <label>
           Fichier PDF
           <input type="file" accept="application/pdf" ref={fileInput} required />
@@ -75,7 +105,11 @@ export default function OperatorDocumentsPage() {
       <div className="card-list">
         {documents?.map((doc) => (
           <div key={doc.id} className="card">
-            <div className="card-title">{doc.title}</div>
+            <div className="card-title">
+              {doc.title}{" "}
+              {doc.category && <span className="badge badge--viewed">{doc.category}</span>}
+            </div>
+            {doc.description && <p className="muted small">{doc.description}</p>}
             <table className="simple-table">
               <thead>
                 <tr>
@@ -97,6 +131,11 @@ export default function OperatorDocumentsPage() {
                       {v.status === "DRAFT" && (
                         <button className="button button--secondary button--sm" onClick={() => publish(v.id)}>
                           <CheckCircle2 size={14} aria-hidden="true" /> Publier
+                        </button>
+                      )}
+                      {v.status !== "ARCHIVED" && v.status !== "DRAFT" && (
+                        <button className="button button--ghost button--sm" onClick={() => archive(v.id)}>
+                          Archiver
                         </button>
                       )}
                     </td>

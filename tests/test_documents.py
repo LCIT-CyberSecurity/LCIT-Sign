@@ -186,3 +186,35 @@ def test_unauthenticated_cannot_list_documents(tmp_path, mock_oidc_base_url):
     with TestClient(app) as client:
         Base.metadata.create_all(app.state.engine)
         assert client.get("/api/documents").status_code == 401
+
+
+def test_document_metadata_is_stored_and_listed(tmp_path, mock_oidc_base_url):
+    app, operator = setup_operator(tmp_path, mock_oidc_base_url)
+    created = operator.post(
+        "/api/documents",
+        data={
+            "title": "Charte IA",
+            "version_label": "1.0",
+            "description": "Usage de l'IA générative",
+            "category": " Sécurité ",
+        },
+        files={"file": ("charte.pdf", make_minimal_pdf_bytes(), "application/pdf")},
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["description"] == "Usage de l'IA générative"
+    assert created.json()["category"] == "Sécurité"  # trimmed
+    listed = operator.get("/api/documents").json()
+    assert listed[0]["category"] == "Sécurité"
+
+    bare = operator.post(
+        "/api/documents",
+        data={"title": "Sans métadonnées"},
+        files={"file": ("a.pdf", make_minimal_pdf_bytes(), "application/pdf")},
+    )
+    assert bare.status_code == 201 and bare.json()["category"] == ""
+    too_long = operator.post(
+        "/api/documents",
+        data={"title": "x", "category": "c" * 101},
+        files={"file": ("a.pdf", make_minimal_pdf_bytes(), "application/pdf")},
+    )
+    assert too_long.status_code == 422

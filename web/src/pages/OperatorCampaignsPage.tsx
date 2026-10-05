@@ -2,15 +2,18 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { Megaphone, Plus } from "lucide-react";
 import { api } from "../api/client";
-import type { Campaign } from "../api/types";
+import DashboardCards from "../components/DashboardCards";
+import type { Campaign, OperatorDashboard } from "../api/types";
 
 export default function OperatorCampaignsPage() {
   const [campaigns, setCampaigns] = useState<Campaign[] | null>(null);
   const [name, setName] = useState("");
   const [creating, setCreating] = useState(false);
+  const [dashboard, setDashboard] = useState<OperatorDashboard | null>(null);
 
   const load = () => {
     api.get<Campaign[]>("/campaigns").then(setCampaigns);
+    api.get<OperatorDashboard>("/campaigns/_meta/dashboard").then(setDashboard);
   };
 
   useEffect(load, []);
@@ -33,6 +36,8 @@ export default function OperatorCampaignsPage() {
       <h1 className="page-title">
         <Megaphone size={20} aria-hidden="true" /> Campagnes
       </h1>
+
+      {dashboard && <DashboardCards data={dashboard} />}
 
       <form className="card form form--row" onSubmit={create}>
         <input

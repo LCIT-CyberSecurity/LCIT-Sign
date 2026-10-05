@@ -83,3 +83,17 @@ test("an administrator reaches the diagnostics page", async ({ page }) => {
   await expect(page.getByRole("heading", { name: /Diagnostic/ })).toBeVisible();
   await expect(page.getByTestId("check-database")).toBeVisible();
 });
+
+test("an operator sees the dashboard and can filter a campaign's follow-up", async ({ page }) => {
+  await loginAs(page, "Diane");
+  await page.getByRole("link", { name: "Campagnes" }).click();
+  await expect(page.getByRole("region", { name: "Tableau de bord" })).toBeVisible();
+  await expect(page.getByTestId("stat-Signatures attendues")).not.toHaveText("0");
+
+  await page.getByRole("link", { name: /Campagne sécurité 2026/ }).first().click();
+  const table = page.locator("table.simple-table").first();
+  await expect(table.getByRole("row")).not.toHaveCount(1);
+  await page.getByLabel("Statut").selectOption("SIGNED");
+  await expect(table.getByText("SIGNED").first()).toBeVisible();
+  await expect(table.getByText("PENDING")).toHaveCount(0);
+});

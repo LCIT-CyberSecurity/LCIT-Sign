@@ -598,3 +598,9 @@ input[type="checkbox"] {
 .status-ok { color: var(--success); }
 .status-warn { color: var(--warning); }
 .status-error { color: var(--danger); }
+
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.stat__value { font-size: 1.6rem; font-weight: 650; }
+.progress { height: 10px; border-radius: 99px; background: var(--neutral-soft); overflow: hidden; margin: 8px 0; }
+.progress__bar { height: 100%; background: var(--success); }
+.filter-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; margin-bottom: 8px; }
