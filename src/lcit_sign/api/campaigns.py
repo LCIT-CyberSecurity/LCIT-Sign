@@ -16,10 +16,12 @@ from lcit_sign.models.campaign import (
     Campaign,
     CampaignDocument,
     CampaignStatus,
+    CampaignTargetGroup,
     CampaignTargetMode,
     CampaignTargetUser,
     SignatureAssignment,
 )
+from lcit_sign.models.directory import GroupMembership
 from lcit_sign.models.document import Document, DocumentVersion, DocumentVersionStatus
 from lcit_sign.models.mail import NotificationType
 from lcit_sign.models.user import Role, User
@@ -41,7 +43,10 @@ class AddDocumentRequest(BaseModel):
 
 
 class TargetRequest(BaseModel):
-    target_mode: CampaignTargetMode
+    # Groups and explicit users combine (spec §33's "groupes + utilisateurs
+    # supplémentaires"); all_users, when true, wins over both.
+    all_users: bool = False
+    group_ids: list[uuid.UUID] = []
     user_ids: list[uuid.UUID] = []
 
 
@@ -50,21 +55,43 @@ class LaunchRequest(TargetRequest):
 
 
 def _resolve_population(
-    db: DbSession, target_mode: CampaignTargetMode, user_ids: list[uuid.UUID]
+    db: DbSession, *, all_users: bool, group_ids: list[uuid.UUID], user_ids: list[uuid.UUID]
 ) -> list[uuid.UUID]:
     """Compute the target user set. Deliberately resolved fresh each call —
     the campaign only *freezes* it at launch time, by copying the result
     into SignatureAssignment rows (spec §34).
     """
-    if target_mode == CampaignTargetMode.ALL_USERS:
+    if all_users:
         return list(db.execute(select(User.id).where(User.active.is_(True))).scalars())
-    if not user_ids:
-        return []
-    return list(
-        db.execute(
-            select(User.id).where(User.id.in_(user_ids), User.active.is_(True))
-        ).scalars()
-    )
+
+    population: set[uuid.UUID] = set()
+    if group_ids:
+        population |= set(
+            db.execute(
+                select(GroupMembership.user_id)
+                .join(User, GroupMembership.user_id == User.id)
+                .where(GroupMembership.group_id.in_(group_ids), User.active.is_(True))
+            ).scalars()
+        )
+    if user_ids:
+        population |= set(
+            db.execute(
+                select(User.id).where(User.id.in_(user_ids), User.active.is_(True))
+            ).scalars()
+        )
+    return list(population)
+
+
+def _target_mode_label(
+    *, all_users: bool, group_ids: list[uuid.UUID], user_ids: list[uuid.UUID]
+) -> str:
+    if all_users:
+        return CampaignTargetMode.ALL_USERS.value
+    if group_ids and user_ids:
+        return CampaignTargetMode.GROUPS_AND_USERS.value
+    if group_ids:
+        return CampaignTargetMode.GROUPS.value
+    return CampaignTargetMode.SPECIFIC_USERS.value
 
 
 def _campaign_payload(campaign: Campaign, db: DbSession) -> dict[str, Any]:
@@ -80,7 +107,7 @@ def _campaign_payload(campaign: Campaign, db: DbSession) -> dict[str, Any]:
         "name": campaign.name,
         "description": campaign.description,
         "status": campaign.status.value,
-        "target_mode": campaign.target_mode.value,
+        "target_mode": campaign.target_mode,
         "created_at": campaign.created_at.isoformat(),
         "launch_at": campaign.launch_at.isoformat() if campaign.launch_at else None,
         "deadline": campaign.deadline.isoformat() if campaign.deadline else None,
@@ -148,7 +175,9 @@ def preview_targets(
     db: DbSession = Depends(get_db),
 ) -> dict[str, Any]:
     _get_draft_campaign(db, campaign_id)
-    population = _resolve_population(db, body.target_mode, body.user_ids)
+    population = _resolve_population(
+        db, all_users=body.all_users, group_ids=body.group_ids, user_ids=body.user_ids
+    )
     return {"population_count": len(population), "user_ids": [str(u) for u in population]}
 
 
@@ -164,13 +193,19 @@ def launch_campaign(
     if not campaign.documents:
         raise HTTPException(400, "Campaign has no documents to sign")
 
-    population = _resolve_population(db, body.target_mode, body.user_ids)
+    population = _resolve_population(
+        db, all_users=body.all_users, group_ids=body.group_ids, user_ids=body.user_ids
+    )
     if not population:
         raise HTTPException(400, "Target population is empty")
 
-    campaign.target_mode = body.target_mode
-    if body.target_mode == CampaignTargetMode.SPECIFIC_USERS:
-        for target_user_id in population:
+    campaign.target_mode = _target_mode_label(
+        all_users=body.all_users, group_ids=body.group_ids, user_ids=body.user_ids
+    )
+    if not body.all_users:
+        for group_id in body.group_ids:
+            db.add(CampaignTargetGroup(campaign_id=campaign.id, group_id=group_id))
+        for target_user_id in body.user_ids:
             db.add(CampaignTargetUser(campaign_id=campaign.id, user_id=target_user_id))
 
     settings: Settings = request.app.state.settings

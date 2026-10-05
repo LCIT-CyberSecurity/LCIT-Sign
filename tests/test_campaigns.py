@@ -59,7 +59,7 @@ def create_and_launch_campaign(operator: TestClient, version_id: str, user_ids: 
     campaign = create_campaign_with_document(operator, version_id, "Campagne 2026")
     launch = operator.post(
         f"/api/campaigns/{campaign['id']}/launch",
-        json={"target_mode": "SPECIFIC_USERS", "user_ids": user_ids},
+        json={"user_ids": user_ids},
     )
     assert launch.status_code == 200, launch.text
     return launch.json()
@@ -126,7 +126,7 @@ def test_all_users_target_mode_includes_everyone_active(tmp_path, mock_oidc_base
 
     campaign = create_campaign_with_document(operator, version_id, "Tout le monde")
     launch = operator.post(
-        f"/api/campaigns/{campaign['id']}/launch", json={"target_mode": "ALL_USERS", "user_ids": []}
+        f"/api/campaigns/{campaign['id']}/launch", json={"all_users": True}
     )
     assert launch.status_code == 200
     # admin + operator + signer1 + signer2 were all logged in, so all 4 exist as users.
@@ -139,7 +139,7 @@ def test_cannot_launch_an_empty_population(tmp_path, mock_oidc_base_url):
     campaign = create_campaign_with_document(operator, version_id, "Vide")
     response = operator.post(
         f"/api/campaigns/{campaign['id']}/launch",
-        json={"target_mode": "SPECIFIC_USERS", "user_ids": []},
+        json={"user_ids": []},
     )
     assert response.status_code == 400
 
@@ -149,7 +149,7 @@ def test_cannot_launch_a_campaign_with_no_documents(tmp_path, mock_oidc_base_url
     campaign = operator.post("/api/campaigns", json={"name": "Sans document"}).json()
     response = operator.post(
         f"/api/campaigns/{campaign['id']}/launch",
-        json={"target_mode": "SPECIFIC_USERS", "user_ids": [get_user_id(signer1)]},
+        json={"user_ids": [get_user_id(signer1)]},
     )
     assert response.status_code == 400
 
@@ -160,7 +160,7 @@ def test_cannot_relaunch_an_active_campaign(tmp_path, mock_oidc_base_url):
     campaign = create_and_launch_campaign(operator, version_id, [get_user_id(signer1)])
     second_launch = operator.post(
         f"/api/campaigns/{campaign['id']}/launch",
-        json={"target_mode": "SPECIFIC_USERS", "user_ids": [get_user_id(signer2)]},
+        json={"user_ids": [get_user_id(signer2)]},
     )
     assert second_launch.status_code == 409
 

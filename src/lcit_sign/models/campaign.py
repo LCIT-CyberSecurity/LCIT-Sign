@@ -19,10 +19,17 @@ class CampaignStatus(enum.StrEnum):
 
 
 class CampaignTargetMode(enum.StrEnum):
+    """Labels only — not DB-enforced (see Campaign.target_mode). Groups and
+    explicit users can combine (spec §33's "groupes + utilisateurs
+    supplémentaires"), so the actual population is always resolved from
+    whichever of all_users/group_ids/user_ids a request provides; this enum
+    just names the combination for display.
+    """
+
     ALL_USERS = "ALL_USERS"
-    # Group-based targeting (spec §33) is added once Phase 6's Group model
-    # exists; SPECIFIC_USERS already covers "one or more users".
     SPECIFIC_USERS = "SPECIFIC_USERS"
+    GROUPS = "GROUPS"
+    GROUPS_AND_USERS = "GROUPS_AND_USERS"
 
 
 class AssignmentStatus(enum.StrEnum):
@@ -47,9 +54,11 @@ class Campaign(Base):
     status: Mapped[CampaignStatus] = mapped_column(
         Enum(CampaignStatus, native_enum=False, length=20), default=CampaignStatus.DRAFT
     )
-    target_mode: Mapped[CampaignTargetMode] = mapped_column(
-        Enum(CampaignTargetMode, native_enum=False, length=20),
-        default=CampaignTargetMode.SPECIFIC_USERS,
+    # Plain string, not a DB-enforced enum: it's a display label computed
+    # from whatever combination of all_users/groups/users a launch actually
+    # used (see services/campaign_targeting.py), not a constraint on it.
+    target_mode: Mapped[str] = mapped_column(
+        String(30), default=CampaignTargetMode.SPECIFIC_USERS.value
     )
 
     created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
@@ -81,14 +90,25 @@ class CampaignDocument(Base):
 
 
 class CampaignTargetUser(Base):
-    """An explicitly-targeted user, used when target_mode is
-    SPECIFIC_USERS (or as the "additional users" on top of a future
-    group-based mode)."""
+    """An explicitly-targeted user — either the whole population
+    (SPECIFIC_USERS) or "additional users" layered on top of targeted
+    groups (spec §33)."""
 
     __tablename__ = "campaign_target_users"
 
     campaign_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("campaigns.id"), primary_key=True)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), primary_key=True)
+
+
+class CampaignTargetGroup(Base):
+    """A targeted group, recorded at launch for the record even though
+    only its *members at that moment* (copied into SignatureAssignment)
+    actually matter afterwards (spec §34)."""
+
+    __tablename__ = "campaign_target_groups"
+
+    campaign_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("campaigns.id"), primary_key=True)
+    group_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("groups.id"), primary_key=True)
 
 
 class SignatureAssignment(Base):

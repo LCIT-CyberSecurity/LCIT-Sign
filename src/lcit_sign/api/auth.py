@@ -125,6 +125,14 @@ async def callback(
     user = db.execute(
         select(User).where(User.issuer == claims.issuer, User.subject == claims.subject)
     ).scalar_one_or_none()
+    if user is None:
+        # A directory sync (Phase 6) may already have provisioned this
+        # person from the roster, ahead of their first login — adopt that
+        # row instead of creating a duplicate (spec §20-22: SSO and the
+        # directory are different sources that still name the same user).
+        user = db.execute(
+            select(User).where(User.issuer.like("directory:%"), User.email == claims.email)
+        ).scalar_one_or_none()
 
     full_name = f"{claims.given_name} {claims.family_name}".strip()
     display_name = claims.name or full_name or claims.email
@@ -141,6 +149,8 @@ async def callback(
         )
         db.add(user)
     else:
+        user.issuer = claims.issuer
+        user.subject = claims.subject
         user.email = claims.email
         user.given_name = claims.given_name
         user.family_name = claims.family_name
