@@ -17,6 +17,10 @@ from lcit_sign.models.user import User
 from lcit_sign.services.crypto import decrypt_secret
 
 TEST_MASTER_KEY = "test-master-key-not-for-production-use"  # noqa: S105
+ENTRA_FIELDS = {
+    "tenant_id": "73405479-f042-45d7-8149-c90341261b65",
+    "client_id": "9a8b7c6d-5e4f-4321-b0a9-8c7d6e5f4a3b",
+}
 
 
 def _entra_handler(request: httpx.Request) -> httpx.Response:
@@ -67,7 +71,7 @@ def _entra_app(tmp_path, oidc, handler=_entra_handler):
 def _configure_entra(admin):
     response = admin.put(
         "/api/admin/directory/sources/entra/config",
-        json={"fields": {"tenant_id": "t", "client_id": "c"}, "secret": "s3cr3t-value"},
+        json={"fields": ENTRA_FIELDS, "secret": "s3cr3t-value~Xyz"},
     )
     assert response.status_code == 200, response.text
     return response
@@ -232,26 +236,26 @@ def test_secret_is_encrypted_at_rest_and_never_returned(tmp_path, mock_oidc_base
     app = _entra_app(tmp_path, mock_oidc_base_url)
     admin = _admin(app, mock_oidc_base_url)
     response = _configure_entra(admin)
-    assert "s3cr3t-value" not in response.text
+    assert "s3cr3t-value~Xyz" not in response.text
     assert "secret" not in response.json()
     assert response.json()["configured"] is True
-    assert response.json()["fields"] == {"tenant_id": "t", "client_id": "c"}
-    assert "s3cr3t-value" not in admin.get("/api/admin/directory/sources").text
+    assert response.json()["fields"] == ENTRA_FIELDS
+    assert "s3cr3t-value~Xyz" not in admin.get("/api/admin/directory/sources").text
 
     with app.state.session_factory() as db:
         stored = db.get(DirectoryConnectorConfig, "entra")
         assert stored.encrypted_secret
-        assert "s3cr3t-value" not in stored.encrypted_secret
-        assert decrypt_secret(TEST_MASTER_KEY, stored.encrypted_secret) == "s3cr3t-value"
+        assert "s3cr3t-value~Xyz" not in stored.encrypted_secret
+        assert decrypt_secret(TEST_MASTER_KEY, stored.encrypted_secret) == "s3cr3t-value~Xyz"
 
     # Updating fields without a secret keeps the stored ciphertext.
     admin.put(
         "/api/admin/directory/sources/entra/config",
-        json={"fields": {"tenant_id": "t2", "client_id": "c"}},
+        json={"fields": {**ENTRA_FIELDS, "tenant_id": "contoso.onmicrosoft.com"}},
     )
     with app.state.session_factory() as db:
         kept = db.get(DirectoryConnectorConfig, "entra")
-        assert decrypt_secret(TEST_MASTER_KEY, kept.encrypted_secret) == "s3cr3t-value"
+        assert decrypt_secret(TEST_MASTER_KEY, kept.encrypted_secret) == "s3cr3t-value~Xyz"
 
     assert admin.delete("/api/admin/directory/sources/entra/config").status_code == 204
     assert admin.post("/api/admin/directory/sync?source=entra").status_code == 409
@@ -377,7 +381,7 @@ def test_a_wrong_entra_secret_says_what_to_fix_and_never_echoes_anything_secret(
     assert run["status"] == "FAILED"
     assert "AADSTS7000215" in run["error"]
     assert "Valeur" in run["error"]  # points at the classic mistake: Value vs Secret ID
-    assert "FAKE-SECRET-VALUE" not in run["error"] and "s3cr3t-value" not in run["error"]
+    assert "FAKE-SECRET-VALUE" not in run["error"] and "s3cr3t-value~Xyz" not in run["error"]
 
 
 def test_each_known_entra_error_has_its_own_advice():
@@ -393,3 +397,36 @@ def test_each_known_entra_error_has_its_own_advice():
     # An unknown code still gives a useful pointer rather than a stack of jargon.
     assert "AADSTS999999" in say(999999)
     assert "identifiants refusés" in describe_token_error(httpx.Response(401, text="nope"))
+
+
+def test_the_classic_entra_mix_ups_are_caught_when_typing(tmp_path, mock_oidc_base_url):
+    app, admin, *_ = setup_campaign_fixture(tmp_path, mock_oidc_base_url)
+    url = "/api/admin/directory/sources/entra/config"
+    secret = "abC8Q~xYzTn3kLw0pQe5vRsU9dFgHjKlMnOpQr"
+
+    # The secret typed into the application-id field (what actually happened).
+    swapped = admin.put(url, json={"fields": {**ENTRA_FIELDS, "client_id": secret}, "secret": ENTRA_FIELDS["client_id"]})  # noqa: E501
+    assert swapped.status_code == 422 and "ressemble à un secret" in swapped.text
+    assert secret not in swapped.text
+
+    # An identifier (a "secret ID") given as the secret.
+    as_id = admin.put(url, json={"fields": ENTRA_FIELDS, "secret": "eccc92e6-42b7-4470-8ea9-54706c4d5e54"})  # noqa: E501
+    assert as_id.status_code == 422 and "Valeur" in as_id.text
+
+    # A tenant that is neither a GUID nor a domain, an application id that is not a GUID.
+    assert admin.put(url, json={"fields": {**ENTRA_FIELDS, "tenant_id": "mon tenant"}, "secret": secret}).status_code == 422  # noqa: E501
+    assert admin.put(url, json={"fields": {**ENTRA_FIELDS, "client_id": "pas-un-guid"}, "secret": secret}).status_code == 422  # noqa: E501
+
+    # Nothing wrong was stored; the right values go through.
+    assert admin.get("/api/admin/directory/sources").json()[1]["configured"] is False
+    assert admin.put(url, json={"fields": ENTRA_FIELDS, "secret": secret}).status_code == 200
+
+
+def test_google_input_is_checked_too(tmp_path, mock_oidc_base_url):
+    app, admin, *_ = setup_campaign_fixture(tmp_path, mock_oidc_base_url)
+    url = "/api/admin/directory/sources/google/config"
+    good_key = json.dumps({"client_email": "sa@p.iam.gserviceaccount.com", "private_key": "-----BEGIN"})  # noqa: E501
+    assert admin.put(url, json={"fields": {"admin_email": "pas une adresse"}, "secret": good_key}).status_code == 422  # noqa: E501
+    assert admin.put(url, json={"fields": {"admin_email": "a@corp.test"}, "secret": "{not json"}).status_code == 422  # noqa: E501
+    assert admin.put(url, json={"fields": {"admin_email": "a@corp.test"}, "secret": '{"x": 1}'}).status_code == 422  # noqa: E501
+    assert admin.put(url, json={"fields": {"admin_email": "a@corp.test"}, "secret": good_key}).status_code == 200  # noqa: E501

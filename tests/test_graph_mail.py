@@ -56,10 +56,14 @@ def _use_graph(app, graph: FakeGraph) -> None:
     app.dependency_overrides[get_mail_http_client] = client
 
 
+TENANT = "73405479-f042-45d7-8149-c90341261b65"
+CLIENT = "9a8b7c6d-5e4f-4321-b0a9-8c7d6e5f4a3b"
+
+
 def _configure(admin):
     response = admin.put(
         "/api/admin/mail-connector",
-        json={"kind": "graph", "graph_tenant_id": "tenant-1", "graph_client_id": "client-1",
+        json={"kind": "graph", "graph_tenant_id": TENANT, "graph_client_id": CLIENT,
               "from_address": MAILBOX, "password": SECRET},
     )
     assert response.status_code == 200, response.text
@@ -159,3 +163,13 @@ def test_worker_delivers_notifications_through_graph(tmp_path, mock_oidc_base_ur
         statuses = {n.status for n in db.execute(select(Notification)).scalars()}
     assert statuses == {NotificationStatus.SENT}
     assert graph.sent and graph.sent[0]["mailbox"] == MAILBOX
+
+
+def test_graph_mail_refuses_a_secret_typed_in_the_client_id_field(tmp_path, mock_oidc_base_url):
+    app, admin, *_ = setup_campaign_fixture(tmp_path, mock_oidc_base_url)
+    response = admin.put(
+        "/api/admin/mail-connector",
+        json={"kind": "graph", "graph_tenant_id": TENANT, "graph_client_id": "abC8Q~xYzTn3kLw0pQe5",
+              "from_address": MAILBOX, "password": SECRET},
+    )
+    assert response.status_code == 422 and "secret" in response.text

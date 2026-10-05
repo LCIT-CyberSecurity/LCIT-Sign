@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from collections.abc import Generator
 from typing import Any
@@ -98,6 +99,62 @@ class ConnectorConfigRequest(BaseModel):
     sync_interval_minutes: int | None = Field(default=None, ge=5, le=10080)
 
 
+_GUID = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+_DOMAIN = re.compile(r"^(?=.{4,253}$)([A-Za-z0-9-]+\.)+[A-Za-z]{2,}$")
+
+
+def check_connector_input(source: str, fields: dict[str, str], secret: str | None) -> None:
+    """Catch the classic mix-ups at the moment of typing, in words that say what
+    to do — a wrong value would otherwise only surface later as a refusal from
+    Microsoft or Google. Raises HTTPException(422)."""
+
+    def refuse(message: str) -> None:
+        raise HTTPException(status_code=422, detail=message)
+
+    if source == "entra":
+        tenant, client = fields.get("tenant_id", "").strip(), fields.get("client_id", "").strip()
+        if not (_GUID.match(tenant) or _DOMAIN.match(tenant)):
+            refuse(
+                "L'ID du tenant doit ressembler à 73405479-f042-45d7-8149-c90341261b65 "
+                "(Entra → Vue d'ensemble → ID de locataire) ou à votre domaine "
+                "(entreprise.onmicrosoft.com)."
+            )
+        if "~" in client:
+            refuse(
+                "Ce qui est saisi dans « ID de l'application (client) » ressemble à un "
+                "secret : le secret va dans le champ « Secret client »."
+            )
+        if not _GUID.match(client):
+            refuse(
+                "L'ID de l'application (client) doit être un code du type "
+                "9a8b7c6d-5e4f-4321-b0a9-8c7d6e5f4a3b : page « Vue d'ensemble » de l'application "
+                "dans Entra, ligne « ID de l'application (client) »."
+            )
+        if secret is not None:
+            if _GUID.match(secret.strip()):
+                refuse(
+                    "Ceci est un identifiant (ID de secret ou de l'application), pas la valeur du "
+                    "secret. Dans Entra → Certificats et secrets, copiez la colonne « Valeur » "
+                    "(une suite d'environ 40 caractères avec un « ~ »)."
+                )
+            if secret.strip() in (tenant, client):
+                refuse("Le secret client ne peut pas être identique à un des identifiants.")
+    elif source == "google":
+        if "@" not in fields.get("admin_email", ""):
+            refuse("L'e-mail de l'administrateur doit être une adresse (admin@votre-domaine.fr).")
+        if secret is not None:
+            try:
+                key = json.loads(secret)
+                valid = isinstance(key, dict) and "client_email" in key and "private_key" in key
+            except ValueError:
+                valid = False
+            if not valid:
+                refuse(
+                    "La clé du compte de service doit être le fichier JSON téléchargé "
+                    "depuis Google Cloud (« client_email » et « private_key »)."
+                )
+
+
 @router.put("/sources/{source}/config")
 def put_source_config(
     source: str,
@@ -113,6 +170,7 @@ def put_source_config(
     unknown = set(body.fields) - set(allowed_fields)
     if unknown:
         raise HTTPException(status_code=422, detail=f"unknown fields: {sorted(unknown)}")
+    check_connector_input(source, body.fields, body.secret)
     config = db.get(DirectoryConnectorConfig, source)
     if config is None:
         config = DirectoryConnectorConfig(source=source)

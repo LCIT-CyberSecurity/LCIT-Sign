@@ -253,7 +253,7 @@ def test_known_secrets_never_reach_logs(tmp_path, mock_oidc_base_url, caplog):
     app, admin, operator, *_ = setup_campaign_fixture(tmp_path, mock_oidc_base_url)
     admin.put(
         "/api/admin/directory/sources/entra/config",
-        json={"fields": {"tenant_id": "t", "client_id": "c"},
+        json={"fields": {"tenant_id": "73405479-f042-45d7-8149-c90341261b65", "client_id": "9a8b7c6d-5e4f-4321-b0a9-8c7d6e5f4a3b"},  # noqa: E501
               "secret": fake_secrets["connector_secret"]},
     )
     admin.put(

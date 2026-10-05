@@ -184,7 +184,7 @@ def test_diagnostics_reports_components_without_secrets(tmp_path, mock_oidc_base
     app.dependency_overrides[get_diagnostics_http_client] = fake_client
     admin.put(
         "/api/admin/directory/sources/entra/config",
-        json={"fields": {"tenant_id": "t", "client_id": "c"}, "secret": "FAKE-DIAG-SECRET-1"},
+        json={"fields": {"tenant_id": "73405479-f042-45d7-8149-c90341261b65", "client_id": "9a8b7c6d-5e4f-4321-b0a9-8c7d6e5f4a3b"}, "secret": "FAKE-DIAG-SECRET-1"},  # noqa: E501
     )
     response = admin.get("/api/admin/diagnostics")
     assert response.status_code == 200

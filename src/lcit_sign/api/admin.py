@@ -30,6 +30,7 @@ from lcit_sign.services.mail import (
     MailSendError,
     build_sender,
 )
+from lcit_sign.api.directory import check_connector_input
 from lcit_sign.services.mail_graph import GraphSender
 from lcit_sign.services.signing_keys import get_or_create_active_key, rotate_signing_key
 from lcit_sign.services.ssrf import OutboundTargetError, validate_outbound_target
@@ -468,6 +469,17 @@ def put_mail_connector(
 ) -> dict[str, Any]:
     if body.kind == "smtp":
         _check_mail_target(body.host, body.port)
+    else:
+        check_connector_input(
+            "entra",
+            {
+                "tenant_id": body.graph_tenant_id or "",
+                "client_id": body.graph_client_id or "",
+            },
+            body.password,
+        )
+        if "@" not in body.from_address:
+            raise HTTPException(422, "L'expéditeur doit être une adresse e-mail complète.")
     settings: Settings = request.app.state.settings
     connector = db.get(MailConnector, 1)
     if connector is None:
