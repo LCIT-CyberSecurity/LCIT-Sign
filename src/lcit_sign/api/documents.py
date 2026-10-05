@@ -9,7 +9,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
 
 from lcit_sign.config import Settings
-from lcit_sign.deps import get_db, require_roles
+from lcit_sign.deps import get_current_user, get_db, require_roles, user_roles
+from lcit_sign.models.campaign import AssignmentStatus, SignatureAssignment
 from lcit_sign.models.document import Document, DocumentVersion, DocumentVersionStatus
 from lcit_sign.models.user import Role, User
 from lcit_sign.services.audit import append_audit_event
@@ -21,10 +22,10 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 DOCUMENTS_BUCKET = "documents"
 PDF_SUFFIX = ".pdf"
 
-# Managing documents is an OPERATOR/ADMIN affair for the whole of Phase 2.
-# Signer access to a specific PUBLISHED version's content is granted in
-# Phase 4 once SignatureAssignment exists to check "is this assigned to me" —
-# wiring it up before that model exists would be security theatre, not RBAC.
+# Managing documents (upload/publish/list) stays OPERATOR/ADMIN-only.
+# Viewing a version's content is wider: also anyone with a
+# SignatureAssignment for it (see get_version_content) — a signer must be
+# able to read what they are being asked to sign.
 _manage = require_roles(Role.OPERATOR, Role.ADMIN)
 
 
@@ -200,17 +201,30 @@ def get_version_content(
     request: Request,
     version_id: uuid.UUID,
     download: bool = False,
-    user: User = Depends(_manage),
+    user: User = Depends(get_current_user),
     db: DbSession = Depends(get_db),
 ) -> Response:
     version = db.get(DocumentVersion, version_id)
     if version is None:
         raise HTTPException(404, "Document version not found")
 
+    assignment = db.execute(
+        select(SignatureAssignment).where(
+            SignatureAssignment.document_version_id == version.id,
+            SignatureAssignment.user_id == user.id,
+        )
+    ).scalar_one_or_none()
+    if assignment is None and not (user_roles(db, user) & {Role.OPERATOR, Role.ADMIN}):
+        raise HTTPException(403, "Not authorized to view this document version")
+
     storage: StorageService = request.app.state.storage
     if not storage.exists(DOCUMENTS_BUCKET, version.id, PDF_SUFFIX):
         raise HTTPException(404, "Document content missing from storage")
     data = storage.read(DOCUMENTS_BUCKET, version.id, PDF_SUFFIX)
+
+    if assignment is not None and assignment.status == AssignmentStatus.PENDING:
+        assignment.status = AssignmentStatus.VIEWED
+        assignment.first_viewed_at = datetime.now(UTC)
 
     append_audit_event(
         db, action="DOCUMENT_VIEWED", actor_id=user.id,

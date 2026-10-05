@@ -10,6 +10,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from lcit_sign import __version__
 from lcit_sign.api.admin import router as admin_router
 from lcit_sign.api.auth import router as auth_router
+from lcit_sign.api.campaigns import me_router as me_assignments_router
+from lcit_sign.api.campaigns import router as campaigns_router
 from lcit_sign.api.documents import router as documents_router
 from lcit_sign.api.health import router as health_router
 from lcit_sign.api.signatures import router as signatures_router
@@ -79,5 +81,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(admin_router, prefix="/api")
     app.include_router(documents_router, prefix="/api")
     app.include_router(signatures_router, prefix="/api")
+    app.include_router(campaigns_router, prefix="/api")
+    app.include_router(me_assignments_router, prefix="/api")
 
     return app

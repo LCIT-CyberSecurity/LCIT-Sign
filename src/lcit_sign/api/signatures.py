@@ -17,6 +17,7 @@ from lcit_sign import __version__
 from lcit_sign.api.documents import DOCUMENTS_BUCKET, PDF_SUFFIX
 from lcit_sign.config import Settings
 from lcit_sign.deps import get_current_user, get_db, require_roles, user_roles
+from lcit_sign.models.campaign import AssignmentStatus, SignatureAssignment
 from lcit_sign.models.document import Document, DocumentVersion, DocumentVersionStatus
 from lcit_sign.models.signature import Signature
 from lcit_sign.models.signing_key import SigningKey
@@ -218,6 +219,18 @@ def sign_document_version(
         json.dumps(evidence_export, indent=2).encode("utf-8"),
     )
     storage.save(CERTIFICATES_BUCKET, signature.id, PDF_SUFFIX, certificate_pdf)
+
+    pending_assignments = db.execute(
+        select(SignatureAssignment).where(
+            SignatureAssignment.document_version_id == version.id,
+            SignatureAssignment.user_id == user.id,
+            SignatureAssignment.status.in_([AssignmentStatus.PENDING, AssignmentStatus.VIEWED]),
+        )
+    ).scalars()
+    for assignment in pending_assignments:
+        assignment.status = AssignmentStatus.SIGNED
+        assignment.signed_at = signed_at
+        assignment.signature_id = signature.id
 
     append_audit_event(
         db, action="SIGNATURE_CREATED", actor_id=user.id,
