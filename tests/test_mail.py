@@ -206,3 +206,49 @@ def test_remind_only_targets_outstanding_assignments(tmp_path, mock_oidc_base_ur
         "/api/admin/notifications", params={"notification_type": "REMINDER"}
     ).json()
     assert len(reminders) == 1
+
+
+class _RefusingSmtpHandler:
+    """Refuses every recipient with a fixed SMTP code (a scripted server,
+    speaking the real protocol)."""
+
+    def __init__(self, response: str) -> None:
+        self.response = response
+
+    async def handle_RCPT(self, server, session, envelope, address, rcpt_options):  # noqa: N802, ANN001
+        return self.response
+
+
+def _run_refusing_server(response: str, port: int):
+    from aiosmtpd.controller import Controller
+
+    controller = Controller(_RefusingSmtpHandler(response), hostname="127.0.0.1", port=port)
+    controller.start()
+    return controller
+
+
+@pytest.mark.parametrize(
+    ("response", "port", "expected_status", "expected_attempts"),
+    [
+        ("550 5.1.1 no such user", 10031, "FAILED", 1),   # permanent: no pointless retries
+        ("450 4.2.0 try later", 10032, "RETRY", 1),        # temporary: retried with backoff
+    ],
+)
+def test_smtp_refusals_are_classified_permanent_or_temporary(
+    tmp_path, mock_oidc_base_url, response, port, expected_status, expected_attempts
+):
+    controller = _run_refusing_server(response, port)
+    try:
+        app, admin, operator, signer1, _ = setup_campaign_fixture(tmp_path, mock_oidc_base_url)
+        configure_mail_connector(admin, "127.0.0.1", port)
+        _, version_id = publish_a_document(operator)
+        create_and_launch_campaign(operator, version_id, [get_user_id(signer1)])
+
+        with app.state.session_factory() as db:
+            assert process_pending_notifications(db, app.state.settings) == 0
+            notification = db.execute(select(Notification)).scalars().first()
+            assert notification.status.value == expected_status
+            assert notification.attempt_count == expected_attempts
+            assert notification.last_error
+    finally:
+        controller.stop()

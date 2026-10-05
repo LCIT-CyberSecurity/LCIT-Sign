@@ -13,6 +13,7 @@ uat() {
 }
 
 echo "##### smoke"; uat smoke.py
+echo "##### smtp scenarios (needs the test Postfix)"; if docker inspect lcit-sign-postfix-test >/dev/null 2>&1; then tests/integration/run-smtp-scenarios.sh; else echo "SKIP: postfix-test is not running"; fi
 echo "##### seed";  uat seed.py
 echo "##### restore"; tests/UAT/CrashTests-Sign/restore-test.sh
 echo; echo "CrashTests-Sign: all passed."

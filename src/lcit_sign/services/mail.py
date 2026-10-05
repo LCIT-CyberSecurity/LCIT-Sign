@@ -13,7 +13,24 @@ from lcit_sign.models.mail import MailConnector
 
 
 class MailSendError(Exception):
-    pass
+    """A message could not be sent.
+
+    `permanent` is True when retrying cannot help (an SMTP 5xx answer: the
+    recipient does not exist, the policy refuses it, relaying is denied).
+    Connection problems, timeouts and 4xx answers are temporary.
+    """
+
+    def __init__(self, message: str, *, permanent: bool = False) -> None:
+        super().__init__(message)
+        self.permanent = permanent
+
+
+def _smtp_error_is_permanent(exc: smtplib.SMTPException) -> bool:
+    if isinstance(exc, smtplib.SMTPRecipientsRefused):
+        codes = [code for code, _ in exc.recipients.values()]
+        return bool(codes) and all(code >= 500 for code in codes)
+    code = getattr(exc, "smtp_code", None)
+    return isinstance(code, int) and code >= 500
 
 
 @dataclass(frozen=True)
@@ -81,7 +98,9 @@ def send_email(
             server.login(creds.username, creds.password or "")
         server.send_message(message)
     except smtplib.SMTPException as exc:
-        raise MailSendError(f"SMTP server rejected the message: {exc}") from exc
+        raise MailSendError(
+            f"SMTP server rejected the message: {exc}", permanent=_smtp_error_is_permanent(exc)
+        ) from exc
     finally:
         try:
             server.quit()

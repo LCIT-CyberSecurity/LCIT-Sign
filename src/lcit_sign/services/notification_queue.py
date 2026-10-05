@@ -91,7 +91,7 @@ def process_pending_notifications(db: DbSession, settings: Settings) -> int:
             )
         except MailSendError as exc:
             notification.last_error = str(exc)[:1000]
-            if notification.attempt_count >= MAX_ATTEMPTS:
+            if exc.permanent or notification.attempt_count >= MAX_ATTEMPTS:
                 notification.status = NotificationStatus.FAILED
                 if notification.notification_type == NotificationType.REMINDER:
                     append_audit_event(

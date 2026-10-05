@@ -123,12 +123,39 @@ def run() -> int:
         )
 
     if os.environ.get("LCIT_SIGN_SMOKE_SMTP"):
+        # The test Postfix (docker-compose.test.yml) is on the stack's network
+        # as `postfix-test`: plain port 25, fictional local mailboxes only.
+        def configure_smtp() -> None:
+            expect(
+                admin.put(
+                    "/api/admin/mail-connector",
+                    json={
+                        "host": "postfix-test", "port": 25, "use_tls": False,
+                        "use_starttls": False, "username": "",
+                        "from_address": "lcit-sign@lcit-test.local",
+                    },
+                ),
+                200,
+            )
+
+        def smtp_diagnostics() -> None:
+            diag = expect(admin.post("/api/admin/mail-connector/test-connection"), 200).json()
+            assert diag["dns"] == "OK" and diag["tcp"] == "OK", diag
+
+        smoke.check("SMTP connector configured (test Postfix)", configure_smtp)
+        smoke.check("SMTP connection diagnostics", smtp_diagnostics)
         smoke.check(
-            "SMTP connection diagnostics",
-            lambda: expect(admin.post("/api/admin/mail-connector/test-connection"), 200),
+            "SMTP test e-mail accepted",
+            lambda: expect(
+                admin.post(
+                    "/api/admin/mail-connector/send-test",
+                    json={"to": "alice.martin@lcit-test.local"},
+                ),
+                200,
+            ),
         )
     else:
-        smoke.skip("SMTP / Postfix", "set LCIT_SIGN_SMOKE_SMTP=1 once the test Postfix is wired")
+        smoke.skip("SMTP / Postfix", "set LCIT_SIGN_SMOKE_SMTP=1 with the test Postfix running")
     return smoke.finish()
 
 
