@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { FileText, CheckCircle2, Clock } from "lucide-react";
+import { FileText, CheckCircle2, Clock, PartyPopper, FileSignature } from "lucide-react";
+import EmptyState from "../components/EmptyState";
 import { useAuth } from "../auth/AuthContext";
 import { api } from "../api/client";
 import type { MyAssignment } from "../api/types";
@@ -60,7 +61,9 @@ export default function SignerAssignmentsPage() {
           <span className="count-badge">{pending.length}</span>
         </h1>
         {pending.length === 0 ? (
-          <p className="muted">Rien à signer pour le moment.</p>
+          <EmptyState icon={<PartyPopper size={24} />} title="Tout est à jour">
+            Aucun document n&apos;attend votre signature. Vous serez prévenu par e-mail dès qu&apos;un nouveau document vous est adressé.
+          </EmptyState>
         ) : (
           <div className="card-list">
             {pending.map((a) => (
@@ -87,7 +90,9 @@ export default function SignerAssignmentsPage() {
           <span className="count-badge">{signed.length}</span>
         </h1>
         {signed.length === 0 ? (
-          <p className="muted">Aucune signature pour le moment.</p>
+          <EmptyState icon={<FileSignature size={24} />} title="Aucune signature pour le moment">
+            Les documents que vous signerez apparaîtront ici, avec leur preuve vérifiable.
+          </EmptyState>
         ) : (
           <div className="card-list">
             {signed.map((a) => (

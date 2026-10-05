@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { ArrowLeft, Rocket, Bell, StopCircle, FileBarChart, Download } from "lucide-react";
 import { api, ApiError } from "../api/client";
@@ -38,6 +38,8 @@ export default function OperatorCampaignDetailPage() {
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [groupQuery, setGroupQuery] = useState("");
+  const [recipientCount, setRecipientCount] = useState<number | null>(null);
   const [policy, setPolicy] = useState<PolicyForm>(EMPTY_POLICY);
   const [filters, setFilters] = useState({
     status: "",
@@ -80,7 +82,34 @@ export default function OperatorCampaignDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
+  // Live count of who the current selection would reach (groups and people are
+  // de-duplicated server-side, nested groups already expanded by the sync).
+  useEffect(() => {
+    if (!id || campaign?.status !== "DRAFT") return;
+    api
+      .post<{ population_count: number }>(`/campaigns/${id}/targets/preview`, {
+        all_users: allUsers,
+        group_ids: allUsers ? [] : selectedGroupIds,
+        user_ids: allUsers ? [] : selectedUserIds,
+      })
+      .then((r) => setRecipientCount(r.population_count))
+      .catch(() => setRecipientCount(null));
+  }, [id, campaign?.status, allUsers, selectedGroupIds, selectedUserIds]);
+
+  const visibleGroups = useMemo(() => {
+    const q = groupQuery.trim().toLowerCase();
+    return (groups ?? [])
+      .filter((g) => g.active && (!q || g.name.toLowerCase().includes(q)))
+      .sort((a, b) => b.member_count - a.member_count || a.name.localeCompare(b.name));
+  }, [groups, groupQuery]);
+
   if (!campaign) return <p className="muted">Chargement…</p>;
+
+  const versionLabels = new Map(
+    (documents ?? []).flatMap((doc) =>
+      doc.versions.map((v) => [v.id, `${doc.title} — v${v.version_label}`] as const),
+    ),
+  );
 
   const publishedVersions = (documents ?? []).flatMap((doc) =>
     doc.versions
@@ -170,8 +199,11 @@ export default function OperatorCampaignDetailPage() {
           <div className="card">
             <div className="card-title">Documents</div>
             <ul className="plain-list">
+              {campaign.document_version_ids.length === 0 && (
+                <li className="muted">Aucun document pour le moment.</li>
+              )}
               {campaign.document_version_ids.map((vid) => (
-                <li key={vid}>{vid}</li>
+                <li key={vid}>{versionLabels.get(vid) ?? vid}</li>
               ))}
             </ul>
             <div className="form-row">
@@ -198,16 +230,30 @@ export default function OperatorCampaignDetailPage() {
 
             {!allUsers && (
               <>
-                <div className="field-label">Groupes</div>
+                <div className="field-label">
+                  Groupes de l&apos;annuaire
+                  {selectedGroupIds.length > 0 && (
+                    <span className="muted small"> — {selectedGroupIds.length} sélectionné(s)</span>
+                  )}
+                </div>
+                <input
+                  type="search"
+                  placeholder="Rechercher un groupe (ex : SRE)…"
+                  aria-label="Rechercher un groupe"
+                  value={groupQuery}
+                  onChange={(e) => setGroupQuery(e.target.value)}
+                />
+                {visibleGroups.length === 0 && <p className="muted small">Aucun groupe ne correspond.</p>}
                 <div className="chip-list">
-                  {groups?.map((g) => (
+                  {visibleGroups.map((g) => (
                     <button
                       key={g.id}
                       type="button"
                       className={`chip${selectedGroupIds.includes(g.id) ? " chip--active" : ""}`}
                       onClick={() => toggle(selectedGroupIds, g.id, setSelectedGroupIds)}
                     >
-                      {g.name} ({g.member_count})
+                      {g.name} · {g.member_count}
+                      <span className="muted small"> {g.source}</span>
                     </button>
                   ))}
                 </div>
@@ -227,6 +273,12 @@ export default function OperatorCampaignDetailPage() {
                 </div>
               </>
             )}
+
+            <p className="muted" data-testid="recipient-count">
+              {recipientCount === null
+                ? ""
+                : `${recipientCount} destinataire(s) seront sollicités (doublons éliminés).`}
+            </p>
 
             <PolicyFields value={policy} onChange={setPolicy} />
 

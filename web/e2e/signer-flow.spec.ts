@@ -97,3 +97,28 @@ test("an operator sees the dashboard and can filter a campaign's follow-up", asy
   await expect(table.getByText("SIGNED").first()).toBeVisible();
   await expect(table.getByText("PENDING")).toHaveCount(0);
 });
+
+test("an operator targets a whole directory group in one click", async ({ page }) => {
+  await loginAs(page, "Diane");
+  const api = page.context().request;
+  const title = `Ciblage ${Date.now()}`;
+  const created = await api.post("/api/documents", {
+    multipart: {
+      title,
+      version_label: "1.0",
+      file: { name: "g.pdf", mimeType: "application/pdf", buffer: MINIMAL_PDF },
+    },
+  });
+  const versionId = (await created.json()).versions[0].id as string;
+  await api.post(`/api/documents/versions/${versionId}/publish`);
+  const campaign = await (await api.post("/api/campaigns", { data: { name: title } })).json();
+  await api.post(`/api/campaigns/${campaign.id}/documents`, { data: { document_version_id: versionId } });
+
+  await page.goto(`/campaigns/${campaign.id}`);
+  await expect(page.getByText(`${title} — v1.0`).first()).toBeVisible(); // a title, not a raw id
+
+  await page.getByLabel("Rechercher un groupe").fill("IT");
+  await page.getByRole("button", { name: /^IT/ }).click();
+  // The IT group of the CrashTests directory has four members.
+  await expect(page.getByTestId("recipient-count")).toContainText("4 destinataire(s)");
+});

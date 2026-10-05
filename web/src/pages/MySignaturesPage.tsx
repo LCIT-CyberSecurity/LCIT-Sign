@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { FileSignature } from "lucide-react";
+import EmptyState from "../components/EmptyState";
 import { api } from "../api/client";
 import type { SignatureDetail } from "../api/types";
 
@@ -30,9 +31,9 @@ export default function MySignaturesPage() {
         d&apos;intégrité vérifiable.
       </p>
       {signatures.length === 0 ? (
-        <div className="card">
-          <p className="muted">Vous n&apos;avez encore rien signé.</p>
-        </div>
+        <EmptyState icon={<FileSignature size={24} />} title="Vous n'avez encore rien signé">
+          Quand vous aurez signé un document, vous retrouverez ici le PDF signé, votre certificat et la preuve d&apos;intégrité.
+        </EmptyState>
       ) : (
         <div className="card" style={{ padding: 0, overflow: "hidden" }}>
           <table className="simple-table">

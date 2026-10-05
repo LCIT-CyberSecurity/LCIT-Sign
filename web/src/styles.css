@@ -1125,3 +1125,81 @@ a.attention:hover strong { color: var(--primary); }
 .signature-preview__fields { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 6px; padding-top: 10px; border-top: 1px solid var(--primary-line); font-size: 13.5px; color: var(--text-secondary); }
 .signature-preview__fields strong { color: var(--text-primary); font-weight: 620; }
 .greeting { margin: 0 0 4px; font-size: 14.5px; color: var(--text-secondary); }
+
+/* ===== Denser, EARE-style lists ===== */
+.page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
+.inline-create { display: flex; gap: 8px; align-items: center; }
+.inline-create input { min-width: 260px; }
+.table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+.table-wrap .simple-table { margin: 0; }
+.table-wrap .simple-table tbody tr:last-child td { border-bottom: 0; }
+.row-link { color: var(--text-primary); font-weight: 620; text-decoration: none; }
+.row-link:hover { color: var(--primary); }
+.campaigns-table td { padding-top: 11px; padding-bottom: 11px; }
+.metric { padding: 14px 16px 15px; }
+.metric strong { font-size: 26px; line-height: 32px; }
+.metric small { font-size: 13.5px; }
+.panel--quiet { padding: 14px 18px 16px; }
+.panel--quiet .panel-title { margin-bottom: 10px; }
+.panel--quiet .panel-title h3 { font-size: 14.5px; font-weight: 620; }
+.stack { gap: 18px; }
+
+/* ===========================================================================
+   Premium finish — same palette, richer canvas and depth.
+   =========================================================================== */
+:root[data-theme="violet"]:not([data-appearance="dark"]) {
+  --background: #f6f6fc;
+  --canvas-wash:
+    radial-gradient(900px 440px at 6% -10%, rgba(118, 87, 169, 0.22), transparent 62%),
+    radial-gradient(820px 400px at 98% -8%, rgba(66, 112, 214, 0.15), transparent 60%),
+    linear-gradient(180deg, #f0edfa 0, #f6f6fc 360px);
+  --border: #e3e5f0;
+  --surface-sunken: #f9f9fe;
+  --shadow-card: 0 1px 2px rgba(34, 24, 74, 0.05), 0 10px 28px -14px rgba(72, 48, 140, 0.22);
+}
+:root[data-theme="violet"][data-appearance="dark"] {
+  --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.04), 0 14px 32px -16px rgba(0, 0, 0, 0.85);
+}
+:root { --shadow-card: var(--shadow-sm); }
+
+.card, .panel, .metric, .table-wrap, .signature-preview { box-shadow: var(--shadow-card); }
+.card--link:hover, .metric:hover { box-shadow: var(--shadow-md); }
+.card { border-color: var(--border); }
+
+.sidebar {
+  background:
+    linear-gradient(180deg, transparent 0, color-mix(in srgb, var(--primary) 5%, transparent) 100%),
+    var(--rail);
+}
+.nav-link.active {
+  background: linear-gradient(90deg, var(--primary-soft), color-mix(in srgb, var(--primary-soft) 40%, transparent));
+  box-shadow: inset 0 0 0 1px var(--primary-line);
+}
+.topbar { box-shadow: 0 1px 0 var(--border), 0 8px 24px -18px rgba(60, 40, 120, 0.25); }
+
+/* Page heading with a quiet accent, so a short page still has presence. */
+.page-title { position: relative; }
+.page-title::after {
+  content: ""; position: absolute; left: 0; bottom: -10px; width: 44px; height: 3px; border-radius: 3px;
+  background: var(--accent-wash);
+}
+.page-title + .page-subtitle { margin-top: 6px; }
+.page-header .page-title::after { display: none; }
+
+/* Empty states: say what to do, don't leave a blank page. */
+.empty-state {
+  display: grid; justify-items: center; gap: 6px; padding: 44px 24px; text-align: center;
+  background: var(--surface); border: 1px dashed var(--primary-line); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+}
+.empty-state__icon {
+  display: grid; place-items: center; width: 56px; height: 56px; margin-bottom: 8px;
+  border-radius: 50%; color: var(--primary); background: var(--primary-soft);
+  box-shadow: 0 0 0 8px color-mix(in srgb, var(--primary-soft) 45%, transparent);
+}
+.empty-state strong { font-size: 17px; font-weight: 640; letter-spacing: -0.015em; }
+.empty-state p { margin: 0; max-width: 46ch; color: var(--text-secondary); font-size: 14.5px; line-height: 22px; }
+
+.section-panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-card); padding: 20px 22px 22px; }
+.section-panel > .page-title { margin-bottom: 16px; font-size: 20px; line-height: 28px; }
+.section-panel > .page-title::after { display: none; }
