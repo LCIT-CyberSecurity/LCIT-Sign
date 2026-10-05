@@ -35,6 +35,7 @@ export default function SignRequestPage() {
   const [groupQuery, setGroupQuery] = useState("");
   const [recipientCount, setRecipientCount] = useState<number | null>(null);
   const [policy, setPolicy] = useState<PolicyForm>(EMPTY_POLICY);
+  const [deadline, setDeadline] = useState("");
 
   const load = () => {
     if (!id) return;
@@ -82,7 +83,11 @@ export default function SignRequestPage() {
   };
 
   const launch = async () => {
-    const problem = policyProblem(policy);
+    const problem =
+      policyProblem(policy) ??
+      (policy.reminderBeforeDeadlineDays.trim() && !deadline
+        ? "Pour une relance avant l'échéance, indiquez l'échéance."
+        : null);
     if (problem) {
       setError(problem);
       return;
@@ -92,6 +97,8 @@ export default function SignRequestPage() {
     try {
       await api.post(`/campaigns/${id}/launch`, {
         ...buildPolicyPayload(policy),
+        // Last day to sign, until the end of that day (company time is the server's concern).
+        deadline: deadline ? new Date(`${deadline}T23:59:59`).toISOString() : null,
         all_users: allUsers,
         group_ids: allUsers ? [] : selectedGroupIds,
         user_ids: allUsers ? [] : selectedUserIds,
@@ -186,11 +193,35 @@ export default function SignRequestPage() {
             </>
             )}
 
-            <PolicyFields value={policy} onChange={setPolicy} />
+          </div>
 
+          <div className="card" data-testid="policy-card">
+            <div className="card-title">4. Échéance, relances et renouvellement</div>
+            <p className="muted small">
+              Facultatif. Les relances partent toutes seules vers ceux qui n&apos;ont pas encore signé ; le
+              renouvellement redemande les mêmes signatures à intervalle régulier.
+            </p>
+            <label>
+              Échéance <span className="muted small">(dernier jour pour signer)</span>
+              <input
+                type="date"
+                value={deadline}
+                min={new Date().toISOString().slice(0, 10)}
+                onChange={(e) => setDeadline(e.target.value)}
+              />
+            </label>
+            <PolicyFields value={policy} onChange={setPolicy} />
+          </div>
+
+          <div className="card" data-testid="launch-card">
+            <div className="card-title">5. Envoyer</div>
+            <p className="muted small">
+              Une fois envoyée, la demande ne se modifie plus : pour changer quelque chose, on l&apos;annule
+              et on en crée une autre. Elle se suit ensuite dans Suivi.
+            </p>
             {error && <p className="error-text">{error}</p>}
             <button className="button button--primary" onClick={launch} disabled={busy}>
-              <Rocket size={14} aria-hidden="true" /> Lancer la campagne
+              <Rocket size={14} aria-hidden="true" /> Envoyer pour signature
             </button>
           </div>
     </div>
