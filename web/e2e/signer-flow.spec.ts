@@ -315,3 +315,77 @@ test("a signer fills the text the operator asked for, and it is stamped on the s
   const verdict = await (await page.context().request.get(`/api/signatures/${mine.id}/verify`)).json();
   expect(verdict.valid).toBe(true);
 });
+
+test("the system account signs in with the default password and is reminded to change it", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByText("Compte système (administrateur local)").click();
+  await page.getByLabel("Identifiant").fill("admin");
+  await page.getByLabel("Mot de passe").fill("wrong-password");
+  await page.getByRole("button", { name: "Se connecter", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText("incorrect");
+
+  await page.getByLabel("Mot de passe").fill("SecretPassword");
+  await page.getByRole("button", { name: "Se connecter", exact: true }).click();
+  await expect(page.getByLabel("Compte et réglages")).toBeVisible();
+
+  // The reminder is there on every page, and the change dialog opens by itself.
+  await expect(page.getByTestId("password-reminder")).toContainText("n'a pas été changé");
+  await expect(page.getByRole("dialog", { name: /Changer le mot de passe/ })).toBeVisible();
+  await page.getByRole("button", { name: "Plus tard" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByTestId("password-reminder")).toBeVisible(); // still nagging
+  await page.goto("/admin/users");
+  await expect(page.getByTestId("password-reminder")).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0); // not re-opened by a page load
+
+  // A weak new password is refused (the account is left as it was).
+  await page.getByRole("button", { name: "Le changer maintenant" }).click();
+  await page.getByLabel("Mot de passe actuel").fill("SecretPassword");
+  await page.getByLabel("Nouveau mot de passe", { exact: true }).fill("password1234");
+  await page.getByLabel("Confirmer le nouveau mot de passe").fill("password1234");
+  await page.getByRole("button", { name: "Changer le mot de passe" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "refusé" })).toBeVisible();
+});
+
+test("an administrator adds, disables and deletes a user from the interface", async ({ page }) => {
+  await loginAs(page, "Alice");
+  const email = `e2e.${Date.now()}@lcit-test.local`;
+  await page.goto("/admin/users");
+  const form = page.getByRole("form", { name: "Ajouter un utilisateur" });
+  await form.getByLabel("Adresse e-mail").fill(email);
+  await form.getByLabel("Prénom").fill("Essai");
+  await form.getByLabel("Nom", { exact: true }).fill("Navigateur");
+  await form.getByRole("button", { name: "Ajouter" }).click();
+  const row = page.getByTestId(`user-${email}`);
+  await expect(row).toContainText("Essai Navigateur");
+  await expect(row).toContainText("Ajouté à la main");
+  await expect(row).toContainText("Actif");
+
+  await row.getByRole("button", { name: "Désactiver" }).click();
+  await row.getByRole("button", { name: "Confirmer la désactivation" }).click();
+  await expect(row).toContainText("Désactivé");
+  await row.getByRole("button", { name: "Réactiver" }).click();
+  await expect(row).toContainText("Actif");
+
+  await row.getByRole("button", { name: /Supprimer/ }).click();
+  await row.getByRole("button", { name: "Confirmer la suppression" }).click();
+  await expect(page.getByTestId(`user-${email}`)).toHaveCount(0);
+
+  // People who signed are kept, with the reason.
+  await page.getByLabel("Rechercher un utilisateur").fill("erwan.petit");
+  const erwan = page.getByTestId("user-erwan.petit@lcit-test.local");
+  await expect(erwan).toContainText("Conservé");
+  await expect(erwan.getByRole("button", { name: /Supprimer/ })).toHaveCount(0);
+});
+
+test("directory settings explain themselves with a bubble and an example", async ({ page }) => {
+  await loginAs(page, "Alice");
+  await page.goto("/admin/directory");
+  await page.getByTestId("source-entra").getByRole("button", { name: "Configurer" }).click();
+  const hint = page.getByRole("button", { name: "Aide : ID du tenant" });
+  await hint.hover();
+  await expect(page.getByRole("tooltip").filter({ hasText: "ID de locataire" })).toBeVisible();
+  await expect(page.getByRole("tooltip").filter({ hasText: "1b2c3d4e-5f60" })).toBeVisible();
+});

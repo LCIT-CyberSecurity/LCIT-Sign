@@ -16,6 +16,8 @@ import {
 } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
 import { api } from "../api/client";
+import ChangePasswordDialog from "./ChangePasswordDialog";
+import PasswordReminder, { REMINDER_KEY } from "./PasswordReminder";
 import UserMenu from "./UserMenu";
 
 function NavItem({
@@ -65,6 +67,7 @@ export default function Shell() {
   const { user, hasRole, refresh } = useAuth();
   const { pathname } = useLocation();
   const [open, setOpen] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
   const isOperator = hasRole("OPERATOR") || hasRole("ADMIN");
   const isAdmin = hasRole("ADMIN");
   const close = () => setOpen(false);
@@ -72,6 +75,11 @@ export default function Shell() {
   const roleLabel = isAdmin ? "Administrateur" : isOperator ? "Opérateur" : "Signataire";
 
   const logout = async () => {
+    try {
+      window.sessionStorage.removeItem(REMINDER_KEY);
+    } catch {
+      // storage unavailable: nothing to forget
+    }
     await api.post("/auth/logout");
     await refresh();
   };
@@ -147,8 +155,14 @@ export default function Shell() {
             <ChevronRight size={14} aria-hidden="true" />
             <strong>{sectionTitle(pathname)}</strong>
           </div>
-          <div className="top-actions">{user && <UserMenu user={user} onSignOut={logout} />}</div>
+          <div className="top-actions">
+            {user && (
+              <UserMenu user={user} onSignOut={logout} onChangePassword={() => setChangingPassword(true)} />
+            )}
+          </div>
         </header>
+        <PasswordReminder />
+        {changingPassword && <ChangePasswordDialog onClose={() => setChangingPassword(false)} />}
         <main className="app-main app-main--shell">
           <Outlet />
         </main>

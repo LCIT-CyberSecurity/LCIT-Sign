@@ -5,6 +5,9 @@ export interface Me {
   email: string;
   display_name: string;
   roles: Role[];
+  // The built-in account still has its initial password: remind at every sign-in.
+  must_change_password?: boolean;
+  source?: "builtin" | "sso";
 }
 
 export interface PublicConfig {
@@ -120,7 +123,12 @@ export interface AdminUser {
   email: string;
   display_name: string;
   active: boolean;
+  manually_disabled: boolean;
+  source: string;
+  last_login_at: string | null;
   roles: Role[];
+  can_delete: boolean;
+  delete_blockers: string[];
 }
 
 export interface AuditEvent {

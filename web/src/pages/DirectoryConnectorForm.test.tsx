@@ -63,3 +63,17 @@ describe("DirectoryConnectorForm — credentials are write-only", () => {
     expect(vi.mocked(api.put).mock.calls[0][1]).toMatchObject({ secret: undefined });
   });
 });
+
+describe("DirectoryConnectorForm — every setting explains itself", () => {
+  it("offers a bubble with a description and an example for each field", () => {
+    render(<DirectoryConnectorForm source={entra} onChanged={vi.fn()} />);
+    for (const field of ["ID du tenant", "ID de l'application (client)", "Secret client"]) {
+      const hint = screen.getByRole("button", { name: `Aide : ${field}` });
+      const tooltip = document.getElementById(hint.getAttribute("aria-describedby") ?? "");
+      expect(tooltip).toHaveAttribute("role", "tooltip");
+      expect(tooltip).toHaveTextContent("Exemple");
+    }
+    expect(screen.getByRole("button", { name: "Aide : ID du tenant" }).getAttribute("aria-describedby")).toBeTruthy();
+    expect(document.body.textContent).toContain("1b2c3d4e-5f60-4a7b-8c9d-0e1f2a3b4c5d");
+  });
+});

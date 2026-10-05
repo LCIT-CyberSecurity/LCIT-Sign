@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, ChevronDown, LogOut, Monitor, Moon, Palette, Sun } from "lucide-react";
+import { Check, ChevronDown, KeyRound, LogOut, Monitor, Moon, Palette, Sun } from "lucide-react";
 import {
   APPEARANCES,
   THEMES,
@@ -34,7 +34,15 @@ export function initials(name: string | undefined): string {
 /** The account menu: who you are and which profiles (roles) you hold, the
  *  interface appearance (day / night / system), the interface style, and
  *  sign-out. Laid out like EARE's. */
-export default function UserMenu({ user, onSignOut }: { user: Me; onSignOut: () => void }) {
+export default function UserMenu({
+  user,
+  onSignOut,
+  onChangePassword,
+}: {
+  user: Me;
+  onSignOut: () => void;
+  onChangePassword?: () => void;
+}) {
   const menu = useRef<HTMLDetailsElement>(null);
   const [theme, setTheme] = useState<ThemeId>(readTheme);
   const [appearance, setAppearance] = useState<Appearance>(readAppearance);
@@ -144,6 +152,17 @@ export default function UserMenu({ user, onSignOut }: { user: Me; onSignOut: () 
         </div>
 
         <div className="user-menu-foot">
+          {user.source === "builtin" && onChangePassword && (
+            <button
+              type="button"
+              onClick={() => {
+                menu.current?.removeAttribute("open");
+                onChangePassword();
+              }}
+            >
+              <KeyRound size={15} aria-hidden="true" /> Changer le mot de passe
+            </button>
+          )}
           <button
             type="button"
             onClick={() => {

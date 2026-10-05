@@ -1,8 +1,68 @@
+import { useEffect, useState, type FormEvent } from "react";
 import { FileSearch, FileSignature, Fingerprint, LockKeyhole, LogIn, PenLine } from "lucide-react";
+import { api, ApiError } from "../api/client";
+import { useAuth } from "../auth/AuthContext";
 
 /** Sign-in, laid out like EARE's: an introduction panel on the left, the
  *  sign-in card on the right. SSO is the only way in — there is no password. */
+/** The built-in system account form: only when the server says it is enabled. */
+function LocalLogin() {
+  const { refresh } = useAuth();
+  const [username, setUsername] = useState("admin");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await api.post("/auth/local-login", { username, password });
+      await refresh();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Connexion impossible.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <details className="auth-local" data-testid="local-login">
+      <summary>Compte système (administrateur local)</summary>
+      <form onSubmit={submit}>
+        <label>
+          Identifiant
+          <input value={username} autoComplete="username" onChange={(e) => setUsername(e.target.value)} required />
+        </label>
+        <label>
+          Mot de passe
+          <input
+            type="password"
+            value={password}
+            autoComplete="current-password"
+            onChange={(e) => setPassword(e.target.value)}
+            required
+          />
+        </label>
+        {error && <p className="form-error" role="alert">{error}</p>}
+        <button className="button button--secondary" type="submit" disabled={busy}>
+          {busy ? "Connexion…" : "Se connecter"}
+        </button>
+      </form>
+    </details>
+  );
+}
+
 export default function LoginPage() {
+  const [localEnabled, setLocalEnabled] = useState(false);
+  useEffect(() => {
+    api
+      .get<{ local: boolean }>("/auth/options")
+      .then((o) => setLocalEnabled(o.local))
+      .catch(() => setLocalEnabled(false));
+  }, []);
+
   return (
     <div className="login-page">
       <div className="auth-layout">
@@ -74,6 +134,7 @@ export default function LoginPage() {
                 <LogIn size={18} aria-hidden="true" />
                 Se connecter avec le SSO
               </a>
+              {localEnabled && <LocalLogin />}
               <p className="auth-steps" aria-hidden="true">
                 <FileSearch size={14} /> consulter <PenLine size={14} /> signer{" "}
                 <Fingerprint size={14} /> prouver

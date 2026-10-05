@@ -9,7 +9,7 @@ Rien n'est lu dans l'annuaire de l'entreprise, rien n'est écrit dans Microsoft 
 | Terme | Ce que c'est | Où le trouver |
 |---|---|---|
 | **ID de l'annuaire (locataire / tenant)** | L'identifiant de *votre* Microsoft 365 (LCIT). Un code du type `1b2c…`. Il dit à Microsoft « les comptes de LCIT ». | Entra → Vue d'ensemble → *ID de locataire* |
-| **ID de l'application (client)** | L'identifiant de la fiche « LCIT Sign » que vous créez dans Entra. C'est la carte d'identité de l'application. | Fiche de l'application → Vue d'ensemble → *ID d'application (client)* |
+| **ID de l'application (client)** | L'identifiant de la fiche « LCIT Sign » que vous créez dans Entra. C'est la carte d'identité de l'application. | Fiche de l'application → Vue d'ensemble → *ID de l'application (client)* |
 | **Secret client** | Le mot de passe de l'*application* (pas d'une personne). Il prouve à Microsoft que c'est bien LCIT Sign. Affiché **une seule fois** à la création. | Fiche → Certificats et secrets → *Nouveau secret client* → copier la **Valeur** |
 
 Ces trois valeurs ne sont pas secrètes de la même façon : les deux identifiants peuvent être partagés,
@@ -22,7 +22,7 @@ Ces trois valeurs ne sont pas secrètes de la même façon : les deux identifian
    - Types de comptes : *Comptes dans cet annuaire organisationnel uniquement* (un seul locataire).
    - URI de redirection : plateforme **Web**, valeur `http://localhost:4180/api/auth/callback`
      (Microsoft accepte le HTTP uniquement pour `localhost`).
-2. Notez l'**ID d'application (client)** et l'**ID de l'annuaire (locataire)**.
+2. Notez l'**ID de l'application (client)** et l'**ID de l'annuaire (locataire)**.
 3. **Certificats et secrets → Nouveau secret client** : durée courte (90 jours). Copiez la *Valeur*.
 4. **Autorisations d'API** : ne gardez que Microsoft Graph, déléguées : `openid`, `profile`, `email`
    (vous pouvez retirer `User.Read`). N'ajoutez **aucune** autorisation d'application.
