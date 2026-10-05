@@ -185,3 +185,133 @@ test("an operator deletes an unused document but not a signed one", async ({ pag
   await expect(signed.getByText(/Conservée/).first()).toBeVisible();
   await expect(signed.getByRole("button", { name: /Supprimer/ })).toHaveCount(0);
 });
+
+test("an operator prepares a document by drag and drop, with elements for two people", async ({
+  page,
+}) => {
+  // Tall enough to drop onto the page without scrolling mid-drag.
+  await page.setViewportSize({ width: 1500, height: 1100 });
+  await loginAs(page, "Diane");
+  const api = page.context().request;
+  const title = `Préparation ${Date.now()}`;
+  const created = await api.post("/api/documents", {
+    multipart: {
+      title,
+      version_label: "1.0",
+      file: { name: "p.pdf", mimeType: "application/pdf", buffer: MINIMAL_PDF },
+    },
+  });
+  const versionId = (await created.json()).versions[0].id as string;
+
+  await page.goto(`/documents/versions/${versionId}/prepare`);
+  const overlay = page.getByTestId("overlay-1");
+  await expect(overlay).toBeVisible();
+
+  // Drag a signature and a date onto the page (the first recipient)...
+  await page.getByTestId("tool-SIGNATURE").dragTo(overlay, { targetPosition: { x: 200, y: 500 } });
+  await page.getByTestId("tool-DATE").dragTo(overlay, { targetPosition: { x: 520, y: 500 } });
+  // ... then add a second recipient and give them a free-text element.
+  await page.getByRole("button", { name: "Ajouter un destinataire" }).click();
+  await page.getByTestId("tool-TEXT").dragTo(overlay, { targetPosition: { x: 200, y: 300 } });
+
+  await expect(page.getByTestId("field-SIGNATURE")).toHaveAttribute("data-role", "1");
+  await expect(page.getByTestId("field-DATE")).toHaveAttribute("data-role", "1");
+  await expect(page.getByTestId("field-TEXT")).toHaveAttribute("data-role", "2");
+  await expect(page.getByTestId("prep-status")).toContainText("non enregistrées");
+
+  // Move the signature with the mouse.
+  const signature = page.getByTestId("field-SIGNATURE");
+  const before = await signature.boundingBox();
+  await page.mouse.move(before!.x + before!.width / 2, before!.y + before!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(before!.x + before!.width / 2 + 60, before!.y + before!.height / 2 - 40, { steps: 6 });
+  await page.mouse.up();
+  const after = await signature.boundingBox();
+  expect(after!.x).toBeGreaterThan(before!.x + 40);
+  expect(after!.y).toBeLessThan(before!.y - 25);
+
+  // Label the text element, then save.
+  await page.getByTestId("field-TEXT").click();
+  await page.getByLabel("Libellé").fill("Fonction");
+  await page.getByRole("button", { name: "Enregistrer" }).click();
+  await expect(page.getByTestId("prep-status")).toContainText("Enregistré — 3 élément(s)");
+
+  // It persists, with its recipients.
+  await page.reload();
+  await expect(page.getByTestId("field-SIGNATURE")).toBeVisible();
+  await expect(page.getByTestId("field-TEXT")).toHaveAttribute("data-role", "2");
+  await expect(page.getByTestId("field-TEXT")).toContainText("Fonction");
+
+  // Delete with the keyboard, then publish: the elements are frozen.
+  await page.getByTestId("field-DATE").click();
+  await page.keyboard.press("Delete");
+  await expect(page.getByTestId("field-DATE")).toHaveCount(0);
+  await page.getByRole("button", { name: "Publier", exact: true }).click();
+  await page.getByRole("button", { name: /Publier — les éléments seront figés/ }).click();
+  await expect(page).toHaveURL(/\/documents$/);
+
+  await page.goto(`/documents/versions/${versionId}/prepare`);
+  await expect(page.getByText(/éléments sont figés/)).toBeVisible();
+  await expect(page.getByTestId("tool-DATE")).toHaveCount(0);
+  await expect(page.getByTestId("field-SIGNATURE")).toBeVisible();
+});
+
+test("a signer fills the text the operator asked for, and it is stamped on the signed PDF", async ({
+  page,
+  browser,
+}) => {
+  const title = `Champ texte ${Date.now()}`;
+  const context = await browser.newContext();
+  const op = await context.newPage();
+  await loginAs(op, "Diane");
+  const api = context.request;
+  const created = await api.post("/api/documents", {
+    multipart: {
+      title,
+      version_label: "1.0",
+      file: { name: "p.pdf", mimeType: "application/pdf", buffer: MINIMAL_PDF },
+    },
+  });
+  const versionId = (await created.json()).versions[0].id as string;
+  const placed = await api.put(`/api/documents/versions/${versionId}/fields`, {
+    data: {
+      fields: [
+        { page: 1, x: 0.1, y: 0.7, width: 0.3, height: 0.06, kind: "SIGNATURE", role: 1 },
+        { page: 1, x: 0.5, y: 0.7, width: 0.2, height: 0.04, kind: "DATE", role: 1 },
+        { page: 1, x: 0.1, y: 0.5, width: 0.4, height: 0.04, kind: "TEXT", role: 1, label: "Fonction" },
+      ],
+    },
+  });
+  expect(placed.status()).toBe(200);
+  await api.post(`/api/documents/versions/${versionId}/publish`);
+  const users = (await (await api.get("/api/campaigns/_meta/users")).json()) as { id: string; email: string }[];
+  const bob = users.find((u) => u.email === "bob.dupont@lcit-test.local")!;
+  const campaign = await (await api.post("/api/campaigns", { data: { name: title } })).json();
+  await api.post(`/api/campaigns/${campaign.id}/documents`, { data: { document_version_id: versionId } });
+  await api.post(`/api/campaigns/${campaign.id}/launch`, { data: { user_ids: [bob.id] } });
+  await context.close();
+
+  await loginAs(page, "Bob");
+  await page.getByRole("link", { name: new RegExp(title) }).click();
+  const sign = page.getByRole("button", { name: "Signer", exact: true });
+  await page.getByRole("checkbox").check();
+  await expect(sign).toBeDisabled(); // "Fonction" is required and still empty
+  await expect(page.getByText(/votre signature, la date de signature/)).toBeVisible();
+  await page.getByLabel(/Fonction/).fill("Directeur général");
+  await expect(sign).toBeEnabled();
+  await sign.click();
+  await expect(page.getByTestId("signature-id")).toHaveText(/^SIG-[0-9A-F]{12}$/);
+
+  const signatureId = (await page.getByTestId("signature-id").textContent()) as string;
+  expect(signatureId).toBeTruthy();
+  const list = (await (await page.context().request.get("/api/signatures/me")).json()) as {
+    id: string;
+    display_id: string;
+  }[];
+  const mine = list.find((s) => s.display_id === signatureId)!;
+  const evidence = await (await page.context().request.get(`/api/signatures/${mine.id}/evidence`)).json();
+  expect(evidence.field_values.map((v: { kind: string }) => v.kind).sort()).toEqual(["DATE", "SIGNATURE", "TEXT"]);
+  expect(evidence.field_values.find((v: { kind: string }) => v.kind === "TEXT").value).toBe("Directeur général");
+  const verdict = await (await page.context().request.get(`/api/signatures/${mine.id}/verify`)).json();
+  expect(verdict.valid).toBe(true);
+});

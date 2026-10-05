@@ -39,11 +39,13 @@ function renderPage() {
 
 describe("signing: preview, consent, then one deliberate click", () => {
   beforeEach(() => {
-    vi.mocked(api.get).mockImplementation(async (path: string) =>
-      path === "/config"
-        ? { consent_text: "J'atteste avoir pris connaissance de ce document.", consent_version: "1.0", app_version: "x" }
-        : [assignment],
-    );
+    vi.mocked(api.get).mockImplementation(async (path: string) => {
+      if (path === "/config") {
+        return { consent_text: "J'atteste avoir pris connaissance de ce document.", consent_version: "1.0", app_version: "x" };
+      }
+      if (path.endsWith("/signing-form")) return { inputs: [], automatic: [] };
+      return [assignment];
+    });
     vi.mocked(api.post).mockResolvedValue({ id: "s1", display_id: "SIG-ABC123ABC123" });
   });
 
@@ -62,7 +64,54 @@ describe("signing: preview, consent, then one deliberate click", () => {
     await user.click(screen.getByRole("checkbox"));
     expect(sign).toBeEnabled();
     await user.click(sign);
-    expect(api.post).toHaveBeenCalledWith("/documents/versions/v1/sign", { consent: true });
+    expect(api.post).toHaveBeenCalledWith("/documents/versions/v1/sign", { consent: true, values: {} });
     expect(api.post).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("signing a document with elements to fill in", () => {
+  beforeEach(() => {
+    vi.mocked(api.get).mockImplementation(async (path: string) => {
+      if (path === "/config") {
+        return { consent_text: "J'atteste.", consent_version: "1.0", app_version: "x" };
+      }
+      if (path.endsWith("/signing-form")) {
+        return {
+          inputs: [
+            { id: "t1", kind: "TEXT", label: "Société", required: true, group_key: "societe", page: 1 },
+            { id: "t2", kind: "TEXT", label: "Société", required: true, group_key: "societe", page: 2 },
+            { id: "t3", kind: "TEXT", label: "Remarque", required: false, group_key: null, page: 2 },
+          ],
+          automatic: [
+            { id: "a1", kind: "DATE", label: "", required: true, group_key: null, page: 1 },
+            { id: "a2", kind: "SIGNATURE", label: "", required: true, group_key: null, page: 1 },
+          ],
+        };
+      }
+      return [assignment];
+    });
+    vi.mocked(api.post).mockResolvedValue({ id: "s1", display_id: "SIG-ABC123ABC123" });
+  });
+
+  it("asks once for a shared field, and says what will be filled in automatically", async () => {
+    renderPage();
+    await screen.findByTestId("signing-inputs");
+    expect(screen.getAllByRole("textbox")).toHaveLength(2); // Société (shared), Remarque
+    expect(screen.getByText(/votre signature, la date de signature/)).toBeInTheDocument();
+  });
+
+  it("will not sign until the required text is given, then sends it for every element", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    const sign = await screen.findByRole("button", { name: "Signer" });
+    await user.click(screen.getByRole("checkbox"));
+    expect(sign).toBeDisabled(); // consent given, but "Société" is still empty
+    await user.type(screen.getByLabelText(/Société/), "LCIT");
+    expect(sign).toBeEnabled();
+    await user.click(sign);
+    expect(api.post).toHaveBeenCalledWith("/documents/versions/v1/sign", {
+      consent: true,
+      values: { t1: "LCIT", t2: "LCIT", t3: "" },
+    });
   });
 });

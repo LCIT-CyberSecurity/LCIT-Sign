@@ -5,6 +5,47 @@ import { api, ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import type { MyAssignment, PublicConfig, SignatureSummary } from "../api/types";
 
+interface FormField {
+  id: string;
+  kind: string;
+  label: string;
+  required: boolean;
+  group_key: string | null;
+  page: number;
+}
+
+interface SigningForm {
+  inputs: FormField[];
+  automatic: FormField[];
+}
+
+const AUTO_LABELS: Record<string, string> = {
+  SIGNATURE: "votre signature",
+  DATE: "la date de signature",
+  FULL_NAME: "votre nom",
+  EMAIL: "votre e-mail",
+  LOGO: "le logo de l'entreprise",
+};
+
+// Always listed in this order, whatever order the operator placed them in.
+const AUTO_ORDER = ["SIGNATURE", "FULL_NAME", "EMAIL", "DATE", "LOGO"];
+
+/** One input per group: fields that share a key are typed once and apply to all. */
+export function groupInputs(inputs: FormField[]) {
+  const groups = new Map<string, { key: string; label: string; required: boolean; ids: string[] }>();
+  for (const f of inputs) {
+    const key = f.group_key ? `g:${f.group_key}` : `f:${f.id}`;
+    const existing = groups.get(key);
+    if (existing) {
+      existing.ids.push(f.id);
+      existing.required = existing.required || f.required;
+    } else {
+      groups.set(key, { key, label: f.label || "Texte", required: f.required, ids: [f.id] });
+    }
+  }
+  return [...groups.values()];
+}
+
 export default function SignerAssignmentDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
@@ -14,6 +55,8 @@ export default function SignerAssignmentDetailPage() {
   const [signing, setSigning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [signature, setSignature] = useState<SignatureSummary | null>(null);
+  const [form, setForm] = useState<SigningForm | null>(null);
+  const [typed, setTyped] = useState<Record<string, string>>({});
 
   const load = () => {
     api.get<MyAssignment[]>("/me/assignments").then((all) => {
@@ -28,7 +71,20 @@ export default function SignerAssignmentDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
+  const versionId = assignment?.document_version_id;
+  const alreadySigned = assignment?.status === "SIGNED";
+  useEffect(() => {
+    if (!versionId || alreadySigned) return;
+    api
+      .get<SigningForm>(`/documents/versions/${versionId}/signing-form`)
+      .then((r) => setForm({ inputs: r.inputs ?? [], automatic: r.automatic ?? [] }))
+      .catch(() => setForm(null));
+  }, [versionId, alreadySigned]);
+
   if (!assignment) return <p className="muted">Chargement…</p>;
+
+  const inputGroups = groupInputs(form?.inputs ?? []);
+  const missing = inputGroups.some((g) => g.required && !(typed[g.key] ?? "").trim());
 
   const isSigned = assignment.status === "SIGNED";
   const contentUrl = `/api/documents/versions/${assignment.document_version_id}/content`;
@@ -39,7 +95,12 @@ export default function SignerAssignmentDetailPage() {
     try {
       const result = await api.post<SignatureSummary>(
         `/documents/versions/${assignment.document_version_id}/sign`,
-        { consent: true },
+        {
+          consent: true,
+          values: Object.fromEntries(
+            inputGroups.flatMap((g) => g.ids.map((fieldId) => [fieldId, (typed[g.key] ?? "").trim()])),
+          ),
+        },
       );
       setSignature(result);
       load();
@@ -124,6 +185,31 @@ export default function SignerAssignmentDetailPage() {
               </span>
             </div>
           </div>
+          {inputGroups.length > 0 && (
+            <div className="stack" style={{ gap: 10 }} data-testid="signing-inputs">
+              <div className="field-label">À renseigner avant de signer</div>
+              {inputGroups.map((g) => (
+                <label key={g.key}>
+                  {g.label}
+                  {g.required ? " *" : " (facultatif)"}
+                  <input
+                    value={typed[g.key] ?? ""}
+                    maxLength={500}
+                    onChange={(e) => setTyped({ ...typed, [g.key]: e.target.value })}
+                  />
+                </label>
+              ))}
+            </div>
+          )}
+          {(form?.automatic.length ?? 0) > 0 && (
+            <p className="muted small">
+              Seront apposés automatiquement sur le document :{" "}
+              {[...new Set(form?.automatic.map((f) => f.kind))]
+                .sort((a, b) => AUTO_ORDER.indexOf(a) - AUTO_ORDER.indexOf(b))
+                .map((kind) => AUTO_LABELS[kind] ?? kind)
+                .join(", ")}.
+            </p>
+          )}
           <label className="consent-row">
             <input
               type="checkbox"
@@ -135,7 +221,7 @@ export default function SignerAssignmentDetailPage() {
           {error && <p className="error-text">{error}</p>}
           <button
             className="button button--primary"
-            disabled={!consentChecked || signing}
+            disabled={!consentChecked || signing || missing}
             onClick={sign}
           >
             {signing ? "Signature en cours…" : "Signer"}

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { FileText, Upload, CheckCircle2, Trash2 } from "lucide-react";
+import { FileText, Upload, CheckCircle2, Trash2, PencilRuler } from "lucide-react";
+import { Link } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import ConfirmButton from "../components/ConfirmButton";
 import type { DocumentDetail } from "../api/types";
@@ -180,6 +181,13 @@ export default function OperatorDocumentsPage() {
                     <td>{Math.round(v.file_size / 1024)} Ko</td>
                     <td>
                       <div className="row-actions">
+                        <Link
+                          className="button button--secondary button--sm"
+                          to={`/documents/versions/${v.id}/prepare`}
+                        >
+                          <PencilRuler size={14} aria-hidden="true" />{" "}
+                          {v.status === "DRAFT" ? "Préparer" : "Éléments"}
+                        </Link>
                         {v.status === "DRAFT" && (
                           <button className="button button--secondary button--sm" onClick={() => publish(v.id)}>
                             <CheckCircle2 size={14} aria-hidden="true" /> Publier

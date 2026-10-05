@@ -15,6 +15,7 @@ import AdminAuditPage from "./pages/AdminAuditPage";
 import AdminSigningKeysPage from "./pages/AdminSigningKeysPage";
 import AdminDiagnosticsPage from "./pages/AdminDiagnosticsPage";
 import MySignaturesPage from "./pages/MySignaturesPage";
+import PrepareDocumentPage from "./pages/PrepareDocumentPage";
 import SignatureDetailPage from "./pages/SignatureDetailPage";
 
 function RoleRoute({ allowed, children }: { allowed: boolean; children: ReactNode }) {
@@ -50,6 +51,14 @@ export default function App() {
           element={
             <RoleRoute allowed={isOperator}>
               <OperatorDocumentsPage />
+            </RoleRoute>
+          }
+        />
+        <Route
+          path="/documents/versions/:id/prepare"
+          element={
+            <RoleRoute allowed={isOperator}>
+              <PrepareDocumentPage />
             </RoleRoute>
           }
         />

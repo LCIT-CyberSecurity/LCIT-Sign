@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session as DbSession
 
 from lcit_sign.deps import get_current_user, get_db, require_roles
 from lcit_sign.models.document import (
+    Document,
     DocumentField,
     DocumentVersion,
     DocumentVersionStatus,
@@ -117,8 +118,12 @@ def get_fields(
     version_id: uuid.UUID, user: User = Depends(_manage), db: DbSession = Depends(get_db)
 ) -> dict[str, Any]:
     version = _version_or_404(db, version_id)
+    document = db.get(Document, version.document_id)
     return {
         "editable": version.status == DocumentVersionStatus.DRAFT,
+        "document_title": document.title if document else "",
+        "version_label": version.version_label,
+        "status": version.status.value,
         "fields": [field_payload(r) for r in load_fields(db, version.id)],
     }
 
