@@ -399,6 +399,9 @@ test("an operator drops several PDFs on the documents page", async ({ page }) =>
     { name: `contrat_beta-${stamp}.pdf`, mimeType: "application/pdf", buffer: MINIMAL_PDF },
     { name: `notes-${stamp}.txt`, mimeType: "text/plain", buffer: Buffer.from("not a pdf") },
   ]);
+  // Nothing is sent until the operator confirms with "Importer".
+  await expect(page.getByTestId("pending-files")).toContainText(`contrat_beta-${stamp}.pdf`);
+  await page.getByRole("button", { name: "Importer 3 documents" }).click();
   const results = page.getByTestId("upload-results");
   await expect(results).toContainText(`contrat_alpha-${stamp}.pdf`);
   await expect(results.locator("li").nth(0)).toContainText("ajouté en brouillon");

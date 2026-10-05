@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { FileText, CheckCircle2, Trash2, PencilRuler } from "lucide-react";
+import { FileText, CheckCircle2, Trash2, PencilRuler, Upload, X } from "lucide-react";
 import { Link } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import ConfirmButton from "../components/ConfirmButton";
@@ -29,6 +29,8 @@ export default function OperatorDocumentsPage() {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<"alpha" | "recent">("alpha");
   const [results, setResults] = useState<UploadResult[]>([]);
+  // Dropped files wait here until the operator clicks "Importer".
+  const [pending, setPending] = useState<File[]>([]);
 
   const load = () => {
     api.get<DocumentDetail[]>("/documents").then(setDocuments);
@@ -36,7 +38,16 @@ export default function OperatorDocumentsPage() {
 
   useEffect(load, []);
 
+  const stage = (files: File[]) => {
+    setResults([]);
+    setPending((current) => [
+      ...current,
+      ...files.filter((f) => !current.some((c) => c.name === f.name && c.size === f.size)),
+    ]);
+  };
+
   const upload = async (files: File[]) => {
+    setPending([]);
     setUploading(true);
     setError(null);
     const batch: UploadResult[] = files.map((file) => ({ name: file.name, state: "waiting" }));
@@ -137,7 +148,37 @@ export default function OperatorDocumentsPage() {
             />
           </label>
         </div>
-        <UploadDropzone onFiles={(files) => void upload(files)} disabled={uploading} hint="PDF, plusieurs à la fois" />
+        <UploadDropzone onFiles={stage} disabled={uploading} hint="PDF, plusieurs à la fois" />
+        {pending.length > 0 && (
+          <div className="stack" data-testid="pending-files">
+            <ul className="upload-results">
+              {pending.map((file, i) => (
+                <li key={`${file.name}-${i}`}>
+                  <FileText size={14} aria-hidden="true" />
+                  <strong>{file.name}</strong>
+                  <span className="muted small">{Math.round(file.size / 1024)} Ko</span>
+                  <button
+                    type="button"
+                    className="button button--ghost button--sm"
+                    aria-label={`Retirer ${file.name}`}
+                    onClick={() => setPending(pending.filter((_, j) => j !== i))}
+                  >
+                    <X size={13} aria-hidden="true" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <div className="row-actions">
+              <button type="button" className="button" onClick={() => void upload(pending)}>
+                <Upload size={14} aria-hidden="true" /> Importer{" "}
+                {pending.length > 1 ? `${pending.length} documents` : "le document"}
+              </button>
+              <button type="button" className="button button--ghost" onClick={() => setPending([])}>
+                Annuler
+              </button>
+            </div>
+          </div>
+        )}
         {results.length > 0 && (
           <ul className="upload-results" aria-live="polite" data-testid="upload-results">
             {results.map((r, i) => (
