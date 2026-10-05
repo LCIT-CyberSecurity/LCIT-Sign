@@ -147,15 +147,48 @@ async def exchange_code(
     if claims.get("nonce") != expected_nonce:
         raise OidcError("ID token nonce does not match the login attempt")
 
-    subject = claims.get("sub")
+    return identity_from_claims(dict(claims), default_issuer=metadata.issuer)
+
+
+def _looks_like_email(value: object) -> bool:
+    return isinstance(value, str) and "@" in value and " " not in value.strip()
+
+
+def identity_from_claims(claims: dict[str, object], *, default_issuer: str) -> IdentityClaims:
+    """Read who the person is from validated ID-token claims.
+
+    Providers differ. Keycloak and the mock send `email`, `given_name` and
+    `family_name`. Microsoft Entra ID's v2.0 tokens carry `name` and
+    `preferred_username` (the sign-in name, normally the mailbox) but `email`
+    only when configured as an optional claim and never `given_name` /
+    `family_name` by default. So: take `email` when present, otherwise the
+    sign-in name when it is an address; split a full name when the parts are
+    missing. A login with no usable address is refused rather than creating an
+    account the directory could never reconcile.
+    """
+    subject = str(claims.get("sub") or "")
     if not subject:
         raise OidcError("ID token is missing a subject")
 
+    email = ""
+    for candidate in (claims.get("email"), claims.get("preferred_username"), claims.get("upn")):
+        if _looks_like_email(candidate):
+            email = str(candidate).strip()
+            break
+    if not email:
+        raise OidcError("ID token carries no e-mail address (add the 'email' claim)")
+
+    name = str(claims.get("name") or "").strip()
+    given = str(claims.get("given_name") or "").strip()
+    family = str(claims.get("family_name") or "").strip()
+    if name and not (given or family):
+        given, _, family = name.partition(" ")
+
     return IdentityClaims(
         subject=subject,
-        issuer=str(claims.get("iss", metadata.issuer)),
-        email=claims.get("email", ""),
-        given_name=claims.get("given_name", ""),
-        family_name=claims.get("family_name", ""),
-        name=claims.get("name", ""),
+        issuer=str(claims.get("iss") or default_issuer),
+        email=email,
+        given_name=given,
+        family_name=family,
+        name=name,
     )

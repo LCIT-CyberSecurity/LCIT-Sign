@@ -155,6 +155,7 @@ def sign_document_version(
         signed_at=signed_at,
         consent_text=settings.consent_text,
         display_id=display_id,
+        original_sha256=version.sha256,
     )
     signed_file_sha256 = StorageService.sha256_hex(signed_pdf)
 
@@ -190,6 +191,7 @@ def sign_document_version(
         signed_at=signed_at,
         consent_text=settings.consent_text,
         display_id=display_id,
+        original_sha256=version.sha256,
     )
 
     signature = Signature(
