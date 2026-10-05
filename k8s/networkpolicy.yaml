@@ -1,0 +1,41 @@
+# Default-deny ingress, then only the flows the application needs. Egress is
+# left open: the API must reach the OIDC provider, SMTP / Microsoft Graph and
+# the directory APIs; restrict it with your CNI's egress rules if you can.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: default-deny-ingress, namespace: lcit-sign}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: allow-ingress-controller-to-webui, namespace: lcit-sign}
+spec:
+  podSelector: {matchLabels: {app: lcit-sign-webui}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: ingress-nginx}
+      ports: [{port: 80}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: allow-webui-to-api, namespace: lcit-sign}
+spec:
+  podSelector: {matchLabels: {app: lcit-sign-api}}
+  policyTypes: [Ingress]
+  ingress:
+    - from: [{podSelector: {matchLabels: {app: lcit-sign-webui}}}]
+      ports: [{port: 8000}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: allow-api-to-postgres, namespace: lcit-sign}
+spec:
+  podSelector: {matchLabels: {app: lcit-sign-postgres}}
+  policyTypes: [Ingress]
+  ingress:
+    - from: [{podSelector: {matchLabels: {app: lcit-sign-api}}}]
+      ports: [{port: 5432}]

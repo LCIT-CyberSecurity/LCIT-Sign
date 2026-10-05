@@ -1,0 +1,22 @@
+# Non-secret settings. Secrets are in secret.example.yaml's real counterpart,
+# created out-of-band (kubectl, External Secrets, Sealed Secrets...).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lcit-sign-config
+  namespace: lcit-sign
+data:
+  LCIT_SIGN_ENVIRONMENT: production
+  LCIT_SIGN_LOG_LEVEL: INFO
+  # TLS ends at the Ingress, but the browser still talks https.
+  LCIT_SIGN_COOKIE_SECURE: "true"
+  # Edit for your deployment:
+  LCIT_SIGN_PUBLIC_BASE_URL: https://sign.example.org
+  LCIT_SIGN_OIDC_ISSUER: https://login.example.org/realms/lcit
+  LCIT_SIGN_OIDC_CLIENT_ID: lcit-sign
+  # Secrets are read from files mounted from the Secret (see api.yaml).
+  LCIT_SIGN_MASTER_KEY_FILE: /run/secrets/lcit-sign/master_key
+  LCIT_SIGN_SESSION_SECRET_FILE: /run/secrets/lcit-sign/session_secret
+  LCIT_SIGN_OIDC_CLIENT_SECRET_FILE: /run/secrets/lcit-sign/oidc_client_secret
+  # Remove once a real administrator has taken over (spec §13).
+  LCIT_SIGN_BOOTSTRAP_ADMIN: first.admin@example.org

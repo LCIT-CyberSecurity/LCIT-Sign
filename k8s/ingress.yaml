@@ -1,0 +1,24 @@
+# TLS terminates here (spec §113). Create the TLS Secret with cert-manager or:
+#   kubectl -n lcit-sign create secret tls lcit-sign-tls --cert=tls.crt --key=tls.key
+# The certificate-installer.sh script is for the Docker deployment only.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: lcit-sign
+  namespace: lcit-sign
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: 25m
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [sign.example.org]
+      secretName: lcit-sign-tls
+  rules:
+    - host: sign.example.org
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: {name: lcit-sign-webui, port: {number: 80}}

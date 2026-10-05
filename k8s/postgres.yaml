@@ -1,0 +1,60 @@
+# Single-instance PostgreSQL. For production prefer a managed or operator-run
+# PostgreSQL (backups, HA) and point LCIT_SIGN_DATABASE_URL at it instead.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: lcit-sign-postgres
+  namespace: lcit-sign
+spec:
+  serviceName: lcit-sign-postgres
+  replicas: 1
+  selector:
+    matchLabels: {app: lcit-sign-postgres}
+  template:
+    metadata:
+      labels: {app: lcit-sign-postgres}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70          # postgres user of the alpine image
+        fsGroup: 70
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports: [{containerPort: 5432, name: pg}]
+          env:
+            - {name: POSTGRES_USER, value: lcit_sign}
+            - {name: POSTGRES_DB, value: lcit_sign}
+            - {name: PGDATA, value: /var/lib/postgresql/data/pgdata}
+            - name: POSTGRES_PASSWORD
+              valueFrom: {secretKeyRef: {name: lcit-sign-secrets, key: db_password}}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          readinessProbe:
+            exec: {command: [pg_isready, -U, lcit_sign]}
+            periodSeconds: 5
+          livenessProbe:
+            exec: {command: [pg_isready, -U, lcit_sign]}
+            periodSeconds: 20
+            failureThreshold: 6
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {memory: 1Gi}
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/postgresql/data}
+  volumeClaimTemplates:
+    - metadata: {name: data}
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources: {requests: {storage: 10Gi}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lcit-sign-postgres
+  namespace: lcit-sign
+spec:
+  selector: {app: lcit-sign-postgres}
+  ports: [{port: 5432, targetPort: pg}]

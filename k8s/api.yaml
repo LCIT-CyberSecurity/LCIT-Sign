@@ -1,0 +1,84 @@
+# The API runs the notification/reminder/renewal/sync worker in-process, keeps
+# its rate limiter in memory and applies migrations at start: exactly ONE
+# replica, replaced with Recreate (no two pods migrating at once).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: lcit-sign-data
+  namespace: lcit-sign
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: {requests: {storage: 20Gi}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lcit-sign-api
+  namespace: lcit-sign
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app: lcit-sign-api}
+  template:
+    metadata:
+      labels: {app: lcit-sign-api}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: api
+          image: lcit-sign-api:latest   # replace with your registry/tag
+          imagePullPolicy: IfNotPresent
+          ports: [{containerPort: 8000, name: http}]
+          envFrom:
+            - configMapRef: {name: lcit-sign-config}
+          env:
+            - name: DB_PASSWORD
+              valueFrom: {secretKeyRef: {name: lcit-sign-secrets, key: db_password}}
+            - name: LCIT_SIGN_DATABASE_URL
+              value: postgresql+psycopg://lcit_sign:$(DB_PASSWORD)@lcit-sign-postgres:5432/lcit_sign
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          readinessProbe:
+            httpGet: {path: /api/ready, port: http}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /api/health, port: http}
+            periodSeconds: 20
+            failureThreshold: 6
+          startupProbe:
+            httpGet: {path: /api/health, port: http}
+            periodSeconds: 3
+            failureThreshold: 40   # migrations run before the server starts
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {memory: 1Gi}
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/lcit-sign}
+            - {name: secrets, mountPath: /run/secrets/lcit-sign, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: data
+          persistentVolumeClaim: {claimName: lcit-sign-data}
+        - name: secrets
+          secret:
+            secretName: lcit-sign-secrets
+            defaultMode: 0440
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lcit-sign-api        # nginx proxies to this exact name
+  namespace: lcit-sign
+spec:
+  selector: {app: lcit-sign-api}
+  ports: [{port: 8000, targetPort: http}]
