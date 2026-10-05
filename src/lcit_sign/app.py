@@ -29,7 +29,7 @@ from lcit_sign.api.signatures import router as signatures_router
 from lcit_sign.config import Settings, get_settings
 from lcit_sign.database import make_engine, make_session_factory
 from lcit_sign.logging_utils import configure_logging
-from lcit_sign.request_context import set_request_id
+from lcit_sign.request_context import set_request_id, set_source_ip
 from lcit_sign.services.notification_queue import process_pending_notifications
 from lcit_sign.services.rate_limit import SlidingWindowLimiter
 from lcit_sign.services.scheduler import (
@@ -119,12 +119,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             allow_headers=["*"],
         )
 
+    def client_ip(request: Request) -> str:
+        # nginx appends the real peer as the LAST X-Forwarded-For entry;
+        # earlier entries are client-supplied and not trusted.
+        forwarded = request.headers.get("x-forwarded-for", "")
+        if forwarded:
+            return forwarded.split(",")[-1].strip()
+        return request.client.host if request.client else "unknown"
+
     @app.middleware("http")
     async def add_request_id(
         request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
         request_id = request.headers.get("X-Request-Id") or str(uuid.uuid4())
         set_request_id(request_id)
+        set_source_ip(client_ip(request))
         request.state.request_id = request_id
         response = await call_next(request)
         response.headers["X-Request-Id"] = request_id
@@ -141,14 +150,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         ("/api/documents/versions/", 60, 60.0),
         ("/api/", 600, 60.0),
     ]
-
-    def client_ip(request: Request) -> str:
-        # nginx appends the real peer as the LAST X-Forwarded-For entry;
-        # earlier entries are client-supplied and not trusted.
-        forwarded = request.headers.get("x-forwarded-for", "")
-        if forwarded:
-            return forwarded.split(",")[-1].strip()
-        return request.client.host if request.client else "unknown"
 
     @app.middleware("http")
     async def rate_limit(

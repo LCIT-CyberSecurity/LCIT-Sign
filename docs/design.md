@@ -308,6 +308,79 @@ Emails are queued, never sent inline.
   encrypted like the directory secrets. ADMIN can test the connection and send
   a test mail.
 
+## 11b. Scheduled work: reminders, renewal, directory sync
+
+The notification worker (in the API process, every
+`LCIT_SIGN_NOTIFICATION_WORKER_INTERVAL_SECONDS`) also runs three idempotent
+jobs, each in its own transaction (`services/scheduler.py`):
+
+- **Reminders** (spec §50). A campaign launched with a policy — first
+  reminder after N days, then every M days, at most K times, optionally one
+  more N days before the deadline — gets its due reminders queued. Each queued
+  reminder advances `last_reminder_at`, so re-running changes nothing. Signed
+  people are never reminded; inactive users are skipped.
+- **Renewal** (spec §51). A campaign with `renewal_every` + `renewal_unit`
+  (`DAYS`/`MONTHS`) opens a follow-up campaign when due: same still-published
+  document versions, the still-active people of the old population, the same
+  policies. It happens once (`renewed_at`). The old campaign and its
+  signatures are untouched.
+- **Directory sync** (spec §15). A source with `sync_interval_minutes` runs
+  automatically when that interval has elapsed since its last run (a failed run
+  counts, so an upstream outage is retried at the normal cadence).
+
+Because renewal asks for the *same version* again, signing is idempotent **per
+campaign**, not per version: a signature records its campaign
+(`signatures.campaign_id`, also inside the signed evidence), at most one exists
+per (user, version, campaign), and earlier signatures are never altered.
+
+## 11c. Mail connectors: SMTP and Microsoft Graph
+
+Both implement one `MailSender` interface (`services/mail.py`).
+
+- **SMTP**: host/port, TLS or STARTTLS, optional auth. SMTP 5xx answers are
+  *permanent* (the notification fails at once); 4xx, timeouts and connection
+  errors are retried with backoff.
+- **Microsoft Graph** (`services/mail_graph.py`): app-only OAuth2 client
+  credentials, sending from **one dedicated mailbox**. The access token lives
+  only in process memory and is renewed on demand; the client secret is stored
+  encrypted like the SMTP password. The tenant must confine the application to
+  that mailbox with Exchange Online Application RBAC. `POST
+  /api/admin/mail-connector/test-isolation` is the mandatory negative test: it
+  tries to send as another mailbox and reports whether Exchange refused. The
+  step-by-step tenant procedure is in `docs/microsoft-graph-setup.md`; nothing
+  in this repository modifies a tenant.
+
+## 11d. HTTPS and the certificate installer
+
+nginx serves TLS 1.2/1.3 with HSTS on port 443 (plain HTTP on 80 remains for
+development, the container healthcheck and integration tests). It reads
+`tls.crt`/`tls.key` from a **read-only** mount and, if none is mounted,
+generates a self-signed certificate at container start (inside the container,
+never in an image layer).
+
+`scripts/certificate-installer.sh` manages that certificate (menu or
+`--test-command`): it validates the PEM files, the key/certificate match, the
+validity window, the SAN and FQDN coverage (standard single-label wildcard
+rules), warns about a missing intermediate, keeps a single restricted rollback
+copy, writes atomically with strict permissions (dir 700, key 600, cert 644),
+validates `docker compose config`, recreates the proxy, then compares the
+SHA-256 fingerprint **actually presented over TLS** with the expected one,
+rolling back automatically on any failure. It never prints or logs key
+material. On Kubernetes TLS ends at the Ingress instead (`k8s/README.md`).
+
+## 11e. Backup and restore
+
+`scripts/backup.sh` writes a PostgreSQL dump and a tar of the storage volume
+with checksums. **The master key is deliberately not included**; keep it
+elsewhere. Existing signatures stay verifiable without it (they need only the
+public keys in the database); signing again and reading stored credentials need
+it. `scripts/restore.sh` replaces the data of a stack and must be confirmed with
+`--yes`. `python -m lcit_sign.cli verify-all` re-verifies every signature,
+report and the audit chain from the database and the volume.
+`tests/UAT/CrashTests-Sign/restore-test.sh` restores a backup into a throwaway
+PostgreSQL and volume and requires all signatures to verify (and a deliberately
+corrupted file to be detected).
+
 ## 12. Security model
 
 | Concern | Measure |
@@ -321,6 +394,11 @@ Emails are queued, never sent inline.
 | Tampering | Immutable published versions, immutable signatures, hash-chained audit, signed evidence and reports |
 | Web hardening | nginx sets CSP (`default-src 'self'`, `object-src 'none'`, `frame-ancestors 'none'`), `X-Frame-Options: DENY`, `nosniff`, referrer and permissions policies |
 | Authorisation | Role checks on every route |
+| CSRF | State-changing `/api` requests must come from the same origin (`Origin`/`Sec-Fetch-Site` check) on top of `SameSite` cookies |
+| Abuse | Per-IP sliding-window rate limits (login, sync, connector tests, signing); the real peer address is the last `X-Forwarded-For` entry |
+| SSRF | Admin-supplied SMTP targets are resolved and refused if link-local/metadata/unspecified/multicast or on non-mail service ports; connectivity tests have timeouts |
+| Errors | Unhandled errors return an opaque message with a request id; the trace stays in the server log |
+| Log hygiene | Sensitive keys are redacted; HTTP client URL logging is silenced; tests assert known secrets never reach logs or the audit trail |
 
 ### `LCIT_SIGN_MASTER_KEY` is the crown jewel
 
@@ -353,10 +431,10 @@ reports                     (campaign)
 signing_keys
 audit_events, audit_chain_state
 mail_connectors, notifications
-directory_connector_configs, directory_sync_runs
+directory_connector_configs (+ sync schedule), directory_sync_runs
 ```
 
-Schema changes go through Alembic (`migrations/versions/0001`–`0008`). The
+Schema changes go through Alembic (`migrations/versions/0001`–`0010`). The
 container entrypoint runs migrations at start.
 
 ## 14. API overview
@@ -367,11 +445,12 @@ All routes sit under `/api`.
 |---|---|
 | Health/config | `GET /health`, `/ready`, `/config` |
 | Auth | `GET /auth/login`, `/auth/callback`, `POST /auth/logout`, `GET /auth/me` |
-| Documents | `POST /documents`, `POST /documents/{id}/versions`, `POST /documents/versions/{id}/publish`, `GET /documents`, `GET /documents/{id}`, `GET /documents/versions/{id}/content` |
+| Documents | `POST /documents`, `POST /documents/{id}/versions`, `POST /documents/versions/{id}/publish`, `POST /documents/versions/{id}/archive`, `GET /documents`, `GET /documents/{id}`, `GET /documents/versions/{id}/content` |
 | Signing | `POST /documents/versions/{id}/sign`, `GET /signatures/me`, `/signatures/{id}`, `/signed-pdf`, `/certificate`, `/evidence`, `/verify` |
 | Campaigns | `POST /campaigns`, `/{id}/documents`, `/{id}/targets/preview`, `/{id}/launch`, `/{id}/remind`, `/{id}/close`, `/{id}/cancel`, `GET /campaigns`, `/{id}`, `/{id}/assignments` |
 | Reports | `POST /campaigns/{id}/reports`, `GET /campaigns/{id}/reports`, `GET /reports/{id}/pdf`, `/csv`, `/verify` |
-| Admin | users and roles, audit and audit integrity, signing keys and rotation, mail connector (get, put, test, send-test), notifications |
+| Admin | users and roles, audit and audit integrity, signing keys (rotate, revoke), mail connector (get, put, test-connection, send-test, test-isolation), notifications |
+| Diagnostics (admin) | `GET /admin/diagnostics` — application, database, filesystem, signing key, OIDC, directory, SMTP, worker; fixed phrases only |
 | Directory (admin) | `GET /admin/directory/sources`, `PUT`/`DELETE /admin/directory/sources/{source}/config`, `POST /admin/directory/sync?source=`, `GET /sync-runs`, `/groups`, `/groups/{id}/members` (groups and members are also readable by OPERATOR) |
 
 ## 15. Frontend
@@ -406,7 +485,9 @@ All variables use the prefix `LCIT_SIGN_`.
 | `MASTER_KEY_FILE`, `SESSION_SECRET_FILE`, `OIDC_CLIENT_SECRET_FILE` | Path to a file holding the secret (Docker/Kubernetes secrets); wins over the plain variable |
 | `STORAGE_ROOT`, `MAX_UPLOAD_SIZE_MB` | File storage |
 | `CONSENT_TEXT`, `CONSENT_VERSION` | Consent wording, recorded in each signature |
-| `NOTIFICATION_WORKER_ENABLED`, `NOTIFICATION_WORKER_INTERVAL_SECONDS` | Mail worker |
+| `NOTIFICATION_WORKER_ENABLED`, `NOTIFICATION_WORKER_INTERVAL_SECONDS` | Background worker (mail, reminders, renewals, scheduled sync) |
+| `RATE_LIMIT_ENABLED` | Per-IP rate limiting (default on) |
+| `FQDN`, `HTTPS_PORT`, `CERT_DIR` (compose/installer, not app settings) | HTTPS name, published port, certificate directory |
 
 Directory connector and SMTP credentials are intentionally **not** variables;
 they are entered in the admin UI and stored encrypted.
@@ -415,28 +496,84 @@ they are entered in the admin UI and stored encrypted.
 
 ```bash
 cp .env.example .env            # edit at least the DB password and master key
-docker compose up -d --build    # UI on http://127.0.0.1:4180
+mkdir -p -m 700 certs           # before the first `up` (else Docker creates it as root)
+docker compose up -d --build    # UI on http://127.0.0.1:4180 and https://127.0.0.1:4443
 docker compose --profile dev-sso up -d   # adds the mock OIDC provider
-
-pip install -e '.[dev]'
-ruff check . && mypy src && pytest --cov
-cd web && npm install && npm test && npm run build
+docker compose -f docker-compose.yml -f docker-compose.test.yml up -d postfix-test
 ```
 
-Tests run against SQLite and a real local mock OIDC server. Directory
-connectors are tested with mocked HTTP transports: they have not been run
-against a real Entra or Google tenant.
+Where each kind of test runs (spec §95):
 
-## 18. Known limits and open points
+| Level | Where | What |
+|---|---|---|
+| Lint, types, unit and API tests | dev machine or CI | `ruff`, `mypy`, `pytest` (SQLite + a real mock OIDC + scripted SMTP servers), `vitest` |
+| Integration, smoke, CrashTests | the Integrations VM, in Docker | `tests/UAT/CrashTests-Sign/run-all.sh`: smoke (real PostgreSQL, nginx, SSO, Postfix), SMTP scenarios, seed, Playwright in a real browser, restore test |
+| Destructive reset | the Integrations VM only | `scripts/integration-reset.sh --yes --seed` |
 
-- **Not eIDAS.** The proof is internal and verifiable with the platform's
-  public keys. It is not a qualified signature or timestamp.
-- **One platform key, one master key.** Compromise of the master key
-  compromises signing and stored credentials. An external vault or KMS would
-  be the next step.
-- **The master key still lives in the process environment or a mounted file.** An external vault or KMS is not integrated.
-- **Remote connectors untested on real tenants.** Validate against a test
-  tenant before relying on them.
-- **Audit chain is tamper-evident, not tamper-proof.**
-- **Migration 0008** (and 0006) must be applied on the real PostgreSQL; tests
-  use SQLite.
+`scripts/integration-run.sh` runs a repository script on the VM over SSH (host
+key verified, never `StrictHostKeyChecking=no`; the key stays in `~/.ssh`). The
+working tree is the source of truth, the VM never is.
+
+The test Postfix (`docker/postfix-test`) accepts only fictional
+`lcit-test.local` mailboxes, denies every other destination, has outbound
+delivery disabled, and generates its certificate and SASL password at start.
+Twelve scenarios run against it: OK (plain, STARTTLS+AUTH, implicit TLS), AUTH
+KO, TLS KO (two ways), relay denied, unknown mailbox, 4xx, 5xx, timeout,
+connection refused.
+
+CI (`.github/workflows/ci.yml`): backend and frontend checks, `pip-audit`,
+`npm audit`, `shellcheck`, compose and `kubeconform` validation, `gitleaks` on
+the full history, weekly. Real Microsoft 365 tests are the last step and are
+deliberately not automated.
+
+## 18. Known limits, deviations from the specification, open points
+
+Deliberate deviations (design choices):
+
+- **Signing keys are derived, not stored in `/var/lib/lcit-sign/keys/`.** Each
+  Ed25519 key comes from `LCIT_SIGN_MASTER_KEY` + a key id (HKDF); the database
+  keeps only public keys. Same goal as spec §44 (no private key in Git, images,
+  PostgreSQL or logs), different mechanism. Consequence: the master key is the
+  single secret to protect and back up.
+- **The PDF viewer is the browser's native one (an `<iframe>`), not PDF.js.**
+  Uploads are validated and PDFs with JavaScript/auto-actions are refused, but
+  hyperlink opening (`noopener`, "you are leaving LCIT Sign" notice, spec §24)
+  is the browser's behaviour, not LCIT Sign's.
+- **SSO and security settings are environment-driven, not editable in the UI.**
+  The `OIDC_CONFIGURATION_CHANGED` and `SECURITY_CONFIGURATION_CHANGED` audit
+  events therefore never occur, and the admin menu has no SSO/General/Security
+  pages.
+- **No automatic expiry of overdue assignments**: they stay pending past their
+  deadline rather than becoming `EXPIRED` (a late signature is still accepted).
+
+Not implemented:
+
+- Document metadata beyond title and version (description, category,
+  periodicity, per-document consent text — spec §26); a single consent text is
+  configured globally.
+- Operator dashboard widgets and campaign-table filters of spec §65-66 beyond
+  per-status counts and the assignments list; reports cover one campaign, not
+  an arbitrary document/period/population selection (§67).
+- Google Workspace *mail* sending (SMTP and Microsoft Graph exist).
+- Archiving/revocation have API endpoints and audit events but no UI button.
+
+Untested against the real world:
+
+- **Entra ID and Google directory connectors and the Microsoft Graph mailer have
+  been exercised only against mocked HTTP transports**, never a real tenant. The
+  Graph procedure (`docs/microsoft-graph-setup.md`) must be followed by a tenant
+  administrator, including the mandatory isolation test.
+- Kubernetes manifests are schema-validated (`kubeconform`), not applied to a
+  live cluster.
+
+Inherent limits:
+
+- **Not eIDAS.** The proof is internal and verifiable with the platform's public
+  keys; it is not a qualified signature or timestamp.
+- **The master key is a single point of compromise** for signing and stored
+  credentials; an external vault/KMS is not integrated (it can be mounted as a
+  file via `LCIT_SIGN_MASTER_KEY_FILE`).
+- **The audit chain is tamper-evident, not tamper-proof**: a database owner could
+  rewrite all of it. Keep an off-site copy of the latest hash if that matters.
+- The rate limiter is in memory (one API process); the API runs the background
+  worker and applies migrations, so it is deployed as a single replica.

@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session as DbSession
 
 from lcit_sign.models.audit import GENESIS_HASH, AuditChainState, AuditEvent
 from lcit_sign.models.user import User
+from lcit_sign.request_context import get_request_id, get_source_ip
 from lcit_sign.time_utils import ensure_utc
 
 
@@ -57,6 +58,11 @@ def append_audit_event(
         chain_state = AuditChainState(id=1, last_event_hash=GENESIS_HASH)
         db.add(chain_state)
         db.flush()
+
+    # Correlation (spec §70, §72): every event carries the request it came from
+    # and the caller's address unless a call site says otherwise.
+    request_id = request_id or get_request_id()
+    source_ip = source_ip or get_source_ip()
 
     event_id = uuid.uuid4()
     timestamp_utc = datetime.now(UTC)

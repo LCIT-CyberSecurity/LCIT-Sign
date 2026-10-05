@@ -122,6 +122,52 @@ def run() -> int:
             ] or 1 / 0,
         )
 
+    def double_click() -> None:
+        """Two simultaneous signature requests (double click, two tabs): the
+        database constraint must let exactly one through (spec §39, §118)."""
+        from concurrent.futures import ThreadPoolExecutor
+
+        race_title = f"Race {uuid.uuid4().hex[:8]}"
+        created = expect(
+            operator.post(
+                "/api/documents",
+                data={"title": race_title, "version_label": "1.0"},
+                files={"file": ("race.pdf", pdf_bytes(210, 210), "application/pdf")},
+            ),
+            201,
+        ).json()
+        race_version = created["versions"][0]["id"]
+        expect(operator.post(f"/api/documents/versions/{race_version}/publish"), 200)
+        race_campaign = expect(
+            operator.post("/api/campaigns", json={"name": race_title}), 201
+        ).json()
+        expect(
+            operator.post(
+                f"/api/campaigns/{race_campaign['id']}/documents",
+                json={"document_version_id": race_version},
+            ),
+            201,
+        )
+        expect(
+            operator.post(
+                f"/api/campaigns/{race_campaign['id']}/launch",
+                json={"user_ids": [me(signer)["id"]]},
+            ),
+            200,
+        )
+
+        def attempt(_: int) -> int:
+            return signer.post(
+                f"/api/documents/versions/{race_version}/sign", json={"consent": True}
+            ).status_code
+
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            codes = sorted(pool.map(attempt, range(4)))
+        assert codes.count(201) == 1, f"expected exactly one signature, got {codes}"
+        assert all(code in (201, 409) for code in codes), codes
+
+    smoke.check("simultaneous signatures create exactly one", double_click)
+
     if os.environ.get("LCIT_SIGN_SMOKE_SMTP"):
         # The test Postfix (docker-compose.test.yml) is on the stack's network
         # as `postfix-test`: plain port 25, fictional local mailboxes only.

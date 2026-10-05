@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Generator
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 import httpx
@@ -14,7 +15,7 @@ from lcit_sign.config import Settings
 from lcit_sign.deps import get_db, require_roles, user_roles
 from lcit_sign.models.audit import AuditEvent
 from lcit_sign.models.mail import MailConnector, Notification, NotificationStatus, NotificationType
-from lcit_sign.models.signing_key import SigningKey
+from lcit_sign.models.signing_key import SigningKey, SigningKeyStatus
 from lcit_sign.models.user import Role, User, UserRole
 from lcit_sign.services.audit import append_audit_event, verify_audit_chain
 from lcit_sign.services.crypto import decrypt_secret, encrypt_secret
@@ -121,7 +122,11 @@ def list_audit_events(
             "target_type": row.target_type,
             "target_id": row.target_id,
             "result": row.result,
+            "campaign_id": str(row.campaign_id) if row.campaign_id else None,
+            "document_id": str(row.document_id) if row.document_id else None,
+            "signature_id": str(row.signature_id) if row.signature_id else None,
             "request_id": row.request_id,
+            "source_ip": row.source_ip,
             "metadata": row.metadata_json,
         }
         for row in rows
@@ -142,6 +147,7 @@ def _signing_key_payload(key: SigningKey) -> dict[str, Any]:
         "created_at": key.created_at.isoformat(),
         "activated_at": key.activated_at.isoformat() if key.activated_at else None,
         "retired_at": key.retired_at.isoformat() if key.retired_at else None,
+        "revoked_at": key.revoked_at.isoformat() if key.revoked_at else None,
     }
 
 
@@ -149,6 +155,37 @@ def _signing_key_payload(key: SigningKey) -> dict[str, Any]:
 def list_signing_keys(db: DbSession = Depends(get_db)) -> list[dict[str, Any]]:
     keys = db.execute(select(SigningKey).order_by(SigningKey.created_at.desc())).scalars()
     return [_signing_key_payload(k) for k in keys]
+
+
+@router.post("/signing-keys/{key_id}/revoke")
+def revoke_signing_key(
+    key_id: str,
+    request: Request,
+    user: User = Depends(require_roles(Role.ADMIN)),
+    db: DbSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Withdraw trust from a key (spec §43 REVOKED), e.g. after a suspected
+    compromise. Signatures it made then fail verification's
+    `signing_key_trusted` check. Revoking the ACTIVE key first rotates, so the
+    platform is never left without a key to sign with."""
+    settings: Settings = request.app.state.settings
+    key = db.execute(select(SigningKey).where(SigningKey.key_id == key_id)).scalar_one_or_none()
+    if key is None:
+        raise HTTPException(404, "Signing key not found")
+    if key.status == SigningKeyStatus.REVOKED:
+        raise HTTPException(409, "Key is already revoked")
+    if key.status == SigningKeyStatus.ACTIVE:
+        if not settings.master_key:
+            raise HTTPException(503, "LCIT_SIGN_MASTER_KEY is not configured")
+        rotate_signing_key(db, settings.master_key, actor_id=user.id)
+    key.status = SigningKeyStatus.REVOKED
+    key.revoked_at = datetime.now(UTC)
+    append_audit_event(
+        db, action="SIGNING_KEY_REVOKED", actor_id=user.id,
+        target_type="signing_key", target_id=key.key_id,
+    )
+    db.commit()
+    return _signing_key_payload(key)
 
 
 @router.post("/signing-keys/rotate", status_code=201)

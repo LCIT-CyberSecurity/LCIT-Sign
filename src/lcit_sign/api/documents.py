@@ -10,7 +10,13 @@ from sqlalchemy.orm import Session as DbSession
 
 from lcit_sign.config import Settings
 from lcit_sign.deps import get_current_user, get_db, require_roles, user_roles
-from lcit_sign.models.campaign import AssignmentStatus, SignatureAssignment
+from lcit_sign.models.campaign import (
+    AssignmentStatus,
+    Campaign,
+    CampaignDocument,
+    CampaignStatus,
+    SignatureAssignment,
+)
 from lcit_sign.models.document import Document, DocumentVersion, DocumentVersionStatus
 from lcit_sign.models.user import Role, User
 from lcit_sign.services.audit import append_audit_event
@@ -172,6 +178,40 @@ def publish_version(
 
     append_audit_event(
         db, action="DOCUMENT_PUBLISHED", actor_id=user.id,
+        target_type="document_version", target_id=str(version.id), document_id=version.document_id,
+    )
+    db.commit()
+    return _version_payload(version)
+
+
+@router.post("/versions/{version_id}/archive")
+def archive_version(
+    version_id: uuid.UUID, user: User = Depends(_manage), db: DbSession = Depends(get_db)
+) -> dict[str, Any]:
+    """Retire a version from use (spec §20 ARCHIVED). Signatures already made
+    on it stay valid and verifiable; what is refused is archiving a version an
+    active campaign is still asking people to sign."""
+    version = db.get(DocumentVersion, version_id)
+    if version is None:
+        raise HTTPException(404, "Document version not found")
+    if version.status == DocumentVersionStatus.ARCHIVED:
+        raise HTTPException(409, "Version is already archived")
+
+    in_active_campaign = db.execute(
+        select(CampaignDocument.campaign_id)
+        .join(Campaign, Campaign.id == CampaignDocument.campaign_id)
+        .where(
+            CampaignDocument.document_version_id == version.id,
+            Campaign.status == CampaignStatus.ACTIVE,
+        )
+        .limit(1)
+    ).first()
+    if in_active_campaign is not None:
+        raise HTTPException(409, "An active campaign still uses this version")
+
+    version.status = DocumentVersionStatus.ARCHIVED
+    append_audit_event(
+        db, action="DOCUMENT_ARCHIVED", actor_id=user.id,
         target_type="document_version", target_id=str(version.id), document_id=version.document_id,
     )
     db.commit()

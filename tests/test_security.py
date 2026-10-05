@@ -319,3 +319,66 @@ def test_verify_all_cli_detects_tampering(tmp_path, mock_oidc_base_url, monkeypa
         assert "signed_document_hash" in str(broken["failures"])
     finally:
         get_settings.cache_clear()
+
+
+def test_audit_events_carry_request_id_and_source_ip(tmp_path, mock_oidc_base_url):
+    app, admin, *_ = setup_campaign_fixture(tmp_path, mock_oidc_base_url)
+    admin.get("/api/admin/audit", headers={"X-Request-Id": "req-corr-1234"})
+    assert admin.post(
+        "/api/admin/signing-keys/rotate",
+        headers={"X-Request-Id": "req-corr-5678", "X-Forwarded-For": "198.51.100.7, 10.0.0.9"},
+    ).status_code == 201
+    events = admin.get("/api/admin/audit?limit=200").json()
+    events = events["events"] if isinstance(events, dict) else events
+    rotated = [e for e in events if e["action"] == "SIGNING_KEY_ROTATED"][0]  # newest first
+    assert rotated["request_id"] == "req-corr-5678"
+    # nginx appends the real peer last; earlier entries are client-supplied.
+    assert rotated["source_ip"] == "10.0.0.9"
+
+
+def test_revoking_a_key_untrusts_its_signatures_and_keeps_signing_possible(
+    tmp_path, mock_oidc_base_url
+):
+    app, operator, signer, admin = setup_operator_and_signer(
+        tmp_path, mock_oidc_base_url, master_key=TEST_MASTER_KEY
+    )
+    _, version_id, _ = publish_for_signing(operator)
+    signature = signer.post(
+        f"/api/documents/versions/{version_id}/sign", json={"consent": True}
+    ).json()
+    key_id = admin.get("/api/admin/signing-keys").json()[0]["key_id"]
+
+    revoked = admin.post(f"/api/admin/signing-keys/{key_id}/revoke")
+    assert revoked.status_code == 200 and revoked.json()["status"] == "REVOKED"
+    assert revoked.json()["revoked_at"]
+    assert admin.post(f"/api/admin/signing-keys/{key_id}/revoke").status_code == 409
+    assert admin.post("/api/admin/signing-keys/nope/revoke").status_code == 404
+
+    keys = admin.get("/api/admin/signing-keys").json()
+    assert [k["status"] for k in keys].count("ACTIVE") == 1  # rotated first
+    verify = signer.get(f"/api/signatures/{signature['id']}/verify").json()
+    assert verify["valid"] is False
+    assert verify["checks"]["signing_key_trusted"] is False
+    assert verify["checks"]["cryptographic_signature"] is True  # the maths still hold
+    assert operator.post(f"/api/admin/signing-keys/{key_id}/revoke").status_code == 403
+
+
+def test_archiving_a_version_is_audited_and_blocked_while_a_campaign_uses_it(
+    tmp_path, mock_oidc_base_url
+):
+    app, admin, operator, signer1, _ = setup_campaign_fixture(tmp_path, mock_oidc_base_url)
+    version_id = _publish(operator)
+    campaign = create_campaign_with_document(operator, version_id, "En cours")
+    operator.post(
+        f"/api/campaigns/{campaign['id']}/launch", json={"user_ids": [get_user_id(signer1)]}
+    )
+    assert operator.post(f"/api/documents/versions/{version_id}/archive").status_code == 409
+
+    operator.post(f"/api/campaigns/{campaign['id']}/close")
+    done = operator.post(f"/api/documents/versions/{version_id}/archive")
+    assert done.status_code == 200 and done.json()["status"] == "ARCHIVED"
+    assert operator.post(f"/api/documents/versions/{version_id}/archive").status_code == 409
+    assert signer1.post(f"/api/documents/versions/{version_id}/archive").status_code == 403
+    events = admin.get("/api/admin/audit?limit=200").json()
+    events = events["events"] if isinstance(events, dict) else events
+    assert any(e["action"] == "DOCUMENT_ARCHIVED" for e in events)
