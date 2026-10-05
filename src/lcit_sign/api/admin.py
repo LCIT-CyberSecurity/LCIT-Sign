@@ -12,6 +12,7 @@ from pydantic import BaseModel, model_validator
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session as DbSession
 
+from lcit_sign.api.directory import check_connector_input
 from lcit_sign.config import Settings
 from lcit_sign.deps import get_db, require_roles, user_roles
 from lcit_sign.models.audit import AuditEvent
@@ -30,7 +31,6 @@ from lcit_sign.services.mail import (
     MailSendError,
     build_sender,
 )
-from lcit_sign.api.directory import check_connector_input
 from lcit_sign.services.mail_graph import GraphSender
 from lcit_sign.services.signing_keys import get_or_create_active_key, rotate_signing_key
 from lcit_sign.services.ssrf import OutboundTargetError, validate_outbound_target

@@ -42,7 +42,22 @@ export interface DocumentDetail {
   versions: DocumentVersion[];
 }
 
-export type AssignmentStatus = "PENDING" | "VIEWED" | "SIGNED" | "EXPIRED" | "CANCELLED";
+export type AssignmentStatus =
+  | "WAITING"
+  | "PENDING"
+  | "VIEWED"
+  | "SIGNED"
+  | "EXPIRED"
+  | "CANCELLED";
+
+/** Who is "Signataire N" in a campaign: one named person, or the list of recipients. */
+export interface CampaignRole {
+  role: number;
+  label: string;
+  mode: "FIXED" | "EACH" | null;
+  user_id: string | null;
+  user_display_name: string | null;
+}
 
 export interface MyAssignment {
   id: string;
@@ -51,6 +66,8 @@ export interface MyAssignment {
   document_version_id: string;
   document_title: string;
   version_label: string;
+  role?: number;
+  waiting_on?: string[];
   status: AssignmentStatus;
   assigned_at: string;
   deadline: string | null;
@@ -64,6 +81,9 @@ export interface CampaignAssignment {
   document_title: string;
   signature_id: string | null;
   groups: string[];
+  role?: number;
+  role_label?: string;
+  waiting_on?: string[];
   user_id: string;
   user_email: string;
   user_display_name: string;
@@ -88,6 +108,8 @@ export interface Campaign {
   deadline: string | null;
   closed_at: string | null;
   document_version_ids: string[];
+  roles_required: number;
+  roles: CampaignRole[];
   assignment_counts: Record<AssignmentStatus, number>;
   policies: CampaignPolicies;
   renewal_of_campaign_id: string | null;

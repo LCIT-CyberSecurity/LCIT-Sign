@@ -9,6 +9,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session as DbSession
 
 from lcit_sign.deps import get_current_user, get_db, require_roles
+from lcit_sign.models.campaign import AssignmentStatus, SignatureAssignment
 from lcit_sign.models.document import (
     INPUT_KINDS,
     Document,
@@ -35,6 +36,9 @@ _manage = require_roles(Role.OPERATOR, Role.ADMIN)
 _DOCUMENTS = "documents"
 
 
+MAX_ROLES = 10
+
+
 class FieldIn(BaseModel):
     id: str | None = None
     page: int
@@ -51,6 +55,8 @@ class FieldIn(BaseModel):
 
 class FieldsIn(BaseModel):
     fields: list[FieldIn]
+    # "1" -> "RSSI": what each generic signer role is, not who it is.
+    role_labels: dict[str, str] = {}
 
 
 def field_payload(row: DocumentField) -> dict[str, Any]:
@@ -126,6 +132,7 @@ def get_fields(
         "version_label": version.version_label,
         "status": version.status.value,
         "fields": [field_payload(r) for r in load_fields(db, version.id)],
+        "role_labels": version.role_labels or {},
     }
 
 
@@ -158,6 +165,12 @@ def put_fields(
     except FieldError as exc:
         raise HTTPException(422, str(exc)) from exc
 
+    labels = {
+        str(int(key)): value.strip()[:100]
+        for key, value in body.role_labels.items()
+        if key.isdigit() and 1 <= int(key) <= MAX_ROLES and value.strip()
+    }
+    version.role_labels = labels or None
     db.execute(delete(DocumentField).where(DocumentField.document_version_id == version.id))
     saved: list[DocumentField] = []
     for position, f in enumerate(prepared):
@@ -178,7 +191,11 @@ def put_fields(
         document_id=version.document_id, metadata={"count": len(saved)},
     )
     db.commit()
-    return {"editable": True, "fields": [field_payload(r) for r in saved]}
+    return {
+        "editable": True,
+        "fields": [field_payload(r) for r in saved],
+        "role_labels": version.role_labels or {},
+    }
 
 
 @router.get("/documents/versions/{version_id}/signing-form")
@@ -188,9 +205,20 @@ def get_signing_form(
     db: DbSession = Depends(get_db),
 ) -> dict[str, Any]:
     """What the signer is asked to provide for this version: the free-text
-    elements to fill in (role 1) and a note of what will be filled for them."""
+    elements to fill in (those of their own signer role) and a note of what
+    will be filled for them."""
     version = _version_or_404(db, version_id)
-    mine = [r for r in load_fields(db, version.id) if r.role == 1]
+    current = db.execute(
+        select(SignatureAssignment.role)
+        .where(
+            SignatureAssignment.document_version_id == version.id,
+            SignatureAssignment.user_id == user.id,
+            SignatureAssignment.status.in_([AssignmentStatus.PENDING, AssignmentStatus.VIEWED]),
+        )
+        .order_by(SignatureAssignment.assigned_at)
+    ).scalars().first()
+    role = current or 1
+    mine = [r for r in load_fields(db, version.id) if r.role == role]
     return {
         "inputs": [field_payload(r) for r in mine if r.kind in INPUT_KINDS],
         "automatic": [field_payload(r) for r in mine if automatic(r.kind)],

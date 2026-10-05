@@ -23,6 +23,7 @@ interface FieldsResponse {
   version_label: string;
   status: string;
   fields: EditorField[];
+  role_labels: Record<string, string>;
 }
 
 const DRAG_TYPE = "application/x-lcit-element";
@@ -127,6 +128,8 @@ export default function PrepareDocumentPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [recipients, setRecipients] = useState(1);
   const [activeRole, setActiveRole] = useState(1);
+  // What each generic role is ("RSSI", "Collaborateur"), never who: people are chosen at launch.
+  const [roleLabels, setRoleLabels] = useState<Record<string, string>>({});
   const [armed, setArmed] = useState<FieldKind | null>(null);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -144,11 +147,13 @@ export default function PrepareDocumentPage() {
         setFields(loaded.fields);
         setPages(sizes);
         setRecipients(Math.max(1, ...loaded.fields.map((f) => f.role)));
+        setRoleLabels(loaded.role_labels ?? {});
       })
       .catch((err) => setLoadError(err instanceof ApiError ? err.message : "Document introuvable."));
   }, [id]);
 
   const editable = info?.editable ?? false;
+  const roleName = (role: number) => roleLabels[String(role)]?.trim() || `Signataire ${role}`;
   const selected = fields.find((f) => f.id === selectedId) ?? null;
 
   const update = useCallback((fieldId: string, patch: Partial<EditorField>) => {
@@ -234,8 +239,12 @@ export default function PrepareDocumentPage() {
         fields: fields.map(({ id: fieldId, page, x, y, width, height, kind, label, required, role, group_key }) => ({
           id: fieldId, page, ...tidy({ x, y, width, height }), kind, label, required, role, group_key,
         })),
+        role_labels: Object.fromEntries(
+          Object.entries(roleLabels).filter(([key, value]) => Number(key) <= recipients && value.trim()),
+        ),
       });
       setFields(saved.fields);
+      setRoleLabels(saved.role_labels ?? {});
       setDirty(false);
       setMessage(`Enregistré — ${saved.fields.length} élément(s).`);
       return true;
@@ -320,9 +329,11 @@ export default function PrepareDocumentPage() {
         <aside className="prep-rail" aria-label="Palette">
           {editable && (
             <>
-              <div className="prep-rail__title">Destinataires</div>
+              <div className="prep-rail__title">Qui signe ?</div>
               <p className="muted small" style={{ margin: "0 0 8px" }}>
-                Choisissez qui remplit, puis placez ses éléments. Les destinataires signent dans l&apos;ordre.
+                Donnez un nom à chaque rôle (ex : RSSI, Collaborateur), puis placez ses éléments. Les
+                personnes sont choisies plus tard, au lancement de la campagne. Les rôles signent dans
+                l&apos;ordre : le premier d&apos;abord, son tampon figure sur la copie du suivant.
               </p>
               <ul className="prep-roles">
                 {Array.from({ length: recipients }, (_, i) => i + 1).map((role) => (
@@ -336,12 +347,27 @@ export default function PrepareDocumentPage() {
                     >
                       <span className="prep-role__dot" />
                       <UserRound size={14} aria-hidden="true" />
-                      Signataire {role}
+                      <span className="prep-role__name">
+                        {role}. {roleName(role)}
+                      </span>
                       <span className="prep-role__count">{counts.get(role) ?? 0}</span>
                     </button>
                   </li>
                 ))}
               </ul>
+              <label className="prep-role-name">
+                Nom du rôle {activeRole}
+                <input
+                  value={roleLabels[String(activeRole)] ?? ""}
+                  maxLength={100}
+                  placeholder="ex : RSSI, Collaborateur, Manager"
+                  onChange={(e) => {
+                    setRoleLabels((all) => ({ ...all, [String(activeRole)]: e.target.value }));
+                    setDirty(true);
+                    setMessage(null);
+                  }}
+                />
+              </label>
               <button
                 type="button"
                 className="button button--ghost button--sm"
@@ -351,7 +377,7 @@ export default function PrepareDocumentPage() {
                   setActiveRole(recipients + 1);
                 }}
               >
-                <Plus size={13} aria-hidden="true" /> Ajouter un destinataire
+                <Plus size={13} aria-hidden="true" /> Ajouter un signataire
               </button>
 
               <div className="prep-rail__title" style={{ marginTop: 18 }}>
@@ -440,7 +466,7 @@ export default function PrepareDocumentPage() {
                 <div className="muted small">{KIND_BY_ID[selected.kind].hint}</div>
               </div>
               <label>
-                Destinataire
+                Rôle
                 <select
                   value={selected.role}
                   disabled={!editable}
@@ -448,7 +474,7 @@ export default function PrepareDocumentPage() {
                 >
                   {Array.from({ length: recipients }, (_, i) => i + 1).map((role) => (
                     <option key={role} value={role}>
-                      Signataire {role}
+                      {role}. {roleName(role)}
                     </option>
                   ))}
                 </select>

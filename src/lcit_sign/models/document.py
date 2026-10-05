@@ -4,7 +4,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, func
+from sqlalchemy import JSON, Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from lcit_sign.database import Base
@@ -59,6 +59,10 @@ class DocumentVersion(Base):
         Enum(DocumentVersionStatus, native_enum=False, length=20),
         default=DocumentVersionStatus.DRAFT,
     )
+    # Names given to the signer roles in the editor ({"1": "RSSI", "2": "Collaborateur"}).
+    # Roles stay generic — a name says what the role is, never who it is; the people
+    # are chosen when a campaign is launched. Frozen with the version.
+    role_labels: Mapped[dict[str, str] | None] = mapped_column(JSON)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))

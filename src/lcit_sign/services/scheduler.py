@@ -23,6 +23,7 @@ from lcit_sign.models.mail import NotificationType
 from lcit_sign.models.user import User
 from lcit_sign.services.audit import append_audit_event
 from lcit_sign.services.campaign_launch import create_assignments
+from lcit_sign.services.campaign_roles import RoleSpec, load_roles, save_roles
 from lcit_sign.services.directory_connectors import (
     DirectoryConnector,
     DirectoryConnectorError,
@@ -154,16 +155,31 @@ def process_renewals(db: DbSession, settings: Settings, now: datetime | None = N
                 )
             ).scalars()
         }
-        population = list(
+        # The same people sign in the same roles: fixed signers (the RSSI) stay,
+        # and the recipients are the ones who were asked as "each".
+        old_roles = load_roles(db, campaign.id)
+        each_role = next((r.role for r in old_roles if r.mode == "EACH"), None)
+        recipients_query = (
+            select(SignatureAssignment.user_id)
+            .join(User, SignatureAssignment.user_id == User.id)
+            .where(SignatureAssignment.campaign_id == campaign.id, User.active.is_(True))
+        )
+        if old_roles:
+            recipients_query = recipients_query.where(SignatureAssignment.role == each_role)
+        population = (
+            list(db.execute(recipients_query.distinct()).scalars())
+            if each_role is not None or not old_roles
+            else []
+        )
+        fixed_active = all(
             db.execute(
-                select(SignatureAssignment.user_id)
-                .join(User, SignatureAssignment.user_id == User.id)
-                .where(SignatureAssignment.campaign_id == campaign.id, User.active.is_(True))
-                .distinct()
-            ).scalars()
+                select(User.id).where(User.id == r.user_id, User.active.is_(True))
+            ).first()
+            for r in old_roles
+            if r.mode == "FIXED"
         )
         campaign.renewed_at = now
-        if not published_ids or not population:
+        if not published_ids or not fixed_active or (not population and each_role is not None):
             # Nothing renewable (versions superseded, everyone gone):
             # recorded as handled so it is not retried every cycle.
             continue
@@ -194,9 +210,14 @@ def process_renewals(db: DbSession, settings: Settings, now: datetime | None = N
             db.add(CampaignDocument(campaign_id=new_campaign.id, document_version_id=version_id))
         db.flush()
         db.refresh(new_campaign)
+        specs = [
+            RoleSpec(role=r.role, mode=r.mode, user_id=r.user_id, label=r.label)  # type: ignore[arg-type]
+            for r in old_roles
+        ]
+        save_roles(db, new_campaign, specs)
         create_assignments(
             db, new_campaign, population, deadline=deadline,
-            public_base_url=settings.public_base_url,
+            public_base_url=settings.public_base_url, roles=specs or None,
         )
         append_audit_event(
             db, action="CAMPAIGN_STARTED", target_type="campaign", target_id=str(new_campaign.id),

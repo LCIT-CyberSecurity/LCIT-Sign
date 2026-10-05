@@ -63,6 +63,9 @@ class Signature(Base):
     # What was stamped on the document (kind, place, final value), frozen at
     # signing. None for a signature made on a document with no prepared elements.
     field_values: Mapped[list[dict[str, object]] | None] = mapped_column(JSON)
+    # Earlier signers whose stamps this copy carries (a fixed signer such as the
+    # RSSI signs first): [{"signature_id": ..., "evidence_hash": ...}], in order.
+    prior_signatures: Mapped[list[dict[str, str]] | None] = mapped_column(JSON)
 
     application_version: Mapped[str] = mapped_column(String(50))
     signing_key_id: Mapped[str] = mapped_column(String(64))

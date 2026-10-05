@@ -24,6 +24,7 @@ from lcit_sign.models.signature import Signature
 from lcit_sign.models.user import Role, User
 from lcit_sign.services import branding
 from lcit_sign.services.audit import append_audit_event
+from lcit_sign.services.campaign_roles import release_next_role, waiting_on
 from lcit_sign.services.evidence import canonical_evidence_fields, canonical_json
 from lcit_sign.services.field_stamping import (
     FieldError,
@@ -127,6 +128,19 @@ def sign_document_version(
         ).scalars()
     )
     if not pending_assignments:
+        # Asked, but not yet: an earlier signer (the RSSI, say) has to sign first.
+        waiting = db.execute(
+            select(SignatureAssignment).where(
+                SignatureAssignment.document_version_id == version.id,
+                SignatureAssignment.user_id == user.id,
+                SignatureAssignment.status == AssignmentStatus.WAITING,
+            )
+        ).scalars().first()
+        if waiting is not None:
+            who = ", ".join(waiting_on(db, waiting)) or "le signataire précédent"
+            raise HTTPException(
+                409, f"Ce document n'est pas encore à signer : {who} doit signer d'abord"
+            )
         # A campaign that was cancelled or closed no longer accepts signatures: its
         # outstanding assignments were ended, and signing must not slip through as
         # if the person had never been asked.
@@ -142,6 +156,7 @@ def sign_document_version(
         if ended is not None:
             raise HTTPException(409, "Cette campagne n'est plus ouverte à la signature")
     campaign_id = pending_assignments[0].campaign_id if pending_assignments else None
+    role = pending_assignments[0].role if pending_assignments else 1
     # With an outstanding assignment, only a signature for that same
     # campaign counts as "already signed" (a renewal asks again). Without
     # one, any earlier signature of this version means there is nothing
@@ -176,9 +191,37 @@ def sign_document_version(
     # (automatic ones from the account and the clock, text from what was typed)
     # and stamp them on a copy of the original.
     logo = branding.read_logo(storage)
+
+    # In a campaign with several signers, this copy carries the stamps of those who
+    # signed before (they are cumulative: the latest earlier signature has them all).
+    prior_values: list[dict[str, Any]] = []
+    prior_refs: list[dict[str, str]] = []
+    if campaign_id is not None and role > 1:
+        earlier = list(
+            db.execute(
+                select(Signature)
+                .join(
+                    SignatureAssignment,
+                    SignatureAssignment.signature_id == Signature.id,
+                )
+                .where(
+                    SignatureAssignment.campaign_id == campaign_id,
+                    SignatureAssignment.document_version_id == version.id,
+                    SignatureAssignment.role < role,
+                    SignatureAssignment.status == AssignmentStatus.SIGNED,
+                )
+                .order_by(SignatureAssignment.role)
+            ).scalars()
+        )
+        if earlier:
+            prior_values = list(earlier[-1].field_values or [])
+            prior_refs = [
+                {"signature_id": str(e.id), "evidence_hash": e.evidence_hash} for e in earlier
+            ]
     try:
-        resolved_fields = resolve_fields(
+        own_fields = resolve_fields(
             to_prepared(load_fields(db, version.id)),
+            role=role,
             signer_name=user.display_name,
             signer_email=user.email,
             signed_at=signed_at,
@@ -190,6 +233,7 @@ def sign_document_version(
         )
     except FieldError as exc:
         raise HTTPException(422, str(exc)) from exc
+    resolved_fields = prior_values + own_fields
     stamped_pdf = stamp_fields(original_pdf, resolved_fields, logo[0] if logo else None)
 
     signed_pdf = append_signature_page(
@@ -225,6 +269,7 @@ def sign_document_version(
         application_version=__version__,
         signing_key_id=signing_key.key_id,
         fields_sha256=fields_digest(resolved_fields) if resolved_fields else None,
+        prior_signatures=prior_refs or None,
     )
     evidence_hash = hashlib.sha256(canonical_json(evidence_fields).encode("utf-8")).hexdigest()
     private_key = derive_private_key(settings.master_key, signing_key.key_id)
@@ -262,6 +307,7 @@ def sign_document_version(
         evidence_hash=evidence_hash,
         cryptographic_signature=cryptographic_signature,
         field_values=resolved_fields or None,
+        prior_signatures=prior_refs or None,
     )
     db.add(signature)
     try:
@@ -289,6 +335,18 @@ def sign_document_version(
         assignment.status = AssignmentStatus.SIGNED
         assignment.signed_at = signed_at
         assignment.signature_id = signature.id
+    # Then it is the next signer's turn on that document (the queries below must
+    # see the assignments just marked signed).
+    db.flush()
+    for released in {(a.campaign_id, a.role) for a in pending_assignments}:
+        campaign = db.get(Campaign, released[0])
+        release_next_role(
+            db, released[0], version.id, released[1],
+            document_title=document.title,
+            campaign_name=campaign.name if campaign else "",
+            signed_by=user.display_name,
+            public_base_url=settings.public_base_url,
+        )
 
     enqueue_notification(
         db,

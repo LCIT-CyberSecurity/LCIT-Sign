@@ -33,6 +33,9 @@ class CampaignTargetMode(enum.StrEnum):
 
 
 class AssignmentStatus(enum.StrEnum):
+    # Not its turn yet: an earlier signer (e.g. the RSSI) has not signed. It becomes
+    # PENDING, and the person is notified, as soon as that signature exists.
+    WAITING = "WAITING"
     PENDING = "PENDING"
     VIEWED = "VIEWED"
     SIGNED = "SIGNED"
@@ -103,6 +106,22 @@ class CampaignDocument(Base):
     campaign: Mapped[Campaign] = relationship(back_populates="documents")
 
 
+class CampaignRole(Base):
+    """Who is "Signataire N" in this campaign. The editor only numbers the
+    roles; this is where they get people. A role is either one named person
+    (FIXED — signs once, and that signature appears on every copy) or every
+    recipient of the campaign (EACH — a copy per person, like a mail merge).
+    EACH, when used, is always the last role: the fixed signers go first."""
+
+    __tablename__ = "campaign_roles"
+
+    campaign_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("campaigns.id"), primary_key=True)
+    role: Mapped[int] = mapped_column(Integer, primary_key=True)
+    label: Mapped[str] = mapped_column(String(100), default="")
+    mode: Mapped[str] = mapped_column(String(10))  # FIXED | EACH
+    user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+
+
 class CampaignTargetUser(Base):
     """An explicitly-targeted user — either the whole population
     (SPECIFIC_USERS) or "additional users" layered on top of targeted
@@ -143,6 +162,8 @@ class SignatureAssignment(Base):
     campaign_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("campaigns.id"))
     document_version_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("document_versions.id"))
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    # Which "Signataire N" of the document this assignment is for.
+    role: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
 
     status: Mapped[AssignmentStatus] = mapped_column(
         Enum(AssignmentStatus, native_enum=False, length=20), default=AssignmentStatus.PENDING

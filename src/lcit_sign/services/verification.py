@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import uuid
 from typing import Any
 
 from cryptography.exceptions import InvalidSignature
@@ -49,6 +50,7 @@ def evidence_fields_for(signature: Signature, db: DbSession) -> dict[str, Any]:
         fields_sha256=(
             fields_digest(signature.field_values) if signature.field_values is not None else None
         ),
+        prior_signatures=signature.prior_signatures,
     )
 
 
@@ -97,6 +99,14 @@ def verify_signature_record(
     checks["cryptographic_signature"] = _signature_valid(
         key, signature.cryptographic_signature, signature.evidence_hash
     )
+    # A copy that carries earlier signers' stamps points at their signatures: each
+    # must still exist with the same evidence hash.
+    if signature.prior_signatures:
+        checks["prior_signatures"] = all(
+            (earlier := db.get(Signature, uuid.UUID(ref["signature_id"]))) is not None
+            and earlier.evidence_hash == ref["evidence_hash"]
+            for ref in signature.prior_signatures
+        )
     # A revoked key no longer vouches for what it signed; a retired one still does.
     checks["signing_key_trusted"] = key is not None and key.status != SigningKeyStatus.REVOKED
 

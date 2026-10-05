@@ -203,8 +203,37 @@ from what was used. A **preview** endpoint shows the resolved population
 before launch.
 
 **Assignments** (`signature_assignments`): one per person and document,
-status `PENDING` → `VIEWED` → `SIGNED` (or `EXPIRED` / `CANCELLED`). Operators
+status `WAITING` → `PENDING` → `VIEWED` → `SIGNED` (or `EXPIRED` / `CANCELLED`). Operators
 can **remind** pending people; this queues emails.
+
+### Several signers: roles, order and mail merge
+
+The editor numbers the signer roles of a document and lets the preparer name
+each one ("RSSI", "Collaborateur") — a name says what the role is, never who.
+At launch each role is given its people (`campaign_roles`):
+
+- **FIXED** — one named person (the RSSI). They sign once; their stamp is on
+  every copy.
+- **EACH** — the campaign's list of people (groups, users, everyone), chosen
+  and edited before launch. Each person gets their own copy (mail merge).
+  When used, EACH is always the **last** role, so what precedes it is common.
+
+Roles sign **in order**. Only the first role of a document is asked at launch;
+the next ones are `WAITING` and are notified by email the moment the previous
+role has signed (`release_next_role`). A person who tries to sign too early is
+told who must sign first. A fixed signer who is also in the list is asked once,
+as the fixed role. Cancelling or closing ends the waiting copies too.
+
+A copy carries the stamps of the earlier signers: the new signature's stored
+`field_values` are cumulative (each element has its `role`), and its evidence
+lists `prior_signatures` (id and evidence hash of each earlier signature).
+Verification checks that those signatures still exist with the same hash.
+A renewal keeps the same roles and fixed people. Documents with a single
+signer launch exactly as before (role 1 = everyone targeted).
+
+Not covered yet: signers outside the company (they must exist as users), one
+click to sign every document of a campaign, several fixed people sharing one
+role.
 
 ## 8. Reports (procès-verbal)
 

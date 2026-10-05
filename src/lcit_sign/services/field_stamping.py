@@ -168,6 +168,7 @@ def resolve(
         resolved.append(
             {
                 "field_id": f.id,
+                "role": f.role,
                 "kind": f.kind.value,
                 "label": f.label,
                 "page": f.page,

@@ -27,6 +27,7 @@ export default function SignerAssignmentsPage() {
 
   const pending = assignments.filter((a) => a.status === "PENDING" || a.status === "VIEWED");
   const signed = assignments.filter((a) => a.status === "SIGNED");
+  const upcoming = assignments.filter((a) => a.status === "WAITING");
 
   return (
     <div className="stack">
@@ -83,6 +84,30 @@ export default function SignerAssignmentsPage() {
           </div>
         )}
       </section>
+
+      {upcoming.length > 0 && (
+        <section data-testid="upcoming">
+          <h1 className="page-title">
+            <Clock size={20} aria-hidden="true" /> À venir
+            <span className="count-badge">{upcoming.length}</span>
+          </h1>
+          <div className="card-list">
+            {upcoming.map((a) => (
+              <div key={a.id} className="card">
+                <div className="card-title">{a.document_title}</div>
+                <div className="muted small">
+                  Version {a.version_label} — {a.campaign_name}
+                </div>
+                <div className="muted small">
+                  Ce sera votre tour après la signature de{" "}
+                  {a.waiting_on && a.waiting_on.length > 0 ? a.waiting_on.join(", ") : "l'étape précédente"}.
+                  Vous serez prévenu par e-mail.
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section>
         <h1 className="page-title">

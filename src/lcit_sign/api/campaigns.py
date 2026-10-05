@@ -29,6 +29,16 @@ from lcit_sign.models.signature import Signature
 from lcit_sign.models.user import Role, User
 from lcit_sign.services.audit import append_audit_event
 from lcit_sign.services.campaign_launch import create_assignments
+from lcit_sign.services.campaign_roles import (
+    RoleError,
+    RoleSpec,
+    load_roles,
+    role_label,
+    roles_required,
+    save_roles,
+    validate_roles,
+    waiting_on,
+)
 from lcit_sign.services.notification_queue import enqueue_notification
 
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])
@@ -69,6 +79,7 @@ def operator_dashboard(
     signed = status_counts.get(AssignmentStatus.SIGNED, 0)
     pending = status_counts.get(AssignmentStatus.PENDING, 0)
     viewed = status_counts.get(AssignmentStatus.VIEWED, 0)
+    waiting = status_counts.get(AssignmentStatus.WAITING, 0)
     expected = sum(status_counts.values())
     overdue = db.execute(
         select(func.count())
@@ -94,7 +105,8 @@ def operator_dashboard(
         "assignments": {
             "expected": expected,
             "signed": signed,
-            "outstanding": pending + viewed,
+            "outstanding": pending + viewed + waiting,
+            "waiting": waiting,
             "not_viewed": pending,
             "overdue": overdue,
         },
@@ -130,7 +142,16 @@ POLICY_FIELDS = (
 )
 
 
+class RoleIn(BaseModel):
+    role: int = Field(ge=1, le=10)
+    mode: Literal["FIXED", "EACH"]
+    user_id: uuid.UUID | None = None
+    label: str = Field(default="", max_length=100)
+
+
 class LaunchRequest(TargetRequest):
+    # Who is "Signataire N": a named person, or the list of recipients below.
+    roles: list[RoleIn] = []
     deadline: datetime | None = None
     # Reminder policy (spec §50) and renewal (spec §51); all optional.
     reminder_first_days: int | None = Field(default=None, ge=0, le=365)
@@ -189,6 +210,40 @@ def _target_mode_label(
     return CampaignTargetMode.SPECIFIC_USERS.value
 
 
+def _roles_payload(db: DbSession, campaign: Campaign) -> list[dict[str, Any]]:
+    """The signer roles of a campaign. Launched: who each one is. Draft: what the
+    documents ask for, named as the editor named them (nobody chosen yet)."""
+    configured = load_roles(db, campaign.id)
+    names = {
+        u.id: u.display_name
+        for u in db.execute(
+            select(User).where(User.id.in_([r.user_id for r in configured if r.user_id]))
+        ).scalars()
+    }
+    if configured:
+        return [
+            {
+                "role": r.role,
+                "label": r.label,
+                "mode": r.mode,
+                "user_id": str(r.user_id) if r.user_id else None,
+                "user_display_name": names.get(r.user_id) if r.user_id else None,
+            }
+            for r in configured
+        ]
+    labels: dict[int, str] = {}
+    for d in campaign.documents:
+        version = db.get(DocumentVersion, d.document_version_id)
+        for key, value in ((version.role_labels if version else None) or {}).items():
+            labels.setdefault(int(key), value)
+    needed = roles_required(db, campaign)
+    return [
+        {"role": n, "label": labels.get(n, ""), "mode": None, "user_id": None,
+         "user_display_name": None}
+        for n in range(1, needed + 1)
+    ]
+
+
 def _campaign_payload(campaign: Campaign, db: DbSession) -> dict[str, Any]:
     raw_counts = dict(
         db.execute(
@@ -213,6 +268,8 @@ def _campaign_payload(campaign: Campaign, db: DbSession) -> dict[str, Any]:
             str(campaign.renewal_of_campaign_id) if campaign.renewal_of_campaign_id else None
         ),
         "document_version_ids": [str(d.document_version_id) for d in campaign.documents],
+        "roles_required": roles_required(db, campaign),
+        "roles": _roles_payload(db, campaign),
         "assignment_counts": {
             status.value: raw_counts.get(status, 0) for status in AssignmentStatus
         },
@@ -316,11 +373,24 @@ def launch_campaign(
     if not campaign.documents:
         raise HTTPException(400, "Campaign has no documents to sign")
 
+    try:
+        role_specs = validate_roles(
+            db,
+            campaign,
+            [RoleSpec(r.role, r.mode, r.user_id, r.label) for r in body.roles],
+        )
+    except RoleError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    has_list = any(spec.mode == "EACH" for spec in role_specs)
+
     population = _resolve_population(
         db, all_users=body.all_users, group_ids=body.group_ids, user_ids=body.user_ids
     )
-    if not population:
+    if has_list and not population:
         raise HTTPException(400, "Target population is empty")
+    if not has_list:
+        # Every signer is a named person: nobody else is asked.
+        population = []
 
     campaign.target_mode = _target_mode_label(
         all_users=body.all_users, group_ids=body.group_ids, user_ids=body.user_ids
@@ -332,8 +402,10 @@ def launch_campaign(
             db.add(CampaignTargetUser(campaign_id=campaign.id, user_id=target_user_id))
 
     settings: Settings = request.app.state.settings
+    save_roles(db, campaign, role_specs)
     create_assignments(
-        db, campaign, population, deadline=body.deadline, public_base_url=settings.public_base_url
+        db, campaign, population, deadline=body.deadline,
+        public_base_url=settings.public_base_url, roles=role_specs,
     )
     for field in POLICY_FIELDS:
         setattr(campaign, field, getattr(body, field))
@@ -433,7 +505,9 @@ def _end_outstanding(db: DbSession, campaign_id: uuid.UUID, status: AssignmentSt
     for assignment in db.execute(
         select(SignatureAssignment).where(
             SignatureAssignment.campaign_id == campaign_id,
-            SignatureAssignment.status.in_([AssignmentStatus.PENDING, AssignmentStatus.VIEWED]),
+            SignatureAssignment.status.in_(
+                [AssignmentStatus.WAITING, AssignmentStatus.PENDING, AssignmentStatus.VIEWED]
+            ),
         )
     ).scalars():
         assignment.status = status
@@ -613,9 +687,30 @@ def list_campaign_assignments(
             .where(DocumentVersion.id.in_({a.document_version_id for a, _ in rows}))
         )
     }
+    roles = {r.role: r for r in load_roles(db, campaign_id)}
+    # Who a waiting copy is waiting for: the earlier roles of that document not yet signed.
+    unsigned: dict[uuid.UUID, list[tuple[int, str]]] = {}
+    for doc_id, earlier_role, earlier_name in db.execute(
+        select(
+            SignatureAssignment.document_version_id, SignatureAssignment.role, User.display_name
+        )
+        .join(User, User.id == SignatureAssignment.user_id)
+        .where(
+            SignatureAssignment.campaign_id == campaign_id,
+            SignatureAssignment.status.in_([AssignmentStatus.WAITING, AssignmentStatus.PENDING,
+                                            AssignmentStatus.VIEWED]),
+        )
+    ):
+        unsigned.setdefault(doc_id, []).append((earlier_role, earlier_name))
     return [
         {
             "id": str(assignment.id),
+            "role": assignment.role,
+            "role_label": role_label(roles.get(assignment.role), assignment.role),
+            "waiting_on": sorted(
+                {n for r, n in unsigned.get(assignment.document_version_id, [])
+                 if r < assignment.role}
+            ) if assignment.status == AssignmentStatus.WAITING else [],
             "document_version_id": str(assignment.document_version_id),
             "document_title": titles.get(assignment.document_version_id, ""),
             "groups": group_names.get(assignment.user_id, []),
@@ -680,6 +775,8 @@ def list_my_assignments(
         result.append(
             {
                 "id": str(a.id),
+                "role": a.role,
+                "waiting_on": waiting_on(db, a) if a.status == AssignmentStatus.WAITING else [],
                 "campaign_id": str(a.campaign_id),
                 "campaign_name": campaign.name if campaign else "",
                 "document_version_id": str(a.document_version_id),
