@@ -30,3 +30,13 @@ def test_security_headers_are_present() -> None:
         response = client.get("/api/health")
     assert response.headers["X-Frame-Options"] == "DENY"
     assert response.headers["X-Content-Type-Options"] == "nosniff"
+
+
+def test_secrets_can_be_read_from_files(tmp_path) -> None:
+    from lcit_sign.config import Settings
+
+    key_file = tmp_path / "master_key"
+    key_file.write_text("key-from-file\n")
+    settings = Settings(master_key="from-env", master_key_file=str(key_file))
+    assert settings.master_key == "key-from-file"
+    assert Settings(master_key="from-env").master_key == "from-env"

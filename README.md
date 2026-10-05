@@ -45,8 +45,18 @@ npm test
 
 ## État du projet
 
-Le développement suit le découpage en phases de la spécification métier
-(`Phase 0` à `Phase 10`). Phase actuelle : **Phase 0 — Fondation**.
+Phases 0 à 7 livrées, plus l'interface complète par rôle (signataire, opérateur,
+administrateur) : SSO OIDC, documents versionnés, signature avec preuve
+(SHA-256 + Ed25519), campagnes ciblées par groupe, notifications e-mail,
+annuaire (local, Microsoft Entra ID, Google Workspace) et procès-verbaux
+signés.
+
+Les identifiants des connecteurs d'annuaire et le mot de passe SMTP sont saisis
+par un administrateur dans l'interface et stockés chiffrés (AES-256-GCM) en
+base, jamais dans `.env`. Seule `LCIT_SIGN_MASTER_KEY` reste côté environnement ;
+elle peut être fournie par fichier (`LCIT_SIGN_MASTER_KEY_FILE`).
+
+Conception détaillée : [`docs/design.md`](docs/design.md).
 
 Hors périmètre du MVP : signature eIDAS, horodatage qualifié, PKI utilisateur,
 clé privée par collaborateur, signature biométrique, éditeur PDF type DocuSign,

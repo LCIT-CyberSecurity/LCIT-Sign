@@ -334,7 +334,7 @@ signing keys and every encrypted credential.
 - **Changing or losing it** makes stored credentials unreadable (admins must
   re-enter them) and breaks signing with existing keys. Back it up separately
   from database backups.
-- Inject it from a secrets manager or a Kubernetes Secret in production. Never
+- In production, mount it from a secrets manager or a Kubernetes Secret and point `LCIT_SIGN_MASTER_KEY_FILE` at the file. Never
   commit it. `.env` is git-ignored; only `.env.example` with placeholders is
   versioned.
 
@@ -403,6 +403,7 @@ All variables use the prefix `LCIT_SIGN_`.
 | `PUBLIC_BASE_URL` | Builds the OIDC redirect URI |
 | `BOOTSTRAP_ADMIN` | Email granted ADMIN on login (temporary) |
 | `MASTER_KEY` | Signing-key derivation and credential encryption |
+| `MASTER_KEY_FILE`, `SESSION_SECRET_FILE`, `OIDC_CLIENT_SECRET_FILE` | Path to a file holding the secret (Docker/Kubernetes secrets); wins over the plain variable |
 | `STORAGE_ROOT`, `MAX_UPLOAD_SIZE_MB` | File storage |
 | `CONSENT_TEXT`, `CONSENT_VERSION` | Consent wording, recorded in each signature |
 | `NOTIFICATION_WORKER_ENABLED`, `NOTIFICATION_WORKER_INTERVAL_SECONDS` | Mail worker |
@@ -433,7 +434,7 @@ against a real Entra or Google tenant.
 - **One platform key, one master key.** Compromise of the master key
   compromises signing and stored credentials. An external vault or KMS would
   be the next step.
-- **No `*_FILE` secret loading** yet for the master key.
+- **The master key still lives in the process environment or a mounted file.** An external vault or KMS is not integrated.
 - **Remote connectors untested on real tenants.** Validate against a test
   tenant before relying on them.
 - **Audit chain is tamper-evident, not tamper-proof.**

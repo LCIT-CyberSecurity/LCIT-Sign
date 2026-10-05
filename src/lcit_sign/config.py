@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -59,6 +61,21 @@ class Settings(BaseSettings):
     # Base.metadata.create_all() has run.
     notification_worker_enabled: bool = True
     notification_worker_interval_seconds: int = 30
+
+    # Docker/Kubernetes secrets: LCIT_SIGN_<NAME>_FILE points at a file whose
+    # content is the secret, so it never has to sit in an environment
+    # variable or a .env file. When set, it wins over the plain variable.
+    session_secret_file: str = ""
+    oidc_client_secret_file: str = ""
+    master_key_file: str = ""
+
+    @model_validator(mode="after")
+    def _load_secret_files(self) -> Settings:
+        for name in ("session_secret", "oidc_client_secret", "master_key"):
+            path = getattr(self, f"{name}_file")
+            if path:
+                setattr(self, name, Path(path).read_text(encoding="utf-8").strip())
+        return self
 
 
 @lru_cache
