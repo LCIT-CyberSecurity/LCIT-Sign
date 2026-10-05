@@ -11,7 +11,8 @@ import httpx
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
-from lcit_sign.config import Settings
+from lcit_sign.models.directory import DirectoryConnectorConfig
+from lcit_sign.services.crypto import decrypt_secret
 
 
 class DirectoryConnectorError(Exception):
@@ -242,31 +243,33 @@ class GoogleWorkspaceConnector:
         return DirectorySnapshot(users=list(users.values()), groups=groups)
 
 
-def configured_sources(settings: Settings) -> dict[str, bool]:
-    """Which connectors this deployment can run. `local` is always there."""
-    return {
-        "local": True,
-        "entra": bool(
-            settings.entra_tenant_id and settings.entra_client_id and settings.entra_client_secret
-        ),
-        "google": bool(settings.google_service_account_json and settings.google_admin_email),
-    }
+# Per remote source: the non-secret fields kept in clear, and the single
+# secret kept only as AES-GCM ciphertext under the runtime master key.
+REMOTE_SOURCES: dict[str, tuple[tuple[str, ...], str]] = {
+    "entra": (("tenant_id", "client_id"), "client_secret"),
+    "google": (("admin_email",), "service_account_json"),
+}
 
 
 def build_remote_connector(
-    source: str, settings: Settings, client: httpx.Client
+    config: DirectoryConnectorConfig, master_key: str, client: httpx.Client
 ) -> DirectoryConnector:
-    if not configured_sources(settings).get(source):
-        raise DirectoryConnectorError(f"connector {source!r} is not configured")
-    if source == "entra":
+    if not master_key:
+        raise DirectoryConnectorError("LCIT_SIGN_MASTER_KEY is not configured")
+    if not config.encrypted_secret:
+        raise DirectoryConnectorError(f"connector {config.source!r} has no secret configured")
+    try:
+        secret = decrypt_secret(master_key, config.encrypted_secret)
+    except Exception as exc:  # wrong master key / corrupted ciphertext
+        raise DirectoryConnectorError(f"cannot decrypt {config.source!r} secret") from exc
+    fields: dict[str, str] = json.loads(config.settings_json)
+    if config.source == "entra":
         return EntraConnector(
             client,
-            tenant_id=settings.entra_tenant_id,
-            client_id=settings.entra_client_id,
-            client_secret=settings.entra_client_secret,
+            tenant_id=fields.get("tenant_id", ""),
+            client_id=fields.get("client_id", ""),
+            client_secret=secret,
         )
     return GoogleWorkspaceConnector(
-        client,
-        service_account_json=settings.google_service_account_json,
-        admin_email=settings.google_admin_email,
+        client, service_account_json=secret, admin_email=fields.get("admin_email", "")
     )

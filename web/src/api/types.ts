@@ -169,4 +169,5 @@ export interface ReportSummary {
 export interface DirectorySource {
   source: string;
   configured: boolean;
+  fields: Record<string, string>;
 }

@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
 import { FolderCog, RefreshCw } from "lucide-react";
 import { api } from "../api/client";
+import DirectoryConnectorForm from "./DirectoryConnectorForm";
 import type { DirectoryGroup, DirectorySource, DirectorySyncRun } from "../api/types";
 
 export default function AdminDirectoryPage() {
   const [groups, setGroups] = useState<DirectoryGroup[] | null>(null);
   const [runs, setRuns] = useState<DirectorySyncRun[] | null>(null);
   const [syncing, setSyncing] = useState(false);
-  const [sources, setSources] = useState<DirectorySource[]>([{ source: "local", configured: true }]);
+  const [sources, setSources] = useState<DirectorySource[]>([{ source: "local", configured: true, fields: {} }]);
   const [source, setSource] = useState("local");
   const [error, setError] = useState<string | null>(null);
 
@@ -53,6 +54,12 @@ export default function AdminDirectoryPage() {
         </button>
         {error && <p role="alert">{error}</p>}
       </div>
+
+      {sources
+        .filter((s) => s.source !== "local")
+        .map((s) => (
+          <DirectoryConnectorForm key={s.source + String(s.configured)} source={s} onChanged={load} />
+        ))}
 
       <div className="card">
         <div className="card-title">Groupes</div>

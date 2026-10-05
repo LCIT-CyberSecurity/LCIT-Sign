@@ -9,7 +9,12 @@ from lcit_sign.models.campaign import (
     CampaignTargetUser,
     SignatureAssignment,
 )
-from lcit_sign.models.directory import DirectorySyncRun, Group, GroupMembership
+from lcit_sign.models.directory import (
+    DirectoryConnectorConfig,
+    DirectorySyncRun,
+    Group,
+    GroupMembership,
+)
 from lcit_sign.models.document import Document, DocumentVersion, DocumentVersionStatus
 from lcit_sign.models.mail import MailConnector, Notification, NotificationStatus, NotificationType
 from lcit_sign.models.report import Report
@@ -22,6 +27,7 @@ __all__ = [
     "AssignmentStatus",
     "AuditChainState",
     "AuditEvent",
+    "DirectoryConnectorConfig",
     "Campaign",
     "CampaignDocument",
     "CampaignStatus",

@@ -1,23 +1,31 @@
 from __future__ import annotations
 
+import json
 import uuid
 from collections.abc import Generator
 from typing import Any
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as DbSession
 
 from lcit_sign.deps import get_db, require_roles
-from lcit_sign.models.directory import DirectorySyncRun, Group, GroupMembership
+from lcit_sign.models.directory import (
+    DirectoryConnectorConfig,
+    DirectorySyncRun,
+    Group,
+    GroupMembership,
+)
 from lcit_sign.models.user import Role, User
 from lcit_sign.services.audit import append_audit_event
+from lcit_sign.services.crypto import encrypt_secret
 from lcit_sign.services.directory_connectors import (
+    REMOTE_SOURCES,
     DirectoryConnector,
     DirectoryConnectorError,
     build_remote_connector,
-    configured_sources,
 )
 from lcit_sign.services.directory_sync import LocalConnector, sync_directory
 
@@ -54,12 +62,77 @@ def get_directory_http_client() -> Generator[httpx.Client]:
         yield client
 
 
+def _config_payload(source: str, config: DirectoryConnectorConfig | None) -> dict[str, Any]:
+    fields = json.loads(config.settings_json) if config else {}
+    return {
+        "source": source,
+        "configured": bool(config and config.encrypted_secret),
+        "fields": fields,
+        "updated_at": config.updated_at.isoformat() if config and config.updated_at else None,
+    }
+
+
 @router.get("/sources")
-def list_sources(request: Request, user: User = Depends(_admin)) -> list[dict[str, Any]]:
-    return [
-        {"source": source, "configured": ok}
-        for source, ok in configured_sources(request.app.state.settings).items()
-    ]
+def list_sources(db: DbSession = Depends(get_db), user: User = Depends(_admin)) -> list[Any]:
+    payloads: list[dict[str, Any]] = [{"source": "local", "configured": True, "fields": {}}]
+    for source in REMOTE_SOURCES:
+        payloads.append(_config_payload(source, db.get(DirectoryConnectorConfig, source)))
+    return payloads
+
+
+class ConnectorConfigRequest(BaseModel):
+    fields: dict[str, str] = {}
+    # The single secret (Entra client secret / Google service-account JSON).
+    # Omitted keeps the stored ciphertext; the API never returns it.
+    secret: str | None = None
+
+
+@router.put("/sources/{source}/config")
+def put_source_config(
+    source: str,
+    body: ConnectorConfigRequest,
+    request: Request,
+    db: DbSession = Depends(get_db),
+    user: User = Depends(_admin),
+) -> dict[str, Any]:
+    if source not in REMOTE_SOURCES:
+        raise HTTPException(status_code=404, detail=f"unknown directory source {source!r}")
+    allowed_fields, _secret_name = REMOTE_SOURCES[source]
+    unknown = set(body.fields) - set(allowed_fields)
+    if unknown:
+        raise HTTPException(status_code=422, detail=f"unknown fields: {sorted(unknown)}")
+    config = db.get(DirectoryConnectorConfig, source)
+    if config is None:
+        config = DirectoryConnectorConfig(source=source)
+        db.add(config)
+    config.settings_json = json.dumps(body.fields)
+    config.updated_by = user.id
+    if body.secret:
+        master_key = request.app.state.settings.master_key
+        if not master_key:
+            raise HTTPException(503, "LCIT_SIGN_MASTER_KEY is not configured")
+        config.encrypted_secret = encrypt_secret(master_key, body.secret)
+    append_audit_event(
+        db, action="DIRECTORY_CONNECTOR_CONFIGURED", actor_id=user.id,
+        target_type="directory_connector", target_id=source,
+    )
+    db.commit()
+    db.refresh(config)
+    return _config_payload(source, config)
+
+
+@router.delete("/sources/{source}/config", status_code=204)
+def delete_source_config(
+    source: str, db: DbSession = Depends(get_db), user: User = Depends(_admin)
+) -> None:
+    config = db.get(DirectoryConnectorConfig, source)
+    if config is not None:
+        db.delete(config)
+        append_audit_event(
+            db, action="DIRECTORY_CONNECTOR_REMOVED", actor_id=user.id,
+            target_type="directory_connector", target_id=source,
+        )
+        db.commit()
 
 
 @router.post("/sync")
@@ -70,13 +143,17 @@ def trigger_sync(
     http_client: httpx.Client = Depends(get_directory_http_client),
     user: User = Depends(_admin),
 ) -> dict[str, Any]:
-    settings = request.app.state.settings
     connector: DirectoryConnector
     if source == "local":
         connector = LocalConnector()
-    elif source in configured_sources(settings):
+    elif source in REMOTE_SOURCES:
+        config = db.get(DirectoryConnectorConfig, source)
+        if config is None:
+            raise HTTPException(status_code=409, detail=f"connector {source!r} is not configured")
         try:
-            connector = build_remote_connector(source, settings, http_client)
+            connector = build_remote_connector(
+                config, request.app.state.settings.master_key, http_client
+            )
         except DirectoryConnectorError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
     else:

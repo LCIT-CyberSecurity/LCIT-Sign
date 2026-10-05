@@ -56,3 +56,22 @@ class DirectorySyncRun(Base):
     memberships_added: Mapped[int] = mapped_column(Integer, default=0)
     memberships_removed: Mapped[int] = mapped_column(Integer, default=0)
     error: Mapped[str | None] = mapped_column(String(2000))
+
+
+class DirectoryConnectorConfig(Base):
+    """Credentials for a remote directory connector (Entra ID, Google
+    Workspace), one row per source. Non-secret fields live in
+    `settings_json`; the one secret is stored only as `encrypted_secret`,
+    AES-GCM ciphertext under the runtime master key (spec §99-101) — never
+    in the environment, never returned by the API.
+    """
+
+    __tablename__ = "directory_connector_configs"
+
+    source: Mapped[str] = mapped_column(String(50), primary_key=True)
+    settings_json: Mapped[str] = mapped_column(String(2000), default="{}")
+    encrypted_secret: Mapped[str | None] = mapped_column(String(10000))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))

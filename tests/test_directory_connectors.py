@@ -12,8 +12,9 @@ from test_campaigns import setup_campaign_fixture
 from lcit_sign import models  # noqa: F401
 from lcit_sign.api.directory import get_directory_http_client
 from lcit_sign.database import Base
-from lcit_sign.models.directory import DirectorySyncRun, Group
+from lcit_sign.models.directory import DirectoryConnectorConfig, DirectorySyncRun, Group
 from lcit_sign.models.user import User
+from lcit_sign.services.crypto import decrypt_secret
 
 TEST_MASTER_KEY = "test-master-key-not-for-production-use"  # noqa: S105
 
@@ -53,10 +54,7 @@ def _entra_handler(request: httpx.Request) -> httpx.Response:
 
 
 def _entra_app(tmp_path, oidc, handler=_entra_handler):
-    app = make_app(
-        tmp_path, oidc, master_key=TEST_MASTER_KEY,
-        entra_tenant_id="t", entra_client_id="c", entra_client_secret="s",
-    )
+    app = make_app(tmp_path, oidc, master_key=TEST_MASTER_KEY)
 
     def client():
         with httpx.Client(transport=httpx.MockTransport(handler)) as c:
@@ -64,6 +62,15 @@ def _entra_app(tmp_path, oidc, handler=_entra_handler):
 
     app.dependency_overrides[get_directory_http_client] = client
     return app
+
+
+def _configure_entra(admin):
+    response = admin.put(
+        "/api/admin/directory/sources/entra/config",
+        json={"fields": {"tenant_id": "t", "client_id": "c"}, "secret": "s3cr3t-value"},
+    )
+    assert response.status_code == 200, response.text
+    return response
 
 
 def _admin(app, oidc):
@@ -79,6 +86,7 @@ def _admin(app, oidc):
 def test_sources_listing(tmp_path, mock_oidc_base_url):
     app = _entra_app(tmp_path, mock_oidc_base_url)
     admin = _admin(app, mock_oidc_base_url)
+    _configure_entra(admin)
     sources = {s["source"]: s["configured"] for s in
                admin.get("/api/admin/directory/sources").json()}
     assert sources == {"local": True, "entra": True, "google": False}
@@ -87,6 +95,7 @@ def test_sources_listing(tmp_path, mock_oidc_base_url):
 def test_entra_sync(tmp_path, mock_oidc_base_url):
     app = _entra_app(tmp_path, mock_oidc_base_url)
     admin = _admin(app, mock_oidc_base_url)
+    _configure_entra(admin)
     run = admin.post("/api/admin/directory/sync?source=entra").json()
     assert run["status"] == "SUCCESS", run
     assert (run["users_added"], run["groups_added"], run["memberships_added"]) == (3, 1, 2)
@@ -113,6 +122,7 @@ def test_entra_failure_touches_nothing(tmp_path, mock_oidc_base_url):
 
     app = _entra_app(tmp_path, mock_oidc_base_url, handler)
     admin = _admin(app, mock_oidc_base_url)
+    _configure_entra(admin)
     admin.post("/api/admin/directory/sync?source=entra")
     state["fail"] = True
     run = admin.post("/api/admin/directory/sync?source=entra").json()
@@ -135,6 +145,7 @@ def test_removed_upstream_user_is_deactivated_and_group_deactivated(tmp_path, mo
 
     app = _entra_app(tmp_path, mock_oidc_base_url, handler)
     admin = _admin(app, mock_oidc_base_url)
+    _configure_entra(admin)
     admin.post("/api/admin/directory/sync?source=entra")
     state["empty"] = True
     run = admin.post("/api/admin/directory/sync?source=entra").json()
@@ -184,10 +195,7 @@ def test_google_sync(tmp_path, mock_oidc_base_url):
                 {"id": "x", "type": "GROUP"}]})
         return httpx.Response(404)
 
-    app = make_app(
-        tmp_path, mock_oidc_base_url, master_key=TEST_MASTER_KEY,
-        google_service_account_json=sa_json, google_admin_email="admin@corp.test",
-    )
+    app = make_app(tmp_path, mock_oidc_base_url, master_key=TEST_MASTER_KEY)
 
     def client():
         with httpx.Client(transport=httpx.MockTransport(handler)) as c:
@@ -195,6 +203,10 @@ def test_google_sync(tmp_path, mock_oidc_base_url):
 
     app.dependency_overrides[get_directory_http_client] = client
     admin = _admin(app, mock_oidc_base_url)
+    admin.put(
+        "/api/admin/directory/sources/google/config",
+        json={"fields": {"admin_email": "admin@corp.test"}, "secret": sa_json},
+    )
     run = admin.post("/api/admin/directory/sync?source=google").json()
     assert run["status"] == "SUCCESS", run
     assert (run["users_added"], run["groups_added"], run["memberships_added"]) == (2, 1, 2)
@@ -207,9 +219,49 @@ def test_google_sync(tmp_path, mock_oidc_base_url):
 
 
 def test_google_invalid_credentials_is_conflict(tmp_path, mock_oidc_base_url):
-    app = make_app(
-        tmp_path, mock_oidc_base_url, master_key=TEST_MASTER_KEY,
-        google_service_account_json="not json", google_admin_email="a@corp.test",
-    )
+    app = make_app(tmp_path, mock_oidc_base_url, master_key=TEST_MASTER_KEY)
     admin = _admin(app, mock_oidc_base_url)
+    admin.put(
+        "/api/admin/directory/sources/google/config",
+        json={"fields": {"admin_email": "a@corp.test"}, "secret": "not json"},
+    )
     assert admin.post("/api/admin/directory/sync?source=google").status_code == 409
+
+
+def test_secret_is_encrypted_at_rest_and_never_returned(tmp_path, mock_oidc_base_url):
+    app = _entra_app(tmp_path, mock_oidc_base_url)
+    admin = _admin(app, mock_oidc_base_url)
+    response = _configure_entra(admin)
+    assert "s3cr3t-value" not in response.text
+    assert "secret" not in response.json()
+    assert response.json()["configured"] is True
+    assert response.json()["fields"] == {"tenant_id": "t", "client_id": "c"}
+    assert "s3cr3t-value" not in admin.get("/api/admin/directory/sources").text
+
+    with app.state.session_factory() as db:
+        stored = db.get(DirectoryConnectorConfig, "entra")
+        assert stored.encrypted_secret
+        assert "s3cr3t-value" not in stored.encrypted_secret
+        assert decrypt_secret(TEST_MASTER_KEY, stored.encrypted_secret) == "s3cr3t-value"
+
+    # Updating fields without a secret keeps the stored ciphertext.
+    admin.put(
+        "/api/admin/directory/sources/entra/config",
+        json={"fields": {"tenant_id": "t2", "client_id": "c"}},
+    )
+    with app.state.session_factory() as db:
+        kept = db.get(DirectoryConnectorConfig, "entra")
+        assert decrypt_secret(TEST_MASTER_KEY, kept.encrypted_secret) == "s3cr3t-value"
+
+    assert admin.delete("/api/admin/directory/sources/entra/config").status_code == 204
+    assert admin.post("/api/admin/directory/sync?source=entra").status_code == 409
+
+
+def test_config_requires_admin_and_valid_source(tmp_path, mock_oidc_base_url):
+    app, admin, operator, signer1, signer2 = setup_campaign_fixture(tmp_path, mock_oidc_base_url)
+    body = {"fields": {}, "secret": "x"}
+    assert operator.put("/api/admin/directory/sources/entra/config", json=body).status_code == 403
+    assert signer1.put("/api/admin/directory/sources/entra/config", json=body).status_code == 403
+    assert admin.put("/api/admin/directory/sources/nope/config", json=body).status_code == 404
+    bad = {"fields": {"bogus": "1"}, "secret": "x"}
+    assert admin.put("/api/admin/directory/sources/entra/config", json=bad).status_code == 422
