@@ -31,6 +31,7 @@ from lcit_sign.config import Settings, get_settings
 from lcit_sign.database import make_engine, make_session_factory
 from lcit_sign.logging_utils import configure_logging
 from lcit_sign.request_context import set_request_id, set_source_ip
+from lcit_sign.services.local_auth import LoginThrottle, ensure_builtin_admin
 from lcit_sign.services.notification_queue import process_pending_notifications
 from lcit_sign.services.rate_limit import SlidingWindowLimiter
 from lcit_sign.services.scheduler import (
@@ -90,12 +91,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             http_client.close()
             db.close()
 
+    def _ensure_system_account(app: FastAPI) -> None:
+        # The tables may not exist yet (tests create them after startup); the account is
+        # then created on its first login attempt instead.
+        try:
+            with app.state.session_factory() as db:
+                ensure_builtin_admin(db, settings)
+        except Exception:
+            logger.info("built-in administrator will be created on first use")
+
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.engine = make_engine(settings.database_url)
         app.state.session_factory = make_session_factory(app.state.engine)
         app.state.storage = StorageService(settings.storage_root)
         app.state.worker_last_run = None
+        _ensure_system_account(app)
 
         worker_task = None
         if settings.notification_worker_enabled:
@@ -111,6 +122,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(title="LCIT Sign", version=__version__, lifespan=lifespan)
     app.state.settings = settings
+    app.state.login_throttle = LoginThrottle()
 
     if settings.cors_allowed_origins:
         app.add_middleware(
@@ -146,6 +158,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # abusable (login, signing, outbound connectivity tests), loose overall.
     limits = [
         ("/api/auth/login", 20, 60.0),
+        ("/api/auth/local-login", 10, 60.0),
         ("/api/auth/callback", 20, 60.0),
         ("/api/admin/mail-connector/", 10, 60.0),
         ("/api/admin/directory/sync", 10, 60.0),

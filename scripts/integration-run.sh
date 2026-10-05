@@ -20,7 +20,7 @@ REMOTE_DIR="${LCIT_SIGN_INTEGRATION_DIR:-Git/LCIT-Sign}"
 # The working tree is the source of truth; the VM never is (spec §96).
 # .env and TLS material on the VM are preserved.
 rsync -az --delete \
-    --exclude .git --exclude .env --exclude certs --exclude certs.backup \
+    --exclude .git --exclude .env --exclude certs --exclude certs.backup --exclude secrets \
     --exclude node_modules --exclude dist --exclude '.*cache' --exclude __pycache__ \
     --exclude backups --exclude '*.log' \
     ./ "$TARGET:$REMOTE_DIR/"

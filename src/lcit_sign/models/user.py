@@ -31,6 +31,11 @@ class User(Base):
     issuer: Mapped[str] = mapped_column(String(512))
     subject: Mapped[str] = mapped_column(String(255))
     external_directory_id: Mapped[str | None] = mapped_column(String(255))
+    # Only the built-in system account has one (scrypt hash). Everyone else
+    # signs in through SSO and has no password in this application.
+    password_hash: Mapped[str | None] = mapped_column(String(255))
+    # The built-in account starts with an initial password and must change it.
+    must_change_password: Mapped[bool] = mapped_column(default=False)
 
     email: Mapped[str] = mapped_column(String(320))
     given_name: Mapped[str] = mapped_column(String(255), default="")
@@ -38,6 +43,9 @@ class User(Base):
     display_name: Mapped[str] = mapped_column(String(255), default="")
 
     active: Mapped[bool] = mapped_column(default=True)
+    # An administrator switched this person off: a directory sync must not
+    # switch them back on just because the directory still lists them.
+    manually_disabled: Mapped[bool] = mapped_column(default=False)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

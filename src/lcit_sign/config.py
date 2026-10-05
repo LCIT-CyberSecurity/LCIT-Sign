@@ -40,6 +40,15 @@ class Settings(BaseSettings):
     # OIDC redirect_uri (e.g. https://sign.example.org).
     public_base_url: str = "http://localhost:8000"
 
+    # The built-in system account (spec: SSO is the only way in for people; this is
+    # the one exception). On by default; password from a secret, never a default.
+    local_auth_enabled: bool = True
+    local_admin_username: str = "admin"
+    # Initial password of the built-in account. Empty means the documented deployment
+    # default (to be changed by the local administrator, who is reminded at every
+    # sign-in until they do). Set it to deploy with something else.
+    local_admin_password: str = ""  # noqa: S105
+
     # Email (case-insensitive) granted ADMIN on every login while set.
     # Unset it once a real administrator has taken over the account.
     bootstrap_admin: str = ""
@@ -73,10 +82,11 @@ class Settings(BaseSettings):
     session_secret_file: str = ""
     oidc_client_secret_file: str = ""
     master_key_file: str = ""
+    local_admin_password_file: str = ""
 
     @model_validator(mode="after")
     def _load_secret_files(self) -> Settings:
-        for name in ("session_secret", "oidc_client_secret", "master_key"):
+        for name in ("session_secret", "oidc_client_secret", "master_key", "local_admin_password"):
             path = getattr(self, f"{name}_file")
             if path:
                 setattr(self, name, Path(path).read_text(encoding="utf-8").strip())

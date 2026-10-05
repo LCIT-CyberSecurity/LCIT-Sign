@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import uuid
 from collections.abc import Generator
 from datetime import UTC, datetime
@@ -8,13 +9,19 @@ from typing import Any, Literal
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, model_validator
-from sqlalchemy import select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session as DbSession
 
 from lcit_sign.config import Settings
 from lcit_sign.deps import get_db, require_roles, user_roles
 from lcit_sign.models.audit import AuditEvent
+from lcit_sign.models.campaign import Campaign, SignatureAssignment
+from lcit_sign.models.directory import GroupMembership
+from lcit_sign.models.document import Document
 from lcit_sign.models.mail import MailConnector, Notification, NotificationStatus, NotificationType
+from lcit_sign.models.report import Report
+from lcit_sign.models.session import Session as SessionRecord
+from lcit_sign.models.signature import Signature
 from lcit_sign.models.signing_key import SigningKey, SigningKeyStatus
 from lcit_sign.models.user import Role, User, UserRole
 from lcit_sign.services.audit import append_audit_event, verify_audit_chain
@@ -36,19 +43,205 @@ class RoleGrantRequest(BaseModel):
     role: Role
 
 
+def user_source(user: User) -> str:
+    """Where this person comes from, for display: a directory (entra, google,
+    ldap, local demo), 'manual' (added by an administrator), 'builtin' (the
+    local administrator account) or 'sso' (they simply signed in)."""
+    if user.issuer.startswith("directory:"):
+        return user.issuer.split(":", 1)[1]
+    if user.issuer.startswith("builtin:"):
+        return "builtin"
+    return "sso"
+
+
+def _user_blockers(db: DbSession, users: list[User]) -> dict[uuid.UUID, list[str]]:
+    """Why each user cannot be erased. Someone who has signed, was asked to sign,
+    or authored documents/campaigns/reports is part of the evidence trail —
+    they can only be disabled. People kept in step with an external directory
+    would simply come back at the next sync."""
+    ids = [u.id for u in users]
+    blockers: dict[uuid.UUID, list[str]] = {uid: [] for uid in ids}
+    if not ids:
+        return blockers
+
+    def count(model_column: Any, label: str) -> None:
+        for uid, n in db.execute(
+            select(model_column, func.count()).where(model_column.in_(ids)).group_by(model_column)
+        ).all():
+            blockers[uid].append(f"{n} {label}")
+
+    count(Signature.user_id, "signature(s)")
+    count(SignatureAssignment.user_id, "document(s) à signer")
+    count(Document.created_by, "document(s) créé(s)")
+    count(Campaign.created_by, "campagne(s) créée(s)")
+    count(Report.generated_by, "procès-verbal(aux) généré(s)")
+    for user in users:
+        source = user_source(user)
+        if source not in ("sso", "manual"):
+            blockers[user.id].append(f"géré par la source « {source} »")
+    return blockers
+
+
+def _admin_count(db: DbSession) -> int:
+    return db.execute(
+        select(func.count())
+        .select_from(UserRole)
+        .join(User, User.id == UserRole.user_id)
+        .where(UserRole.role == Role.ADMIN, User.active.is_(True))
+    ).scalar_one()
+
+
+def _user_payload(
+    db: DbSession, u: User, blockers: dict[uuid.UUID, list[str]]
+) -> dict[str, Any]:
+    return {
+        "id": str(u.id),
+        "email": u.email,
+        "display_name": u.display_name,
+        "active": u.active,
+        "manually_disabled": u.manually_disabled,
+        "source": user_source(u),
+        "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None,
+        "roles": sorted(role.value for role in user_roles(db, u)),
+        "can_delete": not blockers.get(u.id),
+        "delete_blockers": blockers.get(u.id, []),
+    }
+
+
 @router.get("/users")
 def list_users(db: DbSession = Depends(get_db)) -> list[dict[str, Any]]:
-    users = db.execute(select(User).order_by(User.email)).scalars()
-    return [
-        {
-            "id": str(u.id),
-            "email": u.email,
-            "display_name": u.display_name,
-            "active": u.active,
-            "roles": sorted(role.value for role in user_roles(db, u)),
-        }
-        for u in users
-    ]
+    users = list(db.execute(select(User).order_by(User.email)).scalars())
+    blockers = _user_blockers(db, users)
+    return [_user_payload(db, u, blockers) for u in users]
+
+
+_EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+class CreateUserRequest(BaseModel):
+    email: str
+    given_name: str = ""
+    family_name: str = ""
+    roles: list[Role] = [Role.SIGNER]
+
+
+@router.post("/users", status_code=201)
+def create_user(
+    body: CreateUserRequest,
+    user: User = Depends(require_roles(Role.ADMIN)),
+    db: DbSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Add someone by e-mail address, with no password and no account anywhere:
+    they sign in with their usual SSO and are matched to this entry by address,
+    keeping the roles given here."""
+    email = body.email.strip().lower()
+    if not _EMAIL.match(email) or len(email) > 320:
+        raise HTTPException(422, "Adresse e-mail invalide")
+    clash = db.execute(select(User.id).where(func.lower(User.email) == email)).first()
+    if clash is not None:
+        raise HTTPException(409, "Un utilisateur avec cette adresse existe déjà")
+
+    given, family = body.given_name.strip(), body.family_name.strip()
+    created = User(
+        issuer="directory:manual",
+        subject=f"manual:{uuid.uuid4()}",
+        email=email,
+        given_name=given,
+        family_name=family,
+        display_name=f"{given} {family}".strip() or email.split("@")[0],
+        active=True,
+    )
+    db.add(created)
+    db.flush()
+    for role in set(body.roles):
+        db.add(UserRole(user_id=created.id, role=role))
+    append_audit_event(
+        db, action="USER_CREATED", actor_id=user.id, target_type="user",
+        target_id=str(created.id), metadata={"email": email, "source": "manual"},
+    )
+    db.commit()
+    return _user_payload(db, created, _user_blockers(db, [created]))
+
+
+class UpdateUserRequest(BaseModel):
+    active: bool
+
+
+@router.patch("/users/{target_user_id}")
+def update_user(
+    target_user_id: uuid.UUID,
+    body: UpdateUserRequest,
+    user: User = Depends(require_roles(Role.ADMIN)),
+    db: DbSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Disable or re-enable someone. Disabling ends their sessions at once, keeps
+    all their history, and survives directory syncs."""
+    target = db.get(User, target_user_id)
+    if target is None:
+        raise HTTPException(404, "User not found")
+    if not body.active:
+        if target.id == user.id:
+            raise HTTPException(409, "Vous ne pouvez pas désactiver votre propre compte")
+        is_admin = Role.ADMIN in user_roles(db, target)
+        if is_admin and target.active and _admin_count(db) <= 1:
+            raise HTTPException(
+                409, "C'est le dernier administrateur actif : il ne peut pas être désactivé"
+            )
+    target.active = body.active
+    target.manually_disabled = not body.active
+    if not body.active:
+        for session in db.execute(
+            select(SessionRecord).where(
+                SessionRecord.user_id == target.id, SessionRecord.revoked_at.is_(None)
+            )
+        ).scalars():
+            session.revoked_at = datetime.now(UTC)
+    append_audit_event(
+        db, action="USER_UPDATED", actor_id=user.id, target_type="user",
+        target_id=str(target.id), metadata={"active": body.active},
+    )
+    db.commit()
+    return _user_payload(db, target, _user_blockers(db, [target]))
+
+
+@router.delete("/users/{target_user_id}")
+def delete_user(
+    target_user_id: uuid.UUID,
+    user: User = Depends(require_roles(Role.ADMIN)),
+    db: DbSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Erase someone who left no trace (never signed, never asked, authored
+    nothing). Anyone else is refused with the reason: disable them instead."""
+    target = db.get(User, target_user_id)
+    if target is None:
+        raise HTTPException(404, "User not found")
+    if target.id == user.id:
+        raise HTTPException(409, "Vous ne pouvez pas supprimer votre propre compte")
+    reasons = _user_blockers(db, [target])[target.id]
+    if reasons:
+        raise HTTPException(
+            409,
+            "Cet utilisateur ne peut pas être supprimé (" + " ; ".join(reasons) + "). "
+            "Désactivez-le à la place.",
+        )
+    if Role.ADMIN in user_roles(db, target) and target.active and _admin_count(db) <= 1:
+        raise HTTPException(409, "C'est le dernier administrateur actif")
+    email = target.email
+    db.execute(delete(UserRole).where(UserRole.user_id == target.id))
+    db.execute(delete(GroupMembership).where(GroupMembership.user_id == target.id))
+    db.execute(delete(SessionRecord).where(SessionRecord.user_id == target.id))
+    db.execute(
+        update(Notification)
+        .where(Notification.recipient_user_id == target.id)
+        .values(recipient_user_id=None)
+    )
+    db.delete(target)
+    append_audit_event(
+        db, action="USER_DELETED", actor_id=user.id, target_type="user",
+        target_id=str(target_user_id), metadata={"email": email},
+    )
+    db.commit()
+    return {"deleted": str(target_user_id)}
 
 
 @router.post("/users/{target_user_id}/roles", status_code=201)

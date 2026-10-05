@@ -16,7 +16,7 @@ from lcit_sign.deps import get_db, require_roles
 from lcit_sign.models.directory import DirectorySyncRun
 from lcit_sign.models.mail import MailConnector, Notification, NotificationStatus
 from lcit_sign.models.signing_key import SigningKey, SigningKeyStatus
-from lcit_sign.models.user import Role
+from lcit_sign.models.user import Role, User
 from lcit_sign.services.signing_keys import derive_private_key, public_key_hex
 from lcit_sign.time_utils import ensure_utc
 
@@ -113,6 +113,26 @@ def _worker(request: Request, settings: Settings) -> dict[str, str]:
     return _check("worker", OK, "last cycle completed")
 
 
+def _builtin_admin(db: DbSession, settings: Settings) -> dict[str, str]:
+    if not settings.local_auth_enabled:
+        return _check("builtin_admin", DISABLED, "built-in administrator is switched off")
+    account = db.execute(
+        select(User).where(
+            User.issuer == "builtin:local", User.subject == settings.local_admin_username
+        )
+    ).scalar_one_or_none()
+    if account is None or not account.active:
+        return _check("builtin_admin", OK, "built-in administrator is not in use")
+    if account.must_change_password:
+        level = ERROR if settings.environment == "production" else WARN
+        return _check(
+            "builtin_admin",
+            level,
+            "the initial password of the system account has not been changed",
+        )
+    return _check("builtin_admin", OK, "password changed")
+
+
 def get_diagnostics_http_client() -> Any:
     with httpx.Client() as client:
         yield client
@@ -138,6 +158,7 @@ def diagnostics(
         _directory(db),
         _smtp(db),
         _worker(request, settings),
+        _builtin_admin(db, settings),
     ]
     worst = ERROR if any(c["status"] == ERROR for c in checks) else (
         WARN if any(c["status"] == WARN for c in checks) else OK

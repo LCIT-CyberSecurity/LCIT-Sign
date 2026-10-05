@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
 
@@ -12,6 +13,7 @@ from lcit_sign.auth.cookies import (
     LOGIN_FLOW_COOKIE,
     SESSION_COOKIE,
     generate_session_token,
+    hash_session_token,
     sign_login_flow_cookie,
     verify_login_flow_cookie,
 )
@@ -26,6 +28,12 @@ from lcit_sign.deps import get_current_user, get_db
 from lcit_sign.models.session import Session as SessionRecord
 from lcit_sign.models.user import Role, User, UserRole
 from lcit_sign.services.audit import actor_snapshot, append_audit_event
+from lcit_sign.services.local_auth import (
+    LoginThrottle,
+    PasswordChangeError,
+    change_password,
+    check_credentials,
+)
 
 router = APIRouter(tags=["auth"])
 
@@ -158,6 +166,15 @@ async def callback(
         user.last_login_at = now
     db.flush()
 
+    if not user.active:
+        append_audit_event(
+            db, action="LOGIN_FAILURE", result="FAILURE", actor_id=user.id,
+            metadata={"reason": "user_disabled"},
+            source_ip=request.client.host if request.client else None,
+        )
+        db.commit()
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Ce compte est désactivé")
+
     if settings.bootstrap_admin and user.email.lower() == settings.bootstrap_admin.lower():
         has_admin = db.execute(
             select(UserRole).where(UserRole.user_id == user.id, UserRole.role == Role.ADMIN)
@@ -197,6 +214,119 @@ async def callback(
     return response
 
 
+class LocalLoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+@router.get("/auth/options")
+def login_options(request: Request) -> dict[str, bool]:
+    """What the sign-in page may offer. The built-in account form is shown only
+    when it is enabled; nothing else in the application takes a password."""
+    settings: Settings = request.app.state.settings
+    return {"sso": bool(settings.oidc_issuer), "local": settings.local_auth_enabled}
+
+
+@router.post("/auth/local-login")
+def local_login(
+    request: Request, body: LocalLoginRequest, db: DbSession = Depends(get_db)
+) -> Response:
+    """Sign in as the built-in system account."""
+    settings: Settings = request.app.state.settings
+    if not settings.local_auth_enabled:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
+    ip = request.client.host if request.client else "unknown"
+    name_key, ip_key = f"user:{body.username.strip().lower()[:64]}", f"ip:{ip}"
+    throttle: LoginThrottle = request.app.state.login_throttle
+    if throttle.blocked(name_key, ip_key):
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS, "Trop de tentatives, réessayez plus tard"
+        )
+
+    user = check_credentials(db, settings, body.username, body.password)
+    if user is None:
+        throttle.failed(name_key, ip_key)
+        append_audit_event(
+            db, action="LOGIN_FAILURE", result="FAILURE",
+            metadata={
+                "reason": "bad_credentials",
+                "method": "local",
+                "username": body.username[:64],
+            },
+            source_ip=ip,
+        )
+        db.commit()
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Identifiant ou mot de passe incorrect")
+
+    throttle.succeeded(name_key, ip_key)
+    now = datetime.now(UTC)
+    user.last_login_at = now
+    raw_token, token_hash = generate_session_token()
+    db.add(
+        SessionRecord(
+            session_token_hash=token_hash,
+            user_id=user.id,
+            expires_at=now + timedelta(hours=settings.session_absolute_timeout_hours),
+        )
+    )
+    append_audit_event(
+        db, action="LOGIN_SUCCESS", actor_id=user.id, actor_identity_snapshot=actor_snapshot(user),
+        metadata={"method": "local", "must_change_password": user.must_change_password},
+        source_ip=ip,
+    )
+    db.commit()
+    response = Response(status_code=status.HTTP_204_NO_CONTENT)
+    response.set_cookie(
+        SESSION_COOKIE, raw_token, max_age=settings.session_absolute_timeout_hours * 3600,
+        httponly=True, secure=settings.cookie_secure, samesite="lax", path="/",
+    )
+    return response
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
+@router.post("/auth/change-password", status_code=status.HTTP_204_NO_CONTENT)
+def change_my_password(
+    request: Request,
+    body: ChangePasswordRequest,
+    user: User = Depends(get_current_user),
+    db: DbSession = Depends(get_db),
+) -> None:
+    """The built-in account's owner sets their own password. Every other session of
+    that account ends, so a leaked initial password stops working at once."""
+    throttle: LoginThrottle = request.app.state.login_throttle
+    key = f"change:{user.id}"
+    if throttle.blocked(key):
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS, "Trop de tentatives, réessayez plus tard"
+        )
+    try:
+        change_password(db, user, body.current_password, body.new_password)
+    except PasswordChangeError as exc:
+        throttle.failed(key)
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    throttle.succeeded(key)
+
+    raw = request.cookies.get(SESSION_COOKIE)
+    keep = hash_session_token(raw) if raw else None
+    for session in db.execute(
+        select(SessionRecord).where(
+            SessionRecord.user_id == user.id, SessionRecord.revoked_at.is_(None)
+        )
+    ).scalars():
+        if session.session_token_hash != keep:
+            session.revoked_at = datetime.now(UTC)
+    append_audit_event(
+        db, action="USER_UPDATED", actor_id=user.id, target_type="user", target_id=str(user.id),
+        metadata={"change": "password_changed"},
+        source_ip=request.client.host if request.client else None,
+    )
+    db.commit()
+
+
 @router.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(request: Request, response: Response, db: DbSession = Depends(get_db)) -> None:
     from lcit_sign.auth.cookies import hash_session_token
@@ -226,4 +356,8 @@ async def me(
         "email": user.email,
         "display_name": user.display_name,
         "roles": sorted(role.value for role in roles),
+        # True only for the built-in account while it still has its initial password:
+        # the interface reminds its owner, at every sign-in, until it is changed.
+        "must_change_password": user.must_change_password,
+        "source": "builtin" if user.issuer.startswith("builtin:") else "sso",
     }

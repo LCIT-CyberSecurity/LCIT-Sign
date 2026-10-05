@@ -192,7 +192,7 @@ def test_diagnostics_reports_components_without_secrets(tmp_path, mock_oidc_base
     names = {c["name"]: c["status"] for c in body["checks"]}
     assert set(names) == {
         "application", "database", "filesystem", "signing_key",
-        "oidc", "directory", "smtp", "worker",
+        "oidc", "directory", "smtp", "worker", "builtin_admin",
     }
     assert names["database"] == "OK" and names["filesystem"] == "OK"
     assert names["oidc"] == "OK"

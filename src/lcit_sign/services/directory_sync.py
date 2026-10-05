@@ -175,7 +175,7 @@ def sync_directory(db: DbSession, connector: DirectoryConnector) -> DirectorySyn
             user.given_name = entry_user.given_name
             user.family_name = entry_user.family_name
             user.display_name = display_name
-            user.active = entry_user.active
+            user.active = entry_user.active and not user.manually_disabled
             run.users_updated += 1
         db.flush()
 
