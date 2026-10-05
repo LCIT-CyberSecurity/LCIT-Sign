@@ -41,7 +41,7 @@ describe("role-based navigation (the UI only hides; the API enforces)", () => {
   it("does not offer operator or admin sections to a plain signer", () => {
     auth.current = { user: { display_name: "Erwan", email: "x@lcit-test.local", roles: ["SIGNER"] }, roles: ["SIGNER"] };
     renderAt("/");
-    expect(screen.queryByText("Faire signer")).not.toBeInTheDocument();
+    expect(screen.queryByText("Suivi")).not.toBeInTheDocument();
     expect(screen.queryByText("Diagnostic")).not.toBeInTheDocument();
   });
 
@@ -61,7 +61,7 @@ describe("role-based navigation (the UI only hides; the API enforces)", () => {
   it("offers operators campaigns but not administration", () => {
     auth.current = { user: { display_name: "Diane", email: "x@lcit-test.local", roles: ["OPERATOR"] }, roles: ["OPERATOR"] };
     renderAt("/");
-    expect(screen.getByText("Faire signer")).toBeInTheDocument();
+    expect(screen.getByText("Suivi")).toBeInTheDocument();
     expect(screen.queryByText("Administration")).not.toBeInTheDocument();
   });
 });

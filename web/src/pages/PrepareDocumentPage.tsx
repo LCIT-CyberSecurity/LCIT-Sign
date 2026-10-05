@@ -171,7 +171,7 @@ export default function PrepareDocumentPage() {
     if (!party) return `Position ${role}`;
     return party.mode === "EACH" ? "Chaque destinataire" : party.user_display_name ?? `Position ${role}`;
   };
-  const backTo = campaignId ? `/campaigns/${campaignId}` : "/campaigns";
+  const backTo = campaignId ? `/sign/${campaignId}` : "/sign";
   const selected = fields.find((f) => f.id === selectedId) ?? null;
 
   const update = useCallback((fieldId: string, patch: Partial<EditorField>) => {
@@ -293,7 +293,7 @@ export default function PrepareDocumentPage() {
   if (!campaignId)
     return (
       <p className="muted">
-        Les éléments se préparent depuis une demande de signature : ouvrez <Link to="/campaigns">Faire signer</Link>,
+        Les éléments se préparent depuis une demande de signature : ouvrez <Link to="/sign">Signer</Link>,
         choisissez qui signe, puis « Préparer » sur le document.
       </p>
     );
@@ -301,7 +301,7 @@ export default function PrepareDocumentPage() {
   if (campaign && campaign.roles.length === 0)
     return (
       <p className="muted">
-        Choisissez d&apos;abord qui signe dans <Link to={backTo}>la campagne</Link>, puis revenez préparer le
+        Choisissez d&apos;abord qui signe dans <Link to={backTo}>la demande de signature</Link>, puis revenez préparer le
         document.
       </p>
     );
@@ -312,7 +312,7 @@ export default function PrepareDocumentPage() {
   return (
     <div className="stack prep">
       <Link to={backTo} className="back-link">
-        <ArrowLeft size={14} aria-hidden="true" /> {campaign ? campaign.name : "Faire signer"}
+        <ArrowLeft size={14} aria-hidden="true" /> {campaign ? campaign.name : "Signer"}
       </Link>
       <div className="page-header">
         <div>
@@ -373,7 +373,7 @@ export default function PrepareDocumentPage() {
                 ))}
               </ul>
               <Link to={backTo} className="muted small">
-                Modifier les signataires dans la campagne
+                Modifier les signataires
               </Link>
 
               <div className="prep-rail__title" style={{ marginTop: 18 }}>

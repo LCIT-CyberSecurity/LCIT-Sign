@@ -7,6 +7,8 @@ import SignerAssignmentsPage from "./pages/SignerAssignmentsPage";
 import SignerAssignmentDetailPage from "./pages/SignerAssignmentDetailPage";
 import OperatorDocumentsPage from "./pages/OperatorDocumentsPage";
 import OperatorCampaignsPage from "./pages/OperatorCampaignsPage";
+import SignPage from "./pages/SignPage";
+import SignRequestPage from "./pages/SignRequestPage";
 import OperatorCampaignDetailPage from "./pages/OperatorCampaignDetailPage";
 import AdminUsersPage from "./pages/AdminUsersPage";
 import AdminDirectoryPage from "./pages/AdminDirectoryPage";
@@ -59,6 +61,22 @@ export default function App() {
           element={
             <RoleRoute allowed={isOperator}>
               <PrepareDocumentPage />
+            </RoleRoute>
+          }
+        />
+        <Route
+          path="/sign"
+          element={
+            <RoleRoute allowed={isOperator}>
+              <SignPage />
+            </RoleRoute>
+          }
+        />
+        <Route
+          path="/sign/:id"
+          element={
+            <RoleRoute allowed={isOperator}>
+              <SignRequestPage />
             </RoleRoute>
           }
         />

@@ -124,8 +124,8 @@ export default function OperatorDocumentsPage() {
       </h1>
 
       <p className="muted">
-        La bibliothèque des documents. Pour faire signer, allez dans{" "}
-        <Link to="/campaigns">Faire signer</Link> : vous y choisissez qui signe, déposez ou reprenez les
+        La bibliothèque de vos documents. Pour les faire signer, allez dans{" "}
+        <Link to="/sign">Signer</Link> : vous y choisissez qui signe, déposez ou reprenez les
         documents et placez les éléments.
       </p>
 

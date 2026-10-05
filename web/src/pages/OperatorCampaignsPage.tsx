@@ -1,6 +1,6 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Megaphone, Plus } from "lucide-react";
+import { Megaphone, PenLine } from "lucide-react";
 import { api } from "../api/client";
 import DashboardCards from "../components/DashboardCards";
 import type { Campaign, OperatorDashboard } from "../api/types";
@@ -32,8 +32,6 @@ function formatDate(value: string | null): string {
 
 export default function OperatorCampaignsPage() {
   const [campaigns, setCampaigns] = useState<Campaign[] | null>(null);
-  const [name, setName] = useState("");
-  const [creating, setCreating] = useState(false);
   const [dashboard, setDashboard] = useState<OperatorDashboard | null>(null);
 
   const load = () => {
@@ -43,42 +41,20 @@ export default function OperatorCampaignsPage() {
 
   useEffect(load, []);
 
-  const create = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!name) return;
-    setCreating(true);
-    try {
-      await api.post("/campaigns", { name });
-      setName("");
-      load();
-    } finally {
-      setCreating(false);
-    }
-  };
-
   return (
     <div className="stack">
       <div className="page-header">
         <div>
           <h1 className="page-title" style={{ margin: 0 }}>
-            <Megaphone size={22} aria-hidden="true" /> Faire signer
+            <Megaphone size={22} aria-hidden="true" /> Suivi
           </h1>
           <p className="page-subtitle" style={{ margin: "6px 0 0" }}>
-            Diffusez des documents à signer et suivez l&apos;avancement de chaque campagne.
+            Le suivi et le reporting de ce qui a été envoyé à la signature : qui a signé, qui reste à faire.
           </p>
         </div>
-        <form className="inline-create" onSubmit={create}>
-          <input
-            placeholder="Nom de la nouvelle campagne"
-            aria-label="Nom de la nouvelle campagne"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            required
-          />
-          <button className="button button--primary" type="submit" disabled={creating}>
-            <Plus size={14} aria-hidden="true" /> Créer
-          </button>
-        </form>
+        <Link className="button button--primary" to="/sign">
+          <PenLine size={14} aria-hidden="true" /> Nouvelle demande de signature
+        </Link>
       </div>
 
       {dashboard && <DashboardCards data={dashboard} />}
@@ -96,14 +72,14 @@ export default function OperatorCampaignsPage() {
             </tr>
           </thead>
           <tbody>
-            {campaigns?.length === 0 && (
+            {campaigns?.filter((c) => c.status !== "DRAFT").length === 0 && (
               <tr>
                 <td colSpan={6} className="muted">
-                  Aucune campagne pour le moment.
+                  Rien n&apos;a encore été envoyé à la signature.
                 </td>
               </tr>
             )}
-            {campaigns?.map((c) => {
+            {campaigns?.filter((c) => c.status !== "DRAFT").map((c) => {
               const { signed, total } = totals(c);
               const pct = total ? Math.round((100 * signed) / total) : 0;
               return (

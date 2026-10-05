@@ -86,7 +86,7 @@ test("an administrator reaches the diagnostics page", async ({ page }) => {
 
 test("an operator sees the dashboard and can filter a campaign's follow-up", async ({ page }) => {
   await loginAs(page, "Diane");
-  await page.getByRole("link", { name: "Faire signer" }).click();
+  await page.getByRole("link", { name: "Suivi" }).click();
   await expect(page.getByRole("region", { name: "Tableau de bord" })).toBeVisible();
   await expect(page.getByTestId("stat-Signatures attendues")).not.toHaveText("0");
 

@@ -1,47 +1,19 @@
-import { useEffect, useMemo, useState } from "react";
-import { useParams, Link } from "react-router-dom";
-import { ArrowLeft, Rocket, Bell, StopCircle, FileBarChart, Download } from "lucide-react";
-import { api, ApiError } from "../api/client";
-import CampaignDocuments from "../components/CampaignDocuments";
-import CampaignSigners from "../components/CampaignSigners";
-import PolicyFields, {
-  EMPTY_POLICY,
-  buildPolicyPayload,
-  describePolicies,
-  policyProblem,
-  type PolicyForm,
-} from "../components/PolicyFields";
-import type {
-  Campaign,
-  CampaignAssignment,
-  DocumentDetail,
-  DirectoryGroup,
-  ReportSummary,
-} from "../api/types";
+import { useEffect, useState } from "react";
+import { Navigate, useParams, Link } from "react-router-dom";
+import { ArrowLeft, Bell, StopCircle, FileBarChart, Download } from "lucide-react";
+import { api } from "../api/client";
+import { describePolicies } from "../components/PolicyFields";
+import type { Campaign, CampaignAssignment, DirectoryGroup, ReportSummary } from "../api/types";
 
-interface TargetUserOption {
-  id: string;
-  email: string;
-  display_name: string;
-}
-
+/** Follow-up of a launched campaign (the reporting): who signed, who still has to,
+ *  who is waiting for an earlier signer, reminders, closing, reports. Preparing and
+ *  sending is done in Signer. */
 export default function OperatorCampaignDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [assignments, setAssignments] = useState<CampaignAssignment[] | null>(null);
-  const [documents, setDocuments] = useState<DocumentDetail[] | null>(null);
   const [groups, setGroups] = useState<DirectoryGroup[] | null>(null);
-  const [users, setUsers] = useState<TargetUserOption[] | null>(null);
   const [reports, setReports] = useState<ReportSummary[] | null>(null);
-
-  const [allUsers, setAllUsers] = useState(false);
-  const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
-  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [groupQuery, setGroupQuery] = useState("");
-  const [recipientCount, setRecipientCount] = useState<number | null>(null);
-  const [policy, setPolicy] = useState<PolicyForm>(EMPTY_POLICY);
   const [filters, setFilters] = useState({
     status: "",
     document_version_id: "",
@@ -77,69 +49,18 @@ export default function OperatorCampaignDetailPage() {
 
   useEffect(() => {
     load();
-    api.get<DocumentDetail[]>("/documents").then(setDocuments);
     api.get<DirectoryGroup[]>("/admin/directory/groups").then(setGroups).catch(() => setGroups([]));
-    api.get<TargetUserOption[]>("/campaigns/_meta/users").then(setUsers);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  // Live count of who the current selection would reach (groups and people are
-  // de-duplicated server-side, nested groups already expanded by the sync).
-  useEffect(() => {
-    if (!id || campaign?.status !== "DRAFT") return;
-    api
-      .post<{ population_count: number }>(`/campaigns/${id}/targets/preview`, {
-        all_users: allUsers,
-        group_ids: allUsers ? [] : selectedGroupIds,
-        user_ids: allUsers ? [] : selectedUserIds,
-      })
-      .then((r) => setRecipientCount(r.population_count))
-      .catch(() => setRecipientCount(null));
-  }, [id, campaign?.status, allUsers, selectedGroupIds, selectedUserIds]);
-
-  const visibleGroups = useMemo(() => {
-    const q = groupQuery.trim().toLowerCase();
-    return (groups ?? [])
-      .filter((g) => g.active && (!q || g.name.toLowerCase().includes(q)))
-      .sort((a, b) => b.member_count - a.member_count || a.name.localeCompare(b.name));
-  }, [groups, groupQuery]);
-
   if (!campaign) return <p className="muted">Chargement…</p>;
-
-  const toggle = (list: string[], value: string, setList: (v: string[]) => void) => {
-    setList(list.includes(value) ? list.filter((v) => v !== value) : [...list, value]);
-  };
+  // Not launched yet: it is still being prepared, in Signer.
+  if (campaign.status === "DRAFT") return <Navigate to={`/sign/${campaign.id}`} replace />;
 
   const publishedAndUsed = campaign.documents.map((d) => ({
     id: d.version_id,
     label: `${d.title} — v${d.version_label}`,
   }));
-
-  // Nobody chosen yet means the usual case: everyone targeted signs their own copy.
-  const hasList = campaign.roles.length === 0 || campaign.roles.some((r) => r.mode === "EACH");
-
-  const launch = async () => {
-    const problem = policyProblem(policy);
-    if (problem) {
-      setError(problem);
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      await api.post(`/campaigns/${id}/launch`, {
-        ...buildPolicyPayload(policy),
-        all_users: allUsers,
-        group_ids: allUsers ? [] : selectedGroupIds,
-        user_ids: allUsers ? [] : selectedUserIds,
-      });
-      load();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Le lancement a échoué.");
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const remind = async () => {
     await api.post(`/campaigns/${id}/remind`);
@@ -159,7 +80,7 @@ export default function OperatorCampaignDetailPage() {
   return (
     <div className="stack">
       <Link to="/campaigns" className="back-link">
-        <ArrowLeft size={14} aria-hidden="true" /> Retour aux campagnes
+        <ArrowLeft size={14} aria-hidden="true" /> Suivi
       </Link>
 
       <div className="page-title-row">
@@ -176,89 +97,6 @@ export default function OperatorCampaignDetailPage() {
             ))}
           </ul>
         </div>
-      )}
-
-      {campaign.status === "DRAFT" && (
-        <>
-          <CampaignSigners campaign={campaign} users={users} onSaved={load} />
-          <CampaignDocuments campaign={campaign} library={documents} onChanged={load} />
-
-          <div className="card">
-            <div className="card-title">3. {hasList ? "Pour quelles personnes ?" : "Récapitulatif"}</div>
-            {!hasList && (
-              <p className="muted small">
-                Chaque signataire est une personne précise : personne d&apos;autre n&apos;est sollicité.
-              </p>
-            )}
-            {hasList && (
-            <>
-            <label className="consent-row">
-              <input type="checkbox" checked={allUsers} onChange={(e) => setAllUsers(e.target.checked)} />
-              <span>Tous les utilisateurs</span>
-            </label>
-
-            {!allUsers && (
-              <>
-                <div className="field-label">
-                  Groupes de l&apos;annuaire
-                  {selectedGroupIds.length > 0 && (
-                    <span className="muted small"> — {selectedGroupIds.length} sélectionné(s)</span>
-                  )}
-                </div>
-                <input
-                  type="search"
-                  placeholder="Rechercher un groupe (ex : SRE)…"
-                  aria-label="Rechercher un groupe"
-                  value={groupQuery}
-                  onChange={(e) => setGroupQuery(e.target.value)}
-                />
-                {visibleGroups.length === 0 && <p className="muted small">Aucun groupe ne correspond.</p>}
-                <div className="chip-list">
-                  {visibleGroups.map((g) => (
-                    <button
-                      key={g.id}
-                      type="button"
-                      className={`chip${selectedGroupIds.includes(g.id) ? " chip--active" : ""}`}
-                      onClick={() => toggle(selectedGroupIds, g.id, setSelectedGroupIds)}
-                    >
-                      {g.name} · {g.member_count}
-                      <span className="muted small"> {g.source}</span>
-                    </button>
-                  ))}
-                </div>
-
-                <div className="field-label">Utilisateurs supplémentaires</div>
-                <div className="chip-list">
-                  {users?.map((u) => (
-                    <button
-                      key={u.id}
-                      type="button"
-                      className={`chip${selectedUserIds.includes(u.id) ? " chip--active" : ""}`}
-                      onClick={() => toggle(selectedUserIds, u.id, setSelectedUserIds)}
-                    >
-                      {u.display_name}
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-
-            <p className="muted" data-testid="recipient-count">
-              {recipientCount === null
-                ? ""
-                : `${recipientCount} destinataire(s) seront sollicités (doublons éliminés).`}
-            </p>
-            </>
-            )}
-
-            <PolicyFields value={policy} onChange={setPolicy} />
-
-            {error && <p className="error-text">{error}</p>}
-            <button className="button button--primary" onClick={launch} disabled={busy}>
-              <Rocket size={14} aria-hidden="true" /> Lancer la campagne
-            </button>
-          </div>
-        </>
       )}
 
       {campaign.status === "ACTIVE" && (
