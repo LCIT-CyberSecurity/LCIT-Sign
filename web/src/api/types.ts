@@ -309,3 +309,35 @@ export interface CampaignPolicies {
   renewal_every: number | null;
   renewal_unit: "DAYS" | "MONTHS" | null;
 }
+
+export interface SignedRow {
+  id: string;
+  display_id: string;
+  signed_at: string;
+  document_title: string;
+  version_label: string;
+  campaign_id: string | null;
+  campaign_name: string | null;
+  signer_name: string;
+  signer_email: string;
+  signed_file_sha256: string;
+}
+
+export interface OutstandingRow {
+  id: string;
+  status: AssignmentStatus;
+  document_title: string;
+  version_label: string;
+  campaign_id: string;
+  campaign_name: string;
+  signer_name: string;
+  signer_email: string;
+  deadline: string | null;
+}
+
+export interface SignedDocumentsResponse {
+  campaigns: { id: string; name: string; status: CampaignStatus }[];
+  signed: SignedRow[];
+  outstanding: OutstandingRow[];
+  totals: { signed: number; outstanding: number; waiting: number };
+}
