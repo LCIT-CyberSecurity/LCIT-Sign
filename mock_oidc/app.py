@@ -49,6 +49,27 @@ TEST_USERS = {
         "family_name": "Durand",
         "group": "Comptabilite",
     },
+    "u-compta-2": {
+        "sub": "u-compta-2",
+        "email": "manon.faure@lcit-test.local",
+        "given_name": "Manon",
+        "family_name": "Faure",
+        "group": "Comptabilite",
+    },
+    "u-compta-3": {
+        "sub": "u-compta-3",
+        "email": "nicolas.blanc@lcit-test.local",
+        "given_name": "Nicolas",
+        "family_name": "Blanc",
+        "group": "Comptabilite",
+    },
+    "u-compta-4": {
+        "sub": "u-compta-4",
+        "email": "olivia.henry@lcit-test.local",
+        "given_name": "Olivia",
+        "family_name": "Henry",
+        "group": "Comptabilite",
+    },
     "u-sales-1": {
         "sub": "u-sales-1",
         "email": "diane.leroy@lcit-test.local",

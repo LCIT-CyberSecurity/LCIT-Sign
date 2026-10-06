@@ -604,3 +604,50 @@ test("a Word document is refused in words when the converter is not there", asyn
   // Refused in words (here it is not even a real document); never a blank failure.
   await expect(page.getByTestId("upload-results")).toContainText(/pas un document|pas activée/);
 });
+
+test("a whole team is asked, everyone signs, and everyone gets their own signed document", async ({ browser }) => {
+  const stamp = Date.now();
+  const title = `Compta ${stamp}`;
+  const context = await browser.newContext();
+  const op = await context.newPage();
+  await loginAs(op, "Diane");
+  const api = context.request;
+  const created = await api.post("/api/documents", {
+    multipart: {
+      title,
+      version_label: "1.0",
+      file: { name: "c.pdf", mimeType: "application/pdf", buffer: MINIMAL_PDF },
+    },
+  });
+  const versionId = (await created.json()).versions[0].id as string;
+  await api.put(`/api/documents/versions/${versionId}/fields`, {
+    data: { fields: [{ page: 1, x: 0.1, y: 0.7, width: 0.3, height: 0.06, kind: "SIGNATURE", role: 1 }] },
+  });
+  const groups = (await (await api.get("/api/admin/directory/groups")).json()) as { id: string; name: string }[];
+  const team = groups.find((g) => /^Comptabilit/.test(g.name));
+  expect(team, "the Comptabilité team must exist (seed)").toBeTruthy();
+  const campaign = await (await api.post("/api/campaigns", { data: { name: title } })).json();
+  await api.post(`/api/campaigns/${campaign.id}/documents`, { data: { document_version_id: versionId } });
+  const launched = await api.post(`/api/campaigns/${campaign.id}/launch`, { data: { group_ids: [team!.id] } });
+  expect(launched.status()).toBe(200);
+  await context.close();
+
+  // The four people of the team, one after the other: each signs and finds the signed PDF.
+  for (const first of ["Charlie", "Manon", "Nicolas", "Olivia"]) {
+    const visitor = await browser.newContext();
+    const page = await visitor.newPage();
+    await loginAs(page, first);
+    await page.getByRole("link", { name: new RegExp(title) }).click();
+    await page.getByRole("checkbox").check();
+    await page.getByRole("button", { name: /^Signer/ }).click();
+    await expect(page.getByText("Document signé")).toBeVisible();
+
+    await page.goto("/");
+    const mine = page.locator(".card").filter({ hasText: title }).filter({ has: page.getByRole("link", { name: "PDF signé" }) });
+    await expect(mine).toHaveCount(1);
+    const pdf = await visitor.request.get((await mine.getByRole("link", { name: "PDF signé" }).getAttribute("href"))!);
+    expect(pdf.status(), `${first} downloads the signed PDF`).toBe(200);
+    expect((await pdf.body()).subarray(0, 4).toString()).toBe("%PDF");
+    await visitor.close();
+  }
+});

@@ -26,7 +26,7 @@ BASE_URL = os.environ.get("LCIT_SIGN_BASE_URL", "http://localhost:4180")
 # The mock OIDC provider's identities (mock_oidc/app.py).
 ADMIN = "u-direction-1"
 OPERATOR = "u-sales-1"
-SIGNERS = ("u-it-1", "u-rh-1", "u-compta-1")
+SIGNERS = ("u-it-1", "u-rh-1", "u-compta-1", "u-compta-2", "u-compta-3", "u-compta-4")
 
 
 def login(sub: str, base_url: str = BASE_URL) -> httpx.Client:
