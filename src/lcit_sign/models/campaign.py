@@ -74,6 +74,10 @@ class Campaign(Base):
     # once scheduled it is what the worker will run when the start date comes.
     scheduled_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     launch_request: Mapped[dict[str, object] | None] = mapped_column(JSON)
+    # How the signatures are made: "LOCAL" (LCIT Sign's own) or "DOCUSIGN" (eIDAS, by DocuSign).
+    signature_method: Mapped[str] = mapped_column(
+        String(20), default="LOCAL", server_default="LOCAL"
+    )
     deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

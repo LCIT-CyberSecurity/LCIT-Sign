@@ -165,6 +165,28 @@ services:
       retries: 5
     restart: unless-stopped
 
+  # Dev-only fake DocuSign (test stack): the API of DocuSign that LCIT Sign uses, and a page where
+  # the tester plays the signer. No legal value. Started with the dev-sso profile.
+  mock-docusign:
+    build:
+      context: mock_docusign
+    image: ${LCIT_SIGN_PREFIX:-lcit-sign}-mock-docusign:latest
+    container_name: ${LCIT_SIGN_PREFIX:-lcit-sign}-mock-docusign
+    profiles: ["dev-sso"]
+    environment:
+      MOCK_DOCUSIGN_PUBLIC_BASE_URL: http://mock-docusign:8091
+    volumes:
+      - lcit-sign-mock-docusign:/data
+    expose:
+      - "8091"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8091/healthz', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      start_period: 5s
+      retries: 5
+    restart: unless-stopped
+
 networks:
   # No route to the outside and no other container: only the API can talk to the converter.
   converter-net:
@@ -177,3 +199,5 @@ volumes:
     name: ${LCIT_SIGN_PREFIX:-lcit-sign}-postgres-data
   lcit-sign-data:
     name: ${LCIT_SIGN_PREFIX:-lcit-sign}-data
+  lcit-sign-mock-docusign:
+    name: ${LCIT_SIGN_PREFIX:-lcit-sign}-mock-docusign
