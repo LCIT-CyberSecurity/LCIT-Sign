@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session as DbSession
 
-from lcit_sign.api.documents import publish_draft
+from lcit_sign.api.documents import check_publishable, publish_draft
 from lcit_sign.config import Settings
 from lcit_sign.deps import get_current_user, get_db, require_roles
 from lcit_sign.models.campaign import (
@@ -34,6 +34,13 @@ from lcit_sign.models.report import Report
 from lcit_sign.models.signature import Signature
 from lcit_sign.models.user import Role, User
 from lcit_sign.services.audit import append_audit_event
+from lcit_sign.services.campaign_changes import (
+    ChangeError,
+    add_recipients,
+    is_released,
+    release_document,
+    remove_recipient,
+)
 from lcit_sign.services.campaign_launch import create_assignments
 from lcit_sign.services.campaign_roles import (
     RoleError,
@@ -48,6 +55,7 @@ from lcit_sign.services.campaign_roles import (
 )
 from lcit_sign.services.notification_queue import enqueue_notification
 from lcit_sign.services.storage import StorageService
+from lcit_sign.time_utils import ensure_utc
 
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])
 
@@ -166,6 +174,8 @@ class SignersIn(BaseModel):
 class LaunchRequest(TargetRequest):
     # Who is "Signataire N": a named person, or the list of recipients below.
     roles: list[RoleIn] = []
+    # When it starts: nothing or a past date = now; a future date = scheduled.
+    start_at: datetime | None = None
     deadline: datetime | None = None
     # Reminder policy (spec §50) and renewal (spec §51); all optional.
     reminder_first_days: int | None = Field(default=None, ge=0, le=365)
@@ -242,6 +252,7 @@ def _documents_payload(db: DbSession, campaign: Campaign) -> list[dict[str, Any]
                 "version_label": version.version_label,
                 "status": version.status.value,
                 "elements": placed,
+                "released": is_released(db, campaign, version.id),
             }
         )
     return sorted(result, key=lambda d: d["title"].lower())
@@ -287,6 +298,9 @@ def _campaign_payload(campaign: Campaign, db: DbSession) -> dict[str, Any]:
         "target_mode": campaign.target_mode,
         "created_at": campaign.created_at.isoformat(),
         "launch_at": campaign.launch_at.isoformat() if campaign.launch_at else None,
+        "scheduled_start": (
+            campaign.scheduled_start.isoformat() if campaign.scheduled_start else None
+        ),
         "deadline": campaign.deadline.isoformat() if campaign.deadline else None,
         "closed_at": campaign.closed_at.isoformat() if campaign.closed_at else None,
         "delete_blockers": campaign_delete_blockers(db, campaign),
@@ -328,6 +342,26 @@ def _get_draft_campaign(db: DbSession, campaign_id: uuid.UUID) -> Campaign:
     return campaign
 
 
+def _get_editable_campaign(db: DbSession, campaign_id: uuid.UUID) -> Campaign:
+    """A campaign still being prepared, or already sent and running (people and
+    documents can be added to it; what was signed stays)."""
+    campaign = db.get(Campaign, campaign_id)
+    if campaign is None:
+        raise HTTPException(404, "Campaign not found")
+    if campaign.status not in (CampaignStatus.DRAFT, CampaignStatus.ACTIVE):
+        raise HTTPException(409, "Cette campagne est terminée : elle ne se modifie plus")
+    return campaign
+
+
+def _get_active_campaign(db: DbSession, campaign_id: uuid.UUID) -> Campaign:
+    campaign = db.get(Campaign, campaign_id)
+    if campaign is None:
+        raise HTTPException(404, "Campaign not found")
+    if campaign.status != CampaignStatus.ACTIVE:
+        raise HTTPException(409, "Seule une campagne en cours se modifie ainsi")
+    return campaign
+
+
 @router.post("/{campaign_id}/documents", status_code=201)
 def add_campaign_document(
     campaign_id: uuid.UUID,
@@ -335,7 +369,7 @@ def add_campaign_document(
     user: User = Depends(_manage),
     db: DbSession = Depends(get_db),
 ) -> dict[str, Any]:
-    campaign = _get_draft_campaign(db, campaign_id)
+    campaign = _get_editable_campaign(db, campaign_id)
     version = db.get(DocumentVersion, body.document_version_id)
     # A draft can be added and prepared from the campaign; it is published, frozen,
     # when the campaign is launched. A superseded or archived one is not offered.
@@ -366,8 +400,11 @@ def remove_campaign_document(
     user: User = Depends(_manage),
     db: DbSession = Depends(get_db),
 ) -> dict[str, Any]:
-    """Take a document back out of a campaign that has not started."""
-    campaign = _get_draft_campaign(db, campaign_id)
+    """Take a document back out of a campaign: one not sent yet can always go; once
+    its copies were sent it is part of the campaign."""
+    campaign = _get_editable_campaign(db, campaign_id)
+    if is_released(db, campaign, version_id):
+        raise HTTPException(409, "Ce document est déjà envoyé : il ne se retire plus.")
     link = db.get(CampaignDocument, (campaign.id, version_id))
     if link is None:
         raise HTTPException(404, "This document is not in the campaign")
@@ -422,17 +459,17 @@ def preview_targets(
     return {"population_count": len(population), "user_ids": [str(u) for u in population]}
 
 
-@router.post("/{campaign_id}/launch")
-def launch_campaign(
-    request: Request,
-    campaign_id: uuid.UUID,
-    body: LaunchRequest,
-    user: User = Depends(_manage),
-    db: DbSession = Depends(get_db),
-) -> dict[str, Any]:
-    campaign = _get_draft_campaign(db, campaign_id)
+def _check_launch(
+    db: DbSession, storage: StorageService, campaign: Campaign, body: LaunchRequest
+) -> list[RoleSpec]:
+    """Everything that can refuse a launch, without changing anything. Returns the
+    checked signers."""
     if not campaign.documents:
         raise HTTPException(400, "Campaign has no documents to sign")
+    for link in campaign.documents:
+        draft = db.get(DocumentVersion, link.document_version_id)
+        if draft is not None and draft.status == DocumentVersionStatus.DRAFT:
+            check_publishable(db, storage, draft)
 
     # The signers chosen on the draft; a launch request may still give them itself.
     given = [RoleSpec(r.role, r.mode, r.user_id, r.label) for r in body.roles] or [
@@ -444,12 +481,31 @@ def launch_campaign(
     except RoleError as exc:
         raise HTTPException(422, str(exc)) from exc
     has_list = any(spec.mode == "EACH" for spec in role_specs)
-
     population = _resolve_population(
         db, all_users=body.all_users, group_ids=body.group_ids, user_ids=body.user_ids
     )
     if has_list and not population:
         raise HTTPException(400, "Target population is empty")
+    return role_specs
+
+
+def execute_launch(
+    db: DbSession,
+    *,
+    settings: Settings,
+    storage: StorageService,
+    user: User,
+    campaign: Campaign,
+    body: LaunchRequest,
+) -> None:
+    """Send the campaign: freeze its drafts, make the copies, notify the first signers.
+    Run at once by the launch button, or later by the worker for a scheduled start.
+    Raises HTTPException; the caller commits."""
+    role_specs = _check_launch(db, storage, campaign, body)
+    has_list = any(spec.mode == "EACH" for spec in role_specs)
+    population = _resolve_population(
+        db, all_users=body.all_users, group_ids=body.group_ids, user_ids=body.user_ids
+    )
     if not has_list:
         # Every signer is a named person: nobody else is asked.
         population = []
@@ -463,9 +519,7 @@ def launch_campaign(
         for target_user_id in body.user_ids:
             db.add(CampaignTargetUser(campaign_id=campaign.id, user_id=target_user_id))
 
-    settings: Settings = request.app.state.settings
     # The drafts prepared for this campaign are published (frozen) now.
-    storage: StorageService = request.app.state.storage
     for campaign_document in campaign.documents:
         pending_version = db.get(DocumentVersion, campaign_document.document_version_id)
         if pending_version is None or pending_version.status not in (
@@ -485,6 +539,8 @@ def launch_campaign(
 
     campaign.status = CampaignStatus.ACTIVE
     campaign.launch_at = datetime.now(UTC)
+    campaign.scheduled_start = None
+    campaign.launch_request = None
     if body.deadline:
         campaign.deadline = body.deadline
 
@@ -493,14 +549,157 @@ def launch_campaign(
         target_type="campaign", target_id=str(campaign.id), campaign_id=campaign.id,
         metadata={"population": len(population), "documents": len(campaign.documents)},
     )
+
+
+@router.post("/{campaign_id}/launch")
+def launch_campaign(
+    request: Request,
+    campaign_id: uuid.UUID,
+    body: LaunchRequest,
+    user: User = Depends(_manage),
+    db: DbSession = Depends(get_db),
+) -> dict[str, Any]:
+    campaign = _get_draft_campaign(db, campaign_id)
+    now = datetime.now(UTC)
+    if body.start_at is not None and ensure_utc(body.start_at) > now + timedelta(minutes=1):
+        # A later start: check everything now, so a refusal is known today and not on the
+        # day; keep the request as filled, and let the worker start it on its date.
+        _check_launch(db, request.app.state.storage, campaign, body)
+        if body.deadline is not None and ensure_utc(body.deadline) <= ensure_utc(body.start_at):
+            raise HTTPException(422, "L'échéance doit être après la date de début.")
+        campaign.status = CampaignStatus.SCHEDULED
+        campaign.scheduled_start = ensure_utc(body.start_at)
+        campaign.launch_request = body.model_dump(mode="json")
+        append_audit_event(
+            db, action="CAMPAIGN_SCHEDULED", actor_id=user.id,
+            target_type="campaign", target_id=str(campaign.id), campaign_id=campaign.id,
+            metadata={"start": campaign.scheduled_start.isoformat()},
+        )
+        db.commit()
+        return _campaign_payload(campaign, db)
+
+    execute_launch(
+        db,
+        settings=request.app.state.settings,
+        storage=request.app.state.storage,
+        user=user,
+        campaign=campaign,
+        body=body,
+    )
     db.commit()
     return _campaign_payload(campaign, db)
+
+
+class RemindRequest(BaseModel):
+    """Remind only these (rows of the follow-up table, or whole people); empty = everyone
+    still outstanding."""
+
+    assignment_ids: list[uuid.UUID] = []
+    user_ids: list[uuid.UUID] = []
+
+
+class RecipientsIn(TargetRequest):
+    pass
+
+
+@router.post("/{campaign_id}/recipients")
+def add_campaign_recipients(
+    request: Request,
+    campaign_id: uuid.UUID,
+    body: RecipientsIn,
+    user: User = Depends(_manage),
+    db: DbSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Ask more people on a campaign already sent (groups, users or everyone)."""
+    campaign = _get_active_campaign(db, campaign_id)
+    population = _resolve_population(
+        db, all_users=body.all_users, group_ids=body.group_ids, user_ids=body.user_ids
+    )
+    if not population:
+        raise HTTPException(400, "Target population is empty")
+    settings: Settings = request.app.state.settings
+    try:
+        added = add_recipients(
+            db, campaign, population, public_base_url=settings.public_base_url
+        )
+    except ChangeError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    append_audit_event(
+        db, action="CAMPAIGN_UPDATED", actor_id=user.id,
+        target_type="campaign", target_id=str(campaign.id), campaign_id=campaign.id,
+        metadata={"change": "recipients_added", "count": added},
+    )
+    db.commit()
+    return {"added": added, **_campaign_payload(campaign, db)}
+
+
+@router.delete("/{campaign_id}/recipients/{target_user_id}")
+def remove_campaign_recipient(
+    campaign_id: uuid.UUID,
+    target_user_id: uuid.UUID,
+    user: User = Depends(_manage),
+    db: DbSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Stop asking someone: what they have not signed is cancelled, what they signed stays."""
+    campaign = _get_active_campaign(db, campaign_id)
+    try:
+        cancelled = remove_recipient(db, campaign, target_user_id)
+    except ChangeError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    append_audit_event(
+        db, action="CAMPAIGN_UPDATED", actor_id=user.id,
+        target_type="campaign", target_id=str(campaign.id), campaign_id=campaign.id,
+        metadata={"change": "recipient_removed", "user_id": str(target_user_id),
+                  "cancelled": cancelled},
+    )
+    db.commit()
+    return {"cancelled": cancelled, **_campaign_payload(campaign, db)}
+
+
+@router.post("/{campaign_id}/documents/{version_id}/release")
+def release_campaign_document(
+    request: Request,
+    campaign_id: uuid.UUID,
+    version_id: uuid.UUID,
+    user: User = Depends(_manage),
+    db: DbSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Send a document added after the launch: it is frozen (published) and its
+    copies go to the signers, in order."""
+    campaign = _get_active_campaign(db, campaign_id)
+    link = db.get(CampaignDocument, (campaign.id, version_id))
+    version = db.get(DocumentVersion, version_id)
+    if link is None or version is None:
+        raise HTTPException(404, "This document is not in the campaign")
+    if is_released(db, campaign, version_id):
+        raise HTTPException(409, "Ce document est déjà envoyé.")
+    settings: Settings = request.app.state.settings
+    if version.status == DocumentVersionStatus.DRAFT:
+        publish_draft(db, request.app.state.storage, user, version)
+    elif version.status != DocumentVersionStatus.PUBLISHED:
+        raise HTTPException(409, "Ce document n'est plus utilisable")
+    try:
+        copies = release_document(
+            db, campaign, version_id, public_base_url=settings.public_base_url
+        )
+    except ChangeError as exc:
+        db.rollback()
+        raise HTTPException(409, str(exc)) from exc
+    append_audit_event(
+        db, action="CAMPAIGN_UPDATED", actor_id=user.id,
+        target_type="campaign", target_id=str(campaign.id), campaign_id=campaign.id,
+        document_id=version.document_id,
+        metadata={"change": "document_sent", "copies": copies},
+    )
+    db.commit()
+    return {"copies": copies, **_campaign_payload(campaign, db)}
 
 
 @router.post("/{campaign_id}/remind")
 def remind_campaign(
     request: Request,
     campaign_id: uuid.UUID,
+    body: RemindRequest | None = None,
     user: User = Depends(_manage),
     db: DbSession = Depends(get_db),
 ) -> dict[str, Any]:
@@ -515,14 +714,22 @@ def remind_campaign(
         raise HTTPException(409, "Only an active campaign can send reminders")
 
     settings: Settings = request.app.state.settings
-    outstanding = db.execute(
-        select(SignatureAssignment, User)
-        .join(User, SignatureAssignment.user_id == User.id)
-        .where(
-            SignatureAssignment.campaign_id == campaign.id,
-            SignatureAssignment.status.in_([AssignmentStatus.PENDING, AssignmentStatus.VIEWED]),
-        )
-    ).all()
+    outstanding: list[Any] = list(
+        db.execute(
+            select(SignatureAssignment, User)
+            .join(User, SignatureAssignment.user_id == User.id)
+            .where(
+                SignatureAssignment.campaign_id == campaign.id,
+                SignatureAssignment.status.in_([AssignmentStatus.PENDING, AssignmentStatus.VIEWED]),
+            )
+        ).all()
+    )
+    if body and (body.assignment_ids or body.user_ids):
+        outstanding = [
+            (a, u)
+            for a, u in outstanding
+            if a.id in set(body.assignment_ids) or u.id in set(body.user_ids)
+        ]
 
     now = datetime.now(UTC)
     for assignment, target_user in outstanding:
@@ -591,8 +798,8 @@ def campaign_delete_blockers(db: DbSession, campaign: Campaign) -> list[str]:
     first; one that holds signatures or reports is part of the evidence trail
     and can only be archived (signatures, reports and the audit trail name it)."""
     reasons: list[str] = []
-    if campaign.status == CampaignStatus.ACTIVE:
-        reasons.append("elle est en cours : annulez-la d'abord")
+    if campaign.status in (CampaignStatus.ACTIVE, CampaignStatus.SCHEDULED):
+        reasons.append("elle est en cours ou programmée : annulez-la d'abord")
     signed = db.execute(
         select(func.count()).select_from(Signature).where(Signature.campaign_id == campaign.id)
     ).scalar_one()
@@ -667,7 +874,11 @@ def cancel_campaign(
     campaign = db.get(Campaign, campaign_id)
     if campaign is None:
         raise HTTPException(404, "Campaign not found")
-    if campaign.status not in (CampaignStatus.DRAFT, CampaignStatus.ACTIVE):
+    if campaign.status not in (
+        CampaignStatus.DRAFT,
+        CampaignStatus.SCHEDULED,
+        CampaignStatus.ACTIVE,
+    ):
         raise HTTPException(409, "Campaign cannot be cancelled from its current status")
 
     campaign.status = CampaignStatus.CANCELLED

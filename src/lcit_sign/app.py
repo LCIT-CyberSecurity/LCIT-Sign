@@ -38,6 +38,7 @@ from lcit_sign.services.scheduler import (
     process_directory_syncs,
     process_reminders,
     process_renewals,
+    process_scheduled_starts,
 )
 from lcit_sign.services.storage import StorageService
 
@@ -76,6 +77,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             # same cycle. Each job commits on its own and is idempotent.
             jobs: list[tuple[str, Callable[[], object]]] = [
                 ("reminders", lambda: process_reminders(db, settings)),
+                (
+                    "scheduled starts",
+                    lambda: process_scheduled_starts(db, settings, app.state.storage),
+                ),
                 ("renewals", lambda: process_renewals(db, settings)),
                 ("directory sync", lambda: process_directory_syncs(db, settings, http_client)),
             ]

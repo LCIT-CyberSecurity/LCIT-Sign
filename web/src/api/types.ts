@@ -101,9 +101,11 @@ export interface CampaignDocumentInfo {
   version_label: string;
   status: string;
   elements: number;
+  /** Copies sent to the signers. A document added to a running campaign is not until released. */
+  released: boolean;
 }
 
-export type CampaignStatus = "DRAFT" | "ACTIVE" | "CLOSED" | "CANCELLED" | "ARCHIVED";
+export type CampaignStatus = "DRAFT" | "SCHEDULED" | "ACTIVE" | "CLOSED" | "CANCELLED" | "ARCHIVED";
 
 export interface Campaign {
   id: string;
@@ -113,8 +115,10 @@ export interface Campaign {
   target_mode: string;
   created_at: string;
   launch_at: string | null;
+  scheduled_start: string | null;
   deadline: string | null;
   closed_at: string | null;
+  delete_blockers: string[];
   document_version_ids: string[];
   roles_required: number;
   roles: CampaignRole[];

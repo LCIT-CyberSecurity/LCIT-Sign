@@ -14,6 +14,7 @@ const TARGETS: Record<string, string> = {
 
 const STATUS_LABELS: Record<string, string> = {
   DRAFT: "Brouillon",
+  SCHEDULED: "Programmée",
   ACTIVE: "Active",
   CLOSED: "Clôturée",
   CANCELLED: "Annulée",
@@ -106,7 +107,7 @@ export default function OperatorCampaignsPage() {
                       "—"
                     )}
                   </td>
-                  <td>{formatDate(c.launch_at)}</td>
+                  <td>{c.status === "SCHEDULED" ? `dès le ${formatDate(c.scheduled_start)}` : formatDate(c.launch_at)}</td>
                   <td>{formatDate(c.deadline)}</td>
                 </tr>
               );

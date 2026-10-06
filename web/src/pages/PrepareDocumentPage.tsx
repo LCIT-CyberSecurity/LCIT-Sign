@@ -171,7 +171,11 @@ export default function PrepareDocumentPage() {
     if (!party) return `Position ${role}`;
     return party.mode === "EACH" ? "Chaque destinataire" : party.user_display_name ?? `Position ${role}`;
   };
-  const backTo = campaignId ? `/sign/${campaignId}?step=2` : "/sign";
+  const backTo = !campaignId
+    ? "/sign"
+    : campaign && campaign.status !== "DRAFT"
+      ? `/campaigns/${campaignId}`
+      : `/sign/${campaignId}?step=2`;
   const selected = fields.find((f) => f.id === selectedId) ?? null;
 
   const update = useCallback((fieldId: string, patch: Partial<EditorField>) => {

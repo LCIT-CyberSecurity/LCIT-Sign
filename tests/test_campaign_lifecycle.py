@@ -18,13 +18,17 @@ def launched(tmp_path, oidc):
     return app, admin, operator, signer1, signer2, version_id, campaign
 
 
-def test_a_launched_campaign_cannot_be_edited(tmp_path, mock_oidc_base_url):
+def test_a_launched_campaign_keeps_what_was_sent_and_cannot_be_relaunched(
+    tmp_path, mock_oidc_base_url
+):
     app, admin, operator, s1, s2, version_id, campaign = launched(tmp_path, mock_oidc_base_url)
     cid = campaign["id"]
-    # No more documents, no re-launch: to change it, cancel and start another.
-    assert operator.post(
-        f"/api/campaigns/{cid}/documents", json={"document_version_id": version_id}
-    ).status_code == 409
+    # People and documents can be added later (see test_campaign_changes), but what was
+    # already sent is part of the campaign, and it is never launched twice.
+    link = {"document_version_id": version_id}
+    again = operator.post(f"/api/campaigns/{cid}/documents", json=link)
+    assert again.status_code == 201
+    assert len(operator.get(f"/api/campaigns/{cid}").json()["documents"]) == 1
     assert operator.delete(f"/api/campaigns/{cid}/documents/{version_id}").status_code == 409
     relaunch = operator.post(f"/api/campaigns/{cid}/launch", json={"all_users": True})
     assert relaunch.status_code == 409

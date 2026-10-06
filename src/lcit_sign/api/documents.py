@@ -208,12 +208,8 @@ async def create_document_version(
     return _version_payload(version)
 
 
-def publish_draft(
-    db: DbSession, storage: StorageService, user: User, version: DocumentVersion
-) -> None:
-    """Freeze a draft version (file and prepared elements) as the published one.
-    Used by the Publish button and by a campaign launch, which publishes the
-    drafts it was prepared with. Does not commit. Raises HTTPException."""
+def check_publishable(db: DbSession, storage: StorageService, version: DocumentVersion) -> None:
+    """What would refuse the publication of a draft. Raises HTTPException."""
     if version.status != DocumentVersionStatus.DRAFT:
         raise HTTPException(409, "Only a draft version can be published")
 
@@ -228,6 +224,15 @@ def publish_draft(
             "Ce document comporte un logo d'entreprise, mais aucun logo n'est configuré "
             "(Administration → Logo).",
         )
+
+
+def publish_draft(
+    db: DbSession, storage: StorageService, user: User, version: DocumentVersion
+) -> None:
+    """Freeze a draft version (file and prepared elements) as the published one.
+    Used by the Publish button and by a campaign launch, which publishes the
+    drafts it was prepared with. Does not commit. Raises HTTPException."""
+    check_publishable(db, storage, version)
 
     currently_published = db.execute(
         select(DocumentVersion).where(

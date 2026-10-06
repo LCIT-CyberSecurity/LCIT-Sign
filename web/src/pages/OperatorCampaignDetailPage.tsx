@@ -1,9 +1,18 @@
 import { useEffect, useState } from "react";
 import { Navigate, useParams, Link } from "react-router-dom";
 import { ArrowLeft, Bell, StopCircle, FileBarChart, Download } from "lucide-react";
-import { api } from "../api/client";
-import { describePolicies } from "../components/PolicyFields";
-import type { Campaign, CampaignAssignment, DirectoryGroup, ReportSummary } from "../api/types";
+import { api, ApiError } from "../api/client";
+import CampaignDocuments from "../components/CampaignDocuments";
+import ConfirmButton from "../components/ConfirmButton";
+import { describePolicies } from "../components/Schedule";
+import RecipientPicker, { NO_RECIPIENTS, type Recipients } from "../components/RecipientPicker";
+import type {
+  Campaign,
+  CampaignAssignment,
+  DirectoryGroup,
+  DocumentDetail,
+  ReportSummary,
+} from "../api/types";
 
 /** Follow-up of a launched campaign (the reporting): who signed, who still has to,
  *  who is waiting for an earlier signer, reminders, closing, reports. Preparing and
@@ -14,6 +23,12 @@ export default function OperatorCampaignDetailPage() {
   const [assignments, setAssignments] = useState<CampaignAssignment[] | null>(null);
   const [groups, setGroups] = useState<DirectoryGroup[] | null>(null);
   const [reports, setReports] = useState<ReportSummary[] | null>(null);
+  const [library, setLibrary] = useState<DocumentDetail[] | null>(null);
+  const [users, setUsers] = useState<{ id: string; email: string; display_name: string }[] | null>(null);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [adding, setAdding] = useState<Recipients>(NO_RECIPIENTS);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
   const [filters, setFilters] = useState({
     status: "",
     document_version_id: "",
@@ -50,6 +65,8 @@ export default function OperatorCampaignDetailPage() {
   useEffect(() => {
     load();
     api.get<DirectoryGroup[]>("/admin/directory/groups").then(setGroups).catch(() => setGroups([]));
+    api.get<DocumentDetail[]>("/documents").then(setLibrary);
+    api.get<{ id: string; email: string; display_name: string }[]>("/campaigns/_meta/users").then(setUsers);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
@@ -62,10 +79,70 @@ export default function OperatorCampaignDetailPage() {
     label: `${d.title} — v${d.version_label}`,
   }));
 
-  const remind = async () => {
-    await api.post(`/campaigns/${id}/remind`);
-    load();
+  const run = async (action: () => Promise<string>) => {
+    setNotice(null);
+    setProblem(null);
+    try {
+      setNotice(await action());
+      load();
+    } catch (err) {
+      setProblem(err instanceof ApiError ? err.message : "L'opération a échoué.");
+    }
   };
+
+  const plural = (n: number, one: string, many: string) => `${n} ${n > 1 ? many : one}`;
+
+  // Everyone still outstanding, or only some people / rows.
+  const remind = (body?: { assignment_ids?: string[]; user_ids?: string[] }) =>
+    run(async () => {
+      const done = await api.post<{ reminders_queued: number }>(`/campaigns/${id}/remind`, body);
+      setSelected([]);
+      return done.reminders_queued === 0
+        ? "Personne à relancer : ceux qui ont signé, ou dont ce n'est pas encore le tour, ne sont pas relancés."
+        : `${plural(done.reminders_queued, "relance envoyée", "relances envoyées")}.`;
+    });
+
+  const addPeople = () =>
+    run(async () => {
+      const done = await api.post<{ added: number }>(`/campaigns/${id}/recipients`, {
+        all_users: adding.allUsers,
+        group_ids: adding.allUsers ? [] : adding.groupIds,
+        user_ids: adding.allUsers ? [] : adding.userIds,
+      });
+      setAdding(NO_RECIPIENTS);
+      return done.added === 0
+        ? "Ces personnes étaient déjà dans la campagne."
+        : `${plural(done.added, "personne ajoutée", "personnes ajoutées")} : elles reçoivent leur exemplaire.`;
+    });
+
+  const removePerson = (userId: string, name: string) =>
+    run(async () => {
+      const done = await api.del<{ cancelled: number }>(`/campaigns/${id}/recipients/${userId}`);
+      return `${name} n'est plus sollicité(e) (${plural(done.cancelled, "exemplaire annulé", "exemplaires annulés")} ; ce qui était signé est conservé).`;
+    });
+
+  const cancelCampaign = () =>
+    run(async () => {
+      await api.post(`/campaigns/${id}/cancel`);
+      return "Campagne annulée : plus personne ne peut signer. Ce qui était signé est conservé.";
+    });
+  const archiveCampaign = () =>
+    run(async () => {
+      await api.post(`/campaigns/${id}/archive`);
+      return "Campagne archivée.";
+    });
+  const deleteCampaign = async () => {
+    setProblem(null);
+    try {
+      await api.del(`/campaigns/${id}`);
+      window.location.assign("/campaigns");
+    } catch (err) {
+      setProblem(err instanceof ApiError ? err.message : "La suppression a échoué.");
+    }
+  };
+
+  const asked = campaign.roles.find((r) => r.mode === "EACH");
+  const isOutstanding = (status: string) => status === "PENDING" || status === "VIEWED";
 
   const close = async () => {
     await api.post(`/campaigns/${id}/close`);
@@ -99,14 +176,74 @@ export default function OperatorCampaignDetailPage() {
         </div>
       )}
 
+      {notice && <p className="status-ok" role="status">{notice}</p>}
+      {problem && <p className="error-text" role="alert">{problem}</p>}
+
+      {campaign.status === "SCHEDULED" && (
+        <div className="card" data-testid="scheduled-card">
+          <div className="card-title">Programmée</div>
+          <p>
+            Cette campagne démarre le{" "}
+            <strong>{campaign.scheduled_start ? new Date(campaign.scheduled_start).toLocaleString("fr-FR") : ""}</strong>.
+            Personne n&apos;est prévenu avant. Pour la changer, annulez-la et recréez-en une.
+          </p>
+          <ConfirmButton confirmLabel="Oui, annuler la programmation" onConfirm={cancelCampaign}>
+            Annuler la programmation
+          </ConfirmButton>
+        </div>
+      )}
+
+      {campaign.status === "ACTIVE" && (
+        <div className="card" data-testid="edit-card">
+          <div className="card-title">Modifier la campagne en cours</div>
+          <p className="muted small">
+            Vous pouvez ajouter des personnes ou des documents, et ne plus solliciter quelqu&apos;un. Ce qui a
+            déjà été signé est conservé.
+          </p>
+          {asked && (
+            <>
+              <div className="field-label">Ajouter des personnes</div>
+              <RecipientPicker value={adding} onChange={setAdding} groups={groups} users={users} />
+              <div className="row-actions">
+                <button
+                  type="button"
+                  className="button button--secondary"
+                  onClick={() => void addPeople()}
+                  disabled={!adding.allUsers && adding.groupIds.length === 0 && adding.userIds.length === 0}
+                >
+                  Ajouter à la campagne
+                </button>
+              </div>
+            </>
+          )}
+          <div className="field-label">Documents</div>
+          <CampaignDocuments campaign={campaign} library={library} onChanged={load} active />
+        </div>
+      )}
+
       {campaign.status === "ACTIVE" && (
         <div className="button-row">
-          <button className="button button--secondary" onClick={remind}>
+          <button className="button button--secondary" onClick={() => void remind()}>
             <Bell size={14} aria-hidden="true" /> Relancer les retardataires
           </button>
+          {selected.length > 0 && (
+            <button
+              className="button button--secondary"
+              onClick={() => void remind({ assignment_ids: selected })}
+            >
+              <Bell size={14} aria-hidden="true" /> Relancer la sélection ({selected.length})
+            </button>
+          )}
           <button className="button button--secondary" onClick={close}>
             <StopCircle size={14} aria-hidden="true" /> Clôturer
           </button>
+          <ConfirmButton
+            className="button button--secondary"
+            confirmLabel="Oui, annuler la campagne"
+            onConfirm={cancelCampaign}
+          >
+            Annuler la campagne
+          </ConfirmButton>
         </div>
       )}
 
@@ -170,6 +307,7 @@ export default function OperatorCampaignDetailPage() {
           <table className="simple-table">
             <thead>
               <tr>
+                {campaign.status === "ACTIVE" && <th aria-label="Sélection" />}
                 <th>Destinataire</th>
                 <th>Groupe</th>
                 <th>Document</th>
@@ -183,6 +321,22 @@ export default function OperatorCampaignDetailPage() {
             <tbody>
               {assignments?.map((a) => (
                 <tr key={a.id}>
+                  {campaign.status === "ACTIVE" && (
+                    <td>
+                      {isOutstanding(a.status) && (
+                        <input
+                          type="checkbox"
+                          aria-label={`Sélectionner ${a.user_display_name}`}
+                          checked={selected.includes(a.id)}
+                          onChange={() =>
+                            setSelected(
+                              selected.includes(a.id) ? selected.filter((x) => x !== a.id) : [...selected, a.id],
+                            )
+                          }
+                        />
+                      )}
+                    </td>
+                  )}
                   <td>
                     {a.user_display_name}
                     <div className="muted small">{a.user_email}</div>
@@ -204,16 +358,61 @@ export default function OperatorCampaignDetailPage() {
                   <td>{a.signed_at ? new Date(a.signed_at).toLocaleDateString("fr-FR") : "—"}</td>
                   <td>{a.reminder_count}</td>
                   <td>
-                    {a.signature_id && (
-                      <Link className="button button--ghost button--sm" to={`/signatures/${a.signature_id}`}>
-                        Voir la signature
-                      </Link>
-                    )}
+                    <div className="row-actions">
+                      {a.signature_id && (
+                        <Link className="button button--ghost button--sm" to={`/signatures/${a.signature_id}`}>
+                          Voir la signature
+                        </Link>
+                      )}
+                      {campaign.status === "ACTIVE" && isOutstanding(a.status) && (
+                        <button
+                          type="button"
+                          className="button button--ghost button--sm"
+                          onClick={() => void remind({ assignment_ids: [a.id] })}
+                        >
+                          <Bell size={12} aria-hidden="true" /> Relancer
+                        </button>
+                      )}
+                      {campaign.status === "ACTIVE" &&
+                        asked &&
+                        a.role === asked.role &&
+                        a.status !== "SIGNED" &&
+                        a.status !== "CANCELLED" &&
+                        a.status !== "EXPIRED" && (
+                          <ConfirmButton
+                            confirmLabel="Ne plus solliciter"
+                            onConfirm={() => removePerson(a.user_id, a.user_display_name)}
+                          >
+                            Retirer
+                          </ConfirmButton>
+                        )}
+                    </div>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {(campaign.status === "CLOSED" || campaign.status === "CANCELLED") && (
+        <div className="button-row">
+          <button className="button button--secondary" onClick={() => void archiveCampaign()}>
+            Archiver
+          </button>
+        </div>
+      )}
+      {campaign.status !== "ACTIVE" && campaign.status !== "SCHEDULED" && (
+        <div className="button-row" data-testid="delete-row">
+          {campaign.delete_blockers.length === 0 ? (
+            <ConfirmButton confirmLabel="Oui, supprimer la campagne" onConfirm={deleteCampaign}>
+              Supprimer la campagne
+            </ConfirmButton>
+          ) : (
+            <p className="blocker-note" title="Une campagne signée fait partie de la preuve">
+              Conservée — {campaign.delete_blockers.join(" ; ")}
+            </p>
+          )}
         </div>
       )}
 

@@ -282,7 +282,7 @@ def test_a_draft_is_prepared_from_the_campaign_and_published_at_launch(
     shown = operator.get(f"/api/campaigns/{campaign['id']}").json()
     assert shown["documents"] == [
         {"version_id": version_id, "title": "Annexe", "version_label": "1.0",
-         "status": "DRAFT", "elements": 2}
+         "status": "DRAFT", "elements": 2, "released": False}
     ]
     # A draft cannot be signed yet...
     assert signer1.post(

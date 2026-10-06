@@ -31,6 +31,7 @@ from lcit_sign.services.directory_connectors import (
 )
 from lcit_sign.services.directory_sync import LocalConnector, sync_directory
 from lcit_sign.services.notification_queue import enqueue_notification
+from lcit_sign.services.storage import StorageService
 from lcit_sign.time_utils import ensure_utc
 
 logger = logging.getLogger(__name__)
@@ -267,3 +268,60 @@ def process_directory_syncs(
         sync_directory(db, connector)
         ran += 1
     return ran
+
+
+def process_scheduled_starts(
+    db: DbSession, settings: Settings, storage: StorageService, now: datetime | None = None
+) -> int:
+    """Start the campaigns whose start date has come, with the launch request the
+    operator filled in. One that can no longer start (a document removed, a logo gone,
+    nobody left to ask) goes back to being a draft, with the reason in the audit trail,
+    rather than being retried forever."""
+    # Imported here: the launch rules live with the API, which imports this module's siblings.
+    from fastapi import HTTPException
+
+    from lcit_sign.api.campaigns import LaunchRequest, execute_launch
+
+    now = now or datetime.now(UTC)
+    started = 0
+    due = list(
+        db.execute(
+            select(Campaign.id).where(
+                Campaign.status == CampaignStatus.SCHEDULED,
+                Campaign.scheduled_start <= now,
+            )
+        ).scalars()
+    )
+    for campaign_id in due:
+        campaign = db.get(Campaign, campaign_id)
+        if campaign is None or campaign.launch_request is None:
+            continue
+        owner = db.get(User, campaign.created_by)
+        try:
+            if owner is None:
+                raise HTTPException(409, "Le créateur de la campagne n'existe plus")
+            execute_launch(
+                db,
+                settings=settings,
+                storage=storage,
+                user=owner,
+                campaign=campaign,
+                body=LaunchRequest.model_validate(campaign.launch_request),
+            )
+            db.commit()
+            started += 1
+        except Exception as exc:
+            db.rollback()
+            reason = exc.detail if isinstance(exc, HTTPException) else type(exc).__name__
+            campaign = db.get(Campaign, campaign_id)
+            if campaign is not None:
+                campaign.status = CampaignStatus.DRAFT
+                campaign.scheduled_start = None
+                campaign.launch_request = None
+                append_audit_event(
+                    db, action="CAMPAIGN_START_FAILED", target_type="campaign",
+                    target_id=str(campaign_id), campaign_id=campaign_id, result="FAILURE",
+                    metadata={"reason": str(reason)},
+                )
+                db.commit()
+    return started

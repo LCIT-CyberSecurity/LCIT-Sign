@@ -1,16 +1,18 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ArrowLeft, ArrowRight, Check, Rocket } from "lucide-react";
 import { api, ApiError } from "../api/client";
 import CampaignDocuments from "../components/CampaignDocuments";
 import CampaignSigners from "../components/CampaignSigners";
-import PolicyFields, {
-  EMPTY_POLICY,
-  buildPolicyPayload,
-  describePolicies,
-  policyProblem,
-  type PolicyForm,
-} from "../components/PolicyFields";
+import ConfirmButton from "../components/ConfirmButton";
+import RecipientPicker from "../components/RecipientPicker";
+import ScheduleFields, {
+  EMPTY_SCHEDULE,
+  describeSchedule,
+  scheduleBody,
+  scheduleProblem,
+  type Schedule,
+} from "../components/Schedule";
 import type { Campaign, DirectoryGroup, DocumentDetail } from "../api/types";
 
 interface TargetUserOption {
@@ -38,10 +40,8 @@ export default function SignRequestPage() {
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [groupQuery, setGroupQuery] = useState("");
   const [recipientCount, setRecipientCount] = useState<number | null>(null);
-  const [policy, setPolicy] = useState<PolicyForm>(EMPTY_POLICY);
-  const [deadline, setDeadline] = useState("");
+  const [schedule, setSchedule] = useState<Schedule>(EMPTY_SCHEDULE);
 
   const load = () => {
     if (!id) return;
@@ -70,13 +70,6 @@ export default function SignRequestPage() {
       .catch(() => setRecipientCount(null));
   }, [id, campaign?.status, allUsers, selectedGroupIds, selectedUserIds]);
 
-  const visibleGroups = useMemo(() => {
-    const q = groupQuery.trim().toLowerCase();
-    return (groups ?? [])
-      .filter((g) => g.active && (!q || g.name.toLowerCase().includes(q)))
-      .sort((a, b) => b.member_count - a.member_count || a.name.localeCompare(b.name));
-  }, [groups, groupQuery]);
-
   if (!campaign) return <p className="muted">Chargement…</p>;
   // Already launched: it is followed in Campagnes.
   if (campaign.status !== "DRAFT") return <Navigate to={`/campaigns/${campaign.id}`} replace />;
@@ -84,6 +77,7 @@ export default function SignRequestPage() {
   // Nobody chosen yet means the usual case: everyone targeted signs their own copy.
   const hasList = campaign.roles.length === 0 || campaign.roles.some((r) => r.mode === "EACH");
 
+  const scheduled = scheduleBody(schedule).start_at !== null;
   const unprepared = campaign.documents.filter((d) => d.elements === 0);
   const blocker =
     hasList && recipientCount === 0
@@ -94,16 +88,8 @@ export default function SignRequestPage() {
         ? `Placez les éléments (signature, date, nom…) sur : ${unprepared.map((d) => d.title).join(", ")}.`
         : null;
 
-  const toggle = (list: string[], value: string, setList: (v: string[]) => void) => {
-    setList(list.includes(value) ? list.filter((v) => v !== value) : [...list, value]);
-  };
-
   const launch = async () => {
-    const problem =
-      policyProblem(policy) ??
-      (policy.reminderBeforeDeadlineDays.trim() && !deadline
-        ? "Pour une relance avant l'échéance, indiquez l'échéance."
-        : null);
+    const problem = scheduleProblem(schedule);
     if (problem) {
       setError(problem);
       return;
@@ -112,9 +98,7 @@ export default function SignRequestPage() {
     setError(null);
     try {
       await api.post(`/campaigns/${id}/launch`, {
-        ...buildPolicyPayload(policy),
-        // Last day to sign, until the end of that day (company time is the server's concern).
-        deadline: deadline ? new Date(`${deadline}T23:59:59`).toISOString() : null,
+        ...scheduleBody(schedule),
         all_users: allUsers,
         group_ids: allUsers ? [] : selectedGroupIds,
         user_ids: allUsers ? [] : selectedUserIds,
@@ -160,85 +144,29 @@ export default function SignRequestPage() {
               </p>
             )}
             {hasList && (
-            <>
-            <label className="consent-row">
-              <input type="checkbox" checked={allUsers} onChange={(e) => setAllUsers(e.target.checked)} />
-              <span>Tous les utilisateurs</span>
-            </label>
-
-            {!allUsers && (
-              <>
-                <div className="field-label">
-                  Groupes de l&apos;annuaire
-                  {selectedGroupIds.length > 0 && (
-                    <span className="muted small"> — {selectedGroupIds.length} sélectionné(s)</span>
-                  )}
-                </div>
-                <input
-                  type="search"
-                  placeholder="Rechercher un groupe (ex : SRE)…"
-                  aria-label="Rechercher un groupe"
-                  value={groupQuery}
-                  onChange={(e) => setGroupQuery(e.target.value)}
-                />
-                {visibleGroups.length === 0 && <p className="muted small">Aucun groupe ne correspond.</p>}
-                <div className="chip-list">
-                  {visibleGroups.map((g) => (
-                    <button
-                      key={g.id}
-                      type="button"
-                      className={`chip${selectedGroupIds.includes(g.id) ? " chip--active" : ""}`}
-                      onClick={() => toggle(selectedGroupIds, g.id, setSelectedGroupIds)}
-                    >
-                      {g.name} · {g.member_count}
-                      <span className="muted small"> {g.source}</span>
-                    </button>
-                  ))}
-                </div>
-
-                <div className="field-label">Utilisateurs supplémentaires</div>
-                <div className="chip-list">
-                  {users?.map((u) => (
-                    <button
-                      key={u.id}
-                      type="button"
-                      className={`chip${selectedUserIds.includes(u.id) ? " chip--active" : ""}`}
-                      onClick={() => toggle(selectedUserIds, u.id, setSelectedUserIds)}
-                    >
-                      {u.display_name}
-                    </button>
-                  ))}
-                </div>
-              </>
+              <RecipientPicker
+                value={{ allUsers, groupIds: selectedGroupIds, userIds: selectedUserIds }}
+                onChange={(next) => {
+                  setAllUsers(next.allUsers);
+                  setSelectedGroupIds(next.groupIds);
+                  setSelectedUserIds(next.userIds);
+                }}
+                groups={groups}
+                users={users}
+                count={recipientCount}
+              />
             )}
-
-            <p className="muted" data-testid="recipient-count">
-              {recipientCount === null
-                ? ""
-                : `${recipientCount} destinataire(s) seront sollicités (doublons éliminés).`}
-            </p>
-            </>
-            )}
-
           </div>
 
           <div className="card" data-testid="policy-card">
-            <div className="card-title">Échéance, relances et renouvellement</div>
+            <div className="card-title">Planning</div>
             <p className="muted small">
-              Facultatif. Les relances partent toutes seules vers ceux qui n&apos;ont pas encore signé ; le
-              renouvellement redemande les mêmes signatures à intervalle régulier.
+              Quand cela commence, jusqu&apos;à quand on peut signer, à quel rythme relancer ceux qui n&apos;ont
+              pas répondu, et s&apos;il faut redemander la signature régulièrement. Tout est facultatif.
             </p>
-            <label>
-              Échéance <span className="muted small">(dernier jour pour signer)</span>
-              <input
-                type="date"
-                value={deadline}
-                min={new Date().toISOString().slice(0, 10)}
-                onChange={(e) => setDeadline(e.target.value)}
-              />
-            </label>
-            <PolicyFields value={policy} onChange={setPolicy} />
+            <ScheduleFields value={schedule} onChange={setSchedule} />
           </div>
+
           <div className="row-actions">
             <button type="button" className="button button--primary" onClick={() => goTo(2)} disabled={campaign.roles.length === 0}>
               Suivant : les documents <ArrowRight size={14} aria-hidden="true" />
@@ -299,12 +227,11 @@ export default function SignRequestPage() {
               </div>
               <div>
                 <dt>
-                  Échéance et relances <button className="link-button" onClick={() => goTo(1)}>Modifier</button>
+                  Planning <button className="link-button" onClick={() => goTo(1)}>Modifier</button>
                 </dt>
                 <dd>
                   <ul className="plain-list">
-                    <li>{deadline ? `Échéance : ${new Date(deadline).toLocaleDateString("fr-FR")}` : "Sans échéance"}</li>
-                    {describePolicies(buildPolicyPayload(policy)).map((line) => (
+                    {describeSchedule(schedule).map((line) => (
                       <li key={line}>{line}</li>
                     ))}
                   </ul>
@@ -315,6 +242,18 @@ export default function SignRequestPage() {
 
           <div className="card" data-testid="launch-card">
             <div className="card-title">Envoyer</div>
+            <p data-testid="send-summary">
+              <strong>{campaign.documents.length}</strong> document(s) à signer par{" "}
+              <strong>
+                {campaign.roles
+                  .map((r) => (r.mode === "EACH" ? "chaque destinataire" : r.user_display_name))
+                  .join(", puis ")}
+              </strong>
+              .{" "}
+              {schedule.startDate && schedule.startDate > new Date().toISOString().slice(0, 10)
+                ? "L'envoi est programmé : personne n'est prévenu avant la date de début."
+                : "Les personnes concernées sont prévenues par e-mail dès l'envoi."}
+            </p>
             <p className="muted small">
               Une fois envoyée, la demande ne se modifie plus : pour changer quelque chose, on l&apos;annule
               et on en crée une autre. Elle se suit ensuite dans Suivi.
@@ -329,9 +268,16 @@ export default function SignRequestPage() {
               <button type="button" className="button button--ghost" onClick={() => goTo(2)}>
                 <ArrowLeft size={14} aria-hidden="true" /> Les documents
               </button>
-              <button className="button button--primary" onClick={launch} disabled={busy || blocker !== null}>
-                <Rocket size={14} aria-hidden="true" /> Envoyer pour signature
-              </button>
+              <ConfirmButton
+                className="button button--primary"
+                confirmClassName="button button--primary"
+                confirmLabel={scheduled ? "Oui, programmer" : "Oui, envoyer maintenant"}
+                disabled={busy || blocker !== null}
+                onConfirm={launch}
+              >
+                <Rocket size={14} aria-hidden="true" />{" "}
+                {scheduled ? "Programmer l'envoi" : "Envoyer pour signature"}
+              </ConfirmButton>
             </div>
           </div>
         </>

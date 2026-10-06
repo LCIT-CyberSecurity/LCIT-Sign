@@ -4,7 +4,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, UniqueConstraint, func
+from sqlalchemy import JSON, DateTime, Enum, ForeignKey, Integer, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from lcit_sign.database import Base
@@ -12,6 +12,8 @@ from lcit_sign.database import Base
 
 class CampaignStatus(enum.StrEnum):
     DRAFT = "DRAFT"
+    # Sent for a later start: nothing is asked of anyone until `scheduled_start`.
+    SCHEDULED = "SCHEDULED"
     ACTIVE = "ACTIVE"
     CLOSED = "CLOSED"
     CANCELLED = "CANCELLED"
@@ -67,6 +69,10 @@ class Campaign(Base):
     created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     launch_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # A start date in the future: the launch request is kept (as the operator filled it)
+    # and run by the worker when the date comes.
+    scheduled_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    launch_request: Mapped[dict[str, object] | None] = mapped_column(JSON)
     deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

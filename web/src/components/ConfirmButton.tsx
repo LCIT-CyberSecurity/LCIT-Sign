@@ -7,12 +7,15 @@ export default function ConfirmButton({
   confirmLabel = "Confirmer la suppression",
   onConfirm,
   className = "button button--ghost button--sm",
+  confirmClassName = "button button--danger button--sm",
   disabled,
 }: {
   children: ReactNode;
   confirmLabel?: string;
   onConfirm: () => void | Promise<void>;
   className?: string;
+  /** The look of the second click: danger by default, plain for a safe action (sending). */
+  confirmClassName?: string;
   disabled?: boolean;
 }) {
   const [asking, setAsking] = useState(false);
@@ -28,7 +31,7 @@ export default function ConfirmButton({
     <span className="confirm-inline">
       <button
         type="button"
-        className="button button--danger button--sm"
+        className={confirmClassName}
         onClick={async () => {
           await onConfirm();
           setAsking(false);

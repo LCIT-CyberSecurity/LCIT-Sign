@@ -19,10 +19,13 @@ export default function CampaignDocuments({
   campaign,
   library,
   onChanged,
+  active = false,
 }: {
   campaign: Campaign;
   library: DocumentDetail[] | null;
   onChanged: () => void;
+  /** The campaign is already sent: a document added now is prepared, then sent on its own. */
+  active?: boolean;
 }) {
   const navigate = useNavigate();
   const [pending, setPending] = useState<File[]>([]);
@@ -113,14 +116,15 @@ export default function CampaignDocuments({
                 v{d.version_label} —{" "}
                 {d.elements > 0 ? `${d.elements} élément(s) placé(s)` : ""}
               </span>
-              {d.elements === 0 && (
+              {active && d.released && <span className="badge badge--signed">Envoyé</span>}
+              {!(active && d.released) && d.elements === 0 && (
                 <span className="badge badge--pending" data-testid="to-prepare">
                   À préparer : placez la signature, la date, le nom…
                 </span>
               )}
             </span>
             <span className="row-actions">
-              {hasSigners ? (
+              {active && d.released ? null : hasSigners ? (
                 <Link
                   className={`button ${d.elements === 0 ? "button--primary" : "button--secondary"} button--sm`}
                   to={`/documents/versions/${d.version_id}/prepare?campaign=${campaign.id}`}
@@ -130,15 +134,35 @@ export default function CampaignDocuments({
               ) : (
                 <span className="muted small">Choisissez d&apos;abord qui signe</span>
               )}
-              <ConfirmButton
-                confirmLabel="Retirer de la campagne"
-                onConfirm={async () => {
-                  await api.del(`/campaigns/${campaign.id}/documents/${d.version_id}`);
-                  onChanged();
-                }}
-              >
-                Retirer
-              </ConfirmButton>
+              {active && !d.released && (
+                <ConfirmButton
+                  className="button button--primary button--sm"
+                  confirmClassName="button button--primary button--sm"
+                  confirmLabel="Oui, envoyer aux signataires"
+                  disabled={d.elements === 0}
+                  onConfirm={async () => {
+                    try {
+                      await api.post(`/campaigns/${campaign.id}/documents/${d.version_id}/release`);
+                      onChanged();
+                    } catch (err) {
+                      setError(err instanceof ApiError ? err.message : "L'envoi a échoué.");
+                    }
+                  }}
+                >
+                  Envoyer ce document
+                </ConfirmButton>
+              )}
+              {!(active && d.released) && (
+                <ConfirmButton
+                  confirmLabel="Retirer de la campagne"
+                  onConfirm={async () => {
+                    await api.del(`/campaigns/${campaign.id}/documents/${d.version_id}`);
+                    onChanged();
+                  }}
+                >
+                  Retirer
+                </ConfirmButton>
+              )}
             </span>
           </li>
         ))}

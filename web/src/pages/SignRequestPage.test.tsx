@@ -45,7 +45,9 @@ describe("SignRequestPage", () => {
     open(1);
     // Screen 1: who signs (in order), the mail merge list, deadline, reminders, renewal.
     expect(await screen.findByTestId("signers-card")).toBeInTheDocument();
-    expect(screen.getByTestId("policy-card")).toHaveTextContent("Relances automatiques");
+    expect(screen.getByTestId("policy-card")).toHaveTextContent("Date de début");
+    expect(screen.getByTestId("policy-card")).toHaveTextContent("Date d'échéance");
+    expect(screen.getByTestId("policy-card")).toHaveTextContent("Relance en cas de non-réponse");
     expect(screen.getByTestId("policy-card")).toHaveTextContent("Renouvellement");
     expect(screen.queryByTestId("campaign-documents")).toBeNull();
 
@@ -58,28 +60,59 @@ describe("SignRequestPage", () => {
     expect(screen.getByTestId("recap-card")).toHaveTextContent("Chaque destinataire");
   });
 
-  it("sets the deadline and reminders, then sends and goes to the follow-up", async () => {
+  it("refuses an impossible calendar, then sends with the four settings", async () => {
     open(1);
     await screen.findByTestId("policy-card");
-    // A reminder before the deadline needs a deadline.
-    fireEvent.change(screen.getByLabelText(/Relance avant échéance/), { target: { value: "2" } });
+    // A deadline already gone is caught before anything is sent.
+    fireEvent.change(screen.getByLabelText(/Date d.échéance/), { target: { value: "2000-01-01" } });
     fireEvent.click(stepButton(/Vérifier et envoyer/));
     await screen.findByTestId("recap-card");
     fireEvent.click(screen.getByRole("button", { name: /Envoyer pour signature/ }));
-    expect(await screen.findByText(/indiquez l.échéance/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Oui, envoyer maintenant/ }));
+    expect(await screen.findByText(/déjà passée/)).toBeInTheDocument();
     expect(vi.mocked(api.post).mock.calls.some((c) => c[0] === "/campaigns/c1/launch")).toBe(false);
 
     fireEvent.click(stepButton(/Signataires et relances/));
-    fireEvent.change(await screen.findByLabelText(/Échéance/), { target: { value: "2030-01-31" } });
+    fireEvent.change(await screen.findByLabelText(/Date d.échéance/), { target: { value: "2099-01-31" } });
+    fireEvent.change(screen.getByLabelText(/Relance en cas de non-réponse/), { target: { value: "7" } });
+    fireEvent.change(screen.getByLabelText(/^Renouvellement/), { target: { value: "12" } });
     fireEvent.click(stepButton(/Vérifier et envoyer/));
     await screen.findByTestId("recap-card");
-    expect(screen.getByTestId("recap-card")).toHaveTextContent("Relance 2 jour(s) avant l'échéance");
+    const recap = screen.getByTestId("recap-card");
+    expect(recap).toHaveTextContent("Début dès l'envoi");
+    expect(recap).toHaveTextContent("Relance en cas de non-réponse : toutes les semaines");
+    expect(recap).toHaveTextContent("Renouvellement : tous les ans");
+
+    // Nothing is sent by the first click: it asks, and "Annuler" backs out.
     fireEvent.click(screen.getByRole("button", { name: /Envoyer pour signature/ }));
+    expect(screen.getByTestId("send-summary")).toHaveTextContent("1 document(s) à signer par chaque destinataire");
+    expect(vi.mocked(api.post).mock.calls.some((c) => c[0] === "/campaigns/c1/launch")).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: /Oui, envoyer maintenant/ }));
     await waitFor(() => expect(screen.getByText("suivi")).toBeInTheDocument());
     const call = vi.mocked(api.post).mock.calls.find((c) => c[0] === "/campaigns/c1/launch")!;
-    const body = call[1] as { deadline: string; reminder_before_deadline_days: number };
-    expect(body.reminder_before_deadline_days).toBe(2);
-    expect(body.deadline.startsWith("2030-01-3")).toBe(true);
+    expect(call[1]).toMatchObject({
+      reminder_first_days: 7,
+      reminder_interval_days: 7,
+      reminder_max_count: null,
+      renewal_every: 12,
+      renewal_unit: "MONTHS",
+      start_at: null,
+    });
+    expect((call[1] as { deadline: string }).deadline.startsWith("2099-01-3")).toBe(true);
+  });
+
+  it("schedules the sending when a start date in the future is given", async () => {
+    open(1);
+    await screen.findByTestId("policy-card");
+    fireEvent.change(screen.getByLabelText(/Date de début/), { target: { value: "2099-01-01" } });
+    fireEvent.click(stepButton(/Vérifier et envoyer/));
+    await screen.findByTestId("recap-card");
+    expect(screen.getByTestId("send-summary")).toHaveTextContent("programmé : personne n'est prévenu avant");
+    fireEvent.click(screen.getByRole("button", { name: /Programmer l.envoi/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Oui, programmer/ }));
+    await waitFor(() => expect(screen.getByText("suivi")).toBeInTheDocument());
+    const call = vi.mocked(api.post).mock.calls.find((c) => c[0] === "/campaigns/c1/launch")!;
+    expect((call[1] as { start_at: string }).start_at.startsWith("2099-01-01")).toBe(true);
   });
 
   it("will not send before every document has its elements, and says which one", async () => {
