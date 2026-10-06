@@ -6,6 +6,7 @@ import {
   FileSignature,
   FileText,
   FolderCog,
+  ImageIcon,
   KeyRound,
   Mail,
   Megaphone,
@@ -17,6 +18,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
 import { api } from "../api/client";
+import { useCompanyLogo } from "../lib/branding";
 import ChangePasswordDialog from "./ChangePasswordDialog";
 import PasswordReminder, { REMINDER_KEY } from "./PasswordReminder";
 import UserMenu from "./UserMenu";
@@ -54,6 +56,7 @@ const TITLES: [prefix: string, label: string][] = [
   ["/sign", "Faire signer"],
   ["/campaigns", "Suivi"],
   ["/admin/users", "Utilisateurs"],
+  ["/admin/branding", "Logo"],
   ["/admin/directory", "Annuaire"],
   ["/admin/mail", "E-mail"],
   ["/admin/audit", "Audit"],
@@ -70,6 +73,8 @@ export default function Shell() {
   const { pathname } = useLocation();
   const [open, setOpen] = useState(false);
   const [changingPassword, setChangingPassword] = useState(false);
+  // The company's own logo when an administrator set one, the LCIT one otherwise.
+  const companyLogo = useCompanyLogo();
   const isOperator = hasRole("OPERATOR") || hasRole("ADMIN");
   const isAdmin = hasRole("ADMIN");
   const close = () => setOpen(false);
@@ -90,7 +95,7 @@ export default function Shell() {
     <div className="app-shell">
       <aside className={`sidebar${open ? " sidebar--open" : ""}`}>
         <div className="brand">
-          <img className="brand-logo" src="/lcit-mark.png" alt="LCIT" />
+          <img className="brand-logo" src={companyLogo ?? "/lcit-mark.png"} alt={companyLogo ? "Logo" : "LCIT"} />
           <div>
             <span>Sign</span>
             <small>Signature &amp; attestation</small>
@@ -117,6 +122,7 @@ export default function Shell() {
             <>
               <div className="nav-heading">Administration</div>
               <NavItem to="/admin/users" icon={<Users size={18} />} label="Utilisateurs" onNavigate={close} />
+              <NavItem to="/admin/branding" icon={<ImageIcon size={18} />} label="Logo" onNavigate={close} />
               <NavItem to="/admin/directory" icon={<FolderCog size={18} />} label="Annuaire" onNavigate={close} />
               <NavItem to="/admin/mail" icon={<Mail size={18} />} label="Email" onNavigate={close} />
               <NavItem to="/admin/audit" icon={<ScrollText size={18} />} label="Audit" onNavigate={close} />

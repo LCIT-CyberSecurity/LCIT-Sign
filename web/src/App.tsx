@@ -16,6 +16,7 @@ import AdminDirectoryPage from "./pages/AdminDirectoryPage";
 import AdminMailPage from "./pages/AdminMailPage";
 import AdminAuditPage from "./pages/AdminAuditPage";
 import AdminSigningKeysPage from "./pages/AdminSigningKeysPage";
+import AdminBrandingPage from "./pages/AdminBrandingPage";
 import AdminDiagnosticsPage from "./pages/AdminDiagnosticsPage";
 import MySignaturesPage from "./pages/MySignaturesPage";
 import PrepareDocumentPage from "./pages/PrepareDocumentPage";
@@ -100,6 +101,14 @@ export default function App() {
           }
         />
 
+        <Route
+          path="/admin/branding"
+          element={
+            <RoleRoute allowed={isAdmin}>
+              <AdminBrandingPage />
+            </RoleRoute>
+          }
+        />
         <Route
           path="/admin/users"
           element={

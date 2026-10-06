@@ -1309,3 +1309,11 @@ a.attention:hover strong { color: var(--primary); }
 .recap dt { font-weight: 600; margin-bottom: 4px; }
 .recap dd { margin: 0; }
 .link-button { background: none; border: 0; color: var(--accent, #65459b); cursor: pointer; font: inherit; font-size: 13px; padding: 0 0 0 8px; text-decoration: underline; }
+
+.branding-preview { display: flex; align-items: center; gap: 14px; padding: 14px; border: 1px dashed var(--border); border-radius: var(--radius-sm); background: var(--surface-muted, #f4f5f8); }
+.branding-preview img { max-height: 64px; max-width: 220px; object-fit: contain; }
+.signed-toolbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.signed-toolbar input[type="search"] { flex: 1 1 260px; }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); }
+.tab { background: none; border: 0; border-bottom: 2px solid transparent; padding: 10px 14px; font: inherit; color: var(--text-secondary); cursor: pointer; }
+.tab.is-active { color: var(--text-primary); border-bottom-color: var(--accent, #65459b); font-weight: 600; }

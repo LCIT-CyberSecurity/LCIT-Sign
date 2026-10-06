@@ -51,4 +51,6 @@ export const api = {
   del: <T>(path: string): Promise<T> => request<T>(path, { method: "DELETE" }),
   postForm: <T>(path: string, form: FormData): Promise<T> =>
     request<T>(path, { method: "POST", body: form }),
+  putForm: <T>(path: string, form: FormData): Promise<T> =>
+    request<T>(path, { method: "PUT", body: form }),
 };

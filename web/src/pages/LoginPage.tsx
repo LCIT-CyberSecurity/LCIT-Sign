@@ -1,3 +1,4 @@
+import { useCompanyLogo } from "../lib/branding";
 import { useEffect, useState, type FormEvent } from "react";
 import { FileSearch, FileSignature, Fingerprint, LockKeyhole, LogIn, PenLine } from "lucide-react";
 import { api, ApiError } from "../api/client";
@@ -55,6 +56,7 @@ function LocalLogin() {
 }
 
 export default function LoginPage() {
+  const companyLogo = useCompanyLogo();
   const [localEnabled, setLocalEnabled] = useState(false);
   useEffect(() => {
     api
@@ -116,9 +118,14 @@ export default function LoginPage() {
         <main className="auth-form-wrap">
           <div className="auth-form-content">
             <div className="auth-company">
-              <img src="/lcit-logo.png" alt="LCIT" width={100} height={76} />
+              {companyLogo ? (
+                // The company's own logo: the LCIT name beside it would be wrong.
+                <img src={companyLogo} alt="Logo" height={76} style={{ maxWidth: 220, objectFit: "contain" }} />
+              ) : (
+                <img src="/lcit-logo.png" alt="LCIT" width={100} height={76} />
+              )}
               <div>
-                <strong>LCIT Cybersecurity</strong>
+                {!companyLogo && <strong>LCIT Cybersecurity</strong>}
                 <span>Espace de signature des collaborateurs</span>
               </div>
             </div>

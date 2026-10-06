@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session as DbSession
 
-from lcit_sign.deps import get_current_user, get_db, require_roles
+from lcit_sign.deps import get_db, require_roles
 from lcit_sign.models.campaign import AssignmentStatus, SignatureAssignment
 from lcit_sign.models.document import (
     INPUT_KINDS,
@@ -229,15 +229,15 @@ def get_signing_form(
 
 
 @router.get("/branding")
-def branding_status(
-    request: Request, user: User = Depends(get_current_user)
-) -> dict[str, Any]:
+def branding_status(request: Request) -> dict[str, Any]:
+    """Whether the company has its own logo. Public: the sign-in page shows it, before anyone
+    is signed in (a logo is meant to be seen)."""
     logo = branding.read_logo(request.app.state.storage)
     return {"has_logo": logo is not None, "logo_sha256": logo[1] if logo else None}
 
 
 @router.get("/branding/logo")
-def get_logo(request: Request, user: User = Depends(get_current_user)) -> Response:
+def get_logo(request: Request) -> Response:
     logo = branding.read_logo(request.app.state.storage)
     if logo is None:
         raise HTTPException(404, "No logo configured")
