@@ -3,8 +3,8 @@ FROM python:3.12-slim-bookworm
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_DISABLE_PIP_VERSION_CHECK=1
 
 WORKDIR /app
-COPY app.py ./
-RUN pip install --no-cache-dir fastapi>=0.115 "uvicorn[standard]>=0.30" authlib>=1.3 python-multipart>=0.0.9
+COPY app.py real_providers.py ./
+RUN pip install --no-cache-dir fastapi>=0.115 "uvicorn[standard]>=0.30" authlib>=1.3 python-multipart>=0.0.9 httpx>=0.27 ldap3>=2.9.1
 
 RUN useradd --create-home --uid 10001 mock-oidc
 USER mock-oidc

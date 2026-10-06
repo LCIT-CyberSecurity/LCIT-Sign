@@ -80,9 +80,9 @@ export default function LoginPage() {
           <div className="auth-message">
             <span className="auth-eyebrow">SIGNATURE INTERNE</span>
             <h2>
-              Chaque document lu,
+              Facilitez la signature
               <br />
-              <em>signé et prouvé.</em>
+              <em>de vos documents.</em>
             </h2>
             <p>
               Diffusez vos chartes et politiques, recueillez la signature de chaque collaborateur

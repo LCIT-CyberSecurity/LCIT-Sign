@@ -13,7 +13,7 @@ describe("<LoginPage />", () => {
 
   it("explains the product and its three steps", () => {
     render(<LoginPage />);
-    expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent(/signé et prouvé/);
+    expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent(/Facilitez la signature\s*de vos documents/);
     for (const step of ["Consulter", "Signer", "Prouver"]) {
       expect(screen.getByText(step)).toBeInTheDocument();
     }

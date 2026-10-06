@@ -107,9 +107,19 @@ services:
     image: lcit-sign-mock-oidc:latest
     container_name: lcit-sign-mock-oidc
     profiles: ["dev-sso"]
+    # The secrets folder is private to you (mode 700): to read its providers file the mock runs
+    # as your user. Set MOCK_OIDC_UID=$(id -u) in .env when you use real accounts.
+    user: "${MOCK_OIDC_UID:-10001}"
     environment:
       MOCK_OIDC_ISSUER: http://mock-oidc:8080
       MOCK_OIDC_PUBLIC_BASE_URL: ${LCIT_SIGN_PUBLIC_BASE_URL:-http://localhost:4180}/mock-oidc
+      # Real accounts (Entra, Google, LDAP) behind the mock sign-in: which ones, and their
+      # secrets, come from a JSON file in ./secrets (outside Git; see docs/mock-sso-real-accounts.md).
+      # Codes only ever go to the app itself.
+      MOCK_OIDC_PROVIDERS_FILE: /run/secrets/lcit-sign/mock-oidc-providers.json
+      MOCK_OIDC_ALLOWED_REDIRECTS: ${LCIT_SIGN_PUBLIC_BASE_URL:-http://localhost:4180}/api/auth/callback
+    volumes:
+      - ${LCIT_SIGN_SECRETS_DIR:-./secrets}:/run/secrets/lcit-sign:ro
     expose:
       - "8080"
     healthcheck:
