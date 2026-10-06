@@ -46,6 +46,9 @@ services:
       LCIT_SIGN_LOG_LEVEL: INFO
       # Only the throwaway test stack turns this off (a browser suite signs in dozens of times).
       LCIT_SIGN_RATE_LIMIT_ENABLED: ${LCIT_SIGN_RATE_LIMIT_ENABLED:-true}
+      # How often the worker runs (reminders, scheduled starts, DocuSign envelopes): the test stack
+      # makes it quick.
+      LCIT_SIGN_NOTIFICATION_WORKER_INTERVAL_SECONDS: ${LCIT_SIGN_NOTIFICATION_WORKER_INTERVAL_SECONDS:-30}
       LCIT_SIGN_SESSION_SECRET: ${LCIT_SIGN_SESSION_SECRET:-dev-only-insecure-secret-change-me}
       # http only for now (TLS/cert installer lands in a later phase).
       LCIT_SIGN_COOKIE_SECURE: ${LCIT_SIGN_COOKIE_SECURE:-false}

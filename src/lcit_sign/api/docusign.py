@@ -3,6 +3,7 @@ stored encrypted and never shown again, a test of the connection, and — on a d
 server only — one click to use the mock DocuSign of the test stack."""
 from __future__ import annotations
 
+import uuid
 from typing import Any, Literal
 
 import httpx
@@ -13,7 +14,8 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session as DbSession
 
 from lcit_sign.config import Settings
-from lcit_sign.deps import get_db, require_roles
+from lcit_sign.deps import get_current_user, get_db, require_roles
+from lcit_sign.models.campaign import SignatureAssignment
 from lcit_sign.models.docusign import DocusignConfig
 from lcit_sign.models.user import Role, User
 from lcit_sign.services.audit import append_audit_event
@@ -24,7 +26,7 @@ from lcit_sign.services.docusign import (
     DocusignError,
     load_private_key,
 )
-from lcit_sign.services.docusign_flow import is_configured, load_settings
+from lcit_sign.services.docusign_flow import is_configured, load_settings, process_docusign
 
 router = APIRouter(prefix="/admin/docusign", tags=["admin"])
 _admin = require_roles(Role.ADMIN)
@@ -223,6 +225,29 @@ def use_the_mock(
     )
     db.commit()
     return _public(row, settings)
+
+
+me_router = APIRouter(tags=["signatures"])
+
+
+@me_router.post("/assignments/{assignment_id}/docusign-refresh")
+def refresh_my_envelope(
+    assignment_id: uuid.UUID,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: DbSession = Depends(get_db),
+) -> dict[str, Any]:
+    """The signer says they have signed at DocuSign: look at their envelope now instead of waiting
+    for the worker."""
+    assignment = db.get(SignatureAssignment, assignment_id)
+    if assignment is None or assignment.user_id != user.id:
+        raise HTTPException(404, "Assignment not found")
+    changed = process_docusign(
+        db, request.app.state.settings, request.app.state.storage,
+        only_assignments=[assignment.id],
+    )
+    db.refresh(assignment)
+    return {"changed": changed, "status": assignment.status.value}
 
 
 def methods_payload(db: DbSession) -> list[dict[str, Any]]:
