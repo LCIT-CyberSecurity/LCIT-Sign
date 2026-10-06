@@ -4,7 +4,7 @@ import { ArrowLeft, ArrowRight, Check, RefreshCw, Rocket } from "lucide-react";
 import { api, ApiError } from "../api/client";
 import CampaignDocuments from "../components/CampaignDocuments";
 import CampaignSigners from "../components/CampaignSigners";
-import PrepareDocuments from "../components/PrepareDocuments";
+import PrepareStep from "../components/PrepareStep";
 import ConfirmButton from "../components/ConfirmButton";
 import RecipientPicker from "../components/RecipientPicker";
 import SignedDocuments from "../components/SignedDocuments";
@@ -248,7 +248,13 @@ export default function SignRequestPage() {
 
       {step === 3 && (
         <>
-          <PrepareDocuments campaign={campaign} />
+          <PrepareStep
+            campaign={campaign}
+            selected={query.get("doc")}
+            onSelect={(versionId) => setQuery({ step: "3", doc: versionId })}
+            onReload={load}
+            onDone={() => goTo(4)}
+          />
           <div className="row-actions">
             <button type="button" className="button button--ghost" onClick={() => goTo(2)}>
               <ArrowLeft size={14} aria-hidden="true" /> Les documents

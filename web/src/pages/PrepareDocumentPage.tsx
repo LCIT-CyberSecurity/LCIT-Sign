@@ -118,11 +118,25 @@ function FieldBox({
   );
 }
 
-export default function PrepareDocumentPage() {
-  const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
-  const [query] = useSearchParams();
-  const campaignId = query.get("campaign");
+/** The editor where each signer's elements (signature, date, name…) are placed on a document by
+ *  drag and drop. A page of its own (from a campaign already sent), or the "Préparer" step of
+ *  the sending flow, where it sits under the strip of documents (`embedded`). */
+export function DocumentEditor({
+  versionId,
+  campaignId,
+  embedded = false,
+  onFinish,
+  onSaved,
+}: {
+  versionId: string;
+  campaignId: string | null;
+  embedded?: boolean;
+  /** Called when the person is done with this document: the next one to prepare, or none. */
+  onFinish: (nextVersionId: string | null, backTo: string) => void;
+  /** Called after the elements were saved (so the counts around can be refreshed). */
+  onSaved?: () => void;
+}) {
+  const id = versionId;
   const [info, setInfo] = useState<FieldsResponse | null>(null);
   const [pages, setPages] = useState<PageSize[]>([]);
   const [fields, setFields] = useState<EditorField[]>([]);
@@ -265,6 +279,7 @@ export default function PrepareDocumentPage() {
       setFields(saved.fields);
       setDirty(false);
       setMessage(`Enregistré — ${saved.fields.length} élément(s).`);
+      onSaved?.();
       return true;
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "L'enregistrement a échoué.");
@@ -279,11 +294,7 @@ export default function PrepareDocumentPage() {
   const nextToPrepare = campaign?.documents.find((d) => d.version_id !== id && d.elements === 0);
   const finish = async () => {
     if (dirty && !(await save())) return;
-    navigate(
-      nextToPrepare
-        ? `/documents/versions/${nextToPrepare.version_id}/prepare?campaign=${campaignId}`
-        : backTo,
-    );
+    onFinish(nextToPrepare?.version_id ?? null, backTo);
   };
 
   const onDrop = (page: number, overlay: HTMLDivElement) => (e: DragEvent<HTMLDivElement>) => {
@@ -320,18 +331,28 @@ export default function PrepareDocumentPage() {
 
   return (
     <div className="stack prep">
-      <Link to={backTo} className="back-link">
-        <ArrowLeft size={14} aria-hidden="true" /> {campaign ? campaign.name : "Faire signer"}
-      </Link>
+      {!embedded && (
+        <Link to={backTo} className="back-link">
+          <ArrowLeft size={14} aria-hidden="true" /> {campaign ? campaign.name : "Faire signer"}
+        </Link>
+      )}
       <div className="page-header">
         <div>
-          <h1 className="page-title" style={{ margin: 0 }}>
-            Préparer le document
-          </h1>
-          <p className="page-subtitle" style={{ margin: "6px 0 0" }}>
-            {info.document_title} — version {info.version_label}{" "}
-            <span className={`badge badge--${info.status.toLowerCase()}`}>{info.status}</span>
-          </p>
+          {embedded ? (
+            <p className="page-subtitle" style={{ margin: 0 }}>
+              <strong>{info.document_title}</strong> — version {info.version_label}
+            </p>
+          ) : (
+            <>
+              <h1 className="page-title" style={{ margin: 0 }}>
+                Préparer le document
+              </h1>
+              <p className="page-subtitle" style={{ margin: "6px 0 0" }}>
+                {info.document_title} — version {info.version_label}{" "}
+                <span className={`badge badge--${info.status.toLowerCase()}`}>{info.status}</span>
+              </p>
+            </>
+          )}
         </div>
         {editable && (
           <div className="row-actions">
@@ -343,7 +364,11 @@ export default function PrepareDocumentPage() {
             </button>
             <button className="button button--primary" onClick={() => void finish()} disabled={saving}>
               <CheckCircle2 size={14} aria-hidden="true" />{" "}
-              {nextToPrepare ? `Document suivant : ${nextToPrepare.title}` : "Terminer"}
+              {nextToPrepare
+                ? `Document suivant : ${nextToPrepare.title}`
+                : embedded
+                  ? "Terminer : vérifier et envoyer"
+                  : "Terminer"}
             </button>
           </div>
         )}
@@ -531,5 +556,23 @@ export default function PrepareDocumentPage() {
         </aside>
       </div>
     </div>
+  );
+}
+
+/** The editor as a page of its own, for a document of a campaign already sent. */
+export default function PrepareDocumentPage() {
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const [query] = useSearchParams();
+  const campaignId = query.get("campaign");
+  return (
+    <DocumentEditor
+      key={id}
+      versionId={id ?? ""}
+      campaignId={campaignId}
+      onFinish={(next, backTo) =>
+        navigate(next ? `/documents/versions/${next}/prepare?campaign=${campaignId}` : backTo)
+      }
+    />
   );
 }

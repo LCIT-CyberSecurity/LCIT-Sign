@@ -4,6 +4,24 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import SignRequestPage from "./SignRequestPage";
 import { api } from "../api/client";
 
+// The editor draws PDF pages (PDF.js), which jsdom cannot: a stand-in that says which document it
+// was given and lets the test finish it.
+vi.mock("./PrepareDocumentPage", () => ({
+  DocumentEditor: ({
+    versionId,
+    embedded,
+    onFinish,
+  }: {
+    versionId: string;
+    embedded?: boolean;
+    onFinish: (next: string | null, back: string) => void;
+  }) => (
+    <div data-testid={`editor-${versionId}`} data-embedded={String(Boolean(embedded))}>
+      <button onClick={() => onFinish(versionId === "v1" ? "v2" : null, "/back")}>Terminer {versionId}</button>
+    </div>
+  ),
+}));
+
 vi.mock("../api/client", () => ({
   api: { get: vi.fn(), post: vi.fn(), put: vi.fn(), del: vi.fn(), postForm: vi.fn() },
   ApiError: class ApiError extends Error {},
@@ -71,14 +89,11 @@ describe("SignRequestPage", () => {
     expect(within(documents).queryByRole("link", { name: /Préparer/ })).toBeNull();
     expect(screen.queryByTestId("signers-card")).toBeNull();
 
-    // Screen 3: preparing, a page of its own.
+    // Screen 3: preparing, with the editor in the flow (not on a page apart).
     fireEvent.click(screen.getByRole("button", { name: /Suivant : préparer les documents/ }));
     const prepare = await screen.findByTestId("prepare-step");
     expect(screen.getByTestId("prepare-progress")).toHaveTextContent("1/1");
-    expect(within(prepare).getByRole("link", { name: /Modifier/ })).toHaveAttribute(
-      "href",
-      "/documents/versions/v1/prepare?campaign=c1",
-    );
+    expect(within(prepare).getByTestId("editor-v1")).toHaveAttribute("data-embedded", "true");
 
     // Screen 4: review and send.
     fireEvent.click(screen.getByRole("button", { name: /Suivant : vérifier et envoyer/ }));
@@ -88,16 +103,22 @@ describe("SignRequestPage", () => {
     expect(screen.getByRole("button", { name: /Documents signés/ })).toBeDisabled();
   });
 
-  it("does not leave the preparing screen while a document has no element, and says which", async () => {
+  it("prepares the documents one after the other, in the flow, and says which are done", async () => {
     open(3, [prepared, { ...prepared, version_id: "v2", title: "Charte", elements: 0 }]);
     const step = await screen.findByTestId("prepare-step");
     expect(screen.getByTestId("prepare-progress")).toHaveTextContent("1/2");
-    expect(within(step).getByRole("link", { name: /Préparer « Charte »/ })).toHaveAttribute(
-      "href",
-      "/documents/versions/v2/prepare?campaign=c1",
-    );
+    // The first document still to prepare is the one open; the other can be chosen from the strip.
+    expect(within(step).getByTestId("editor-v2")).toBeInTheDocument();
+    expect(within(step).getByRole("tab", { name: /Charte/ })).toHaveAttribute("aria-selected", "true");
+    fireEvent.click(within(step).getByRole("tab", { name: /PSSI/ }));
+    expect(await within(step).findByTestId("editor-v1")).toBeInTheDocument();
+    // Finishing one opens the next; finishing the last moves on to the review.
+    fireEvent.click(within(step).getByRole("button", { name: "Terminer v1" }));
+    expect(await within(step).findByTestId("editor-v2")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Suivant : vérifier et envoyer/ })).toBeDisabled();
     expect(screen.getByText(/Il reste à préparer : Charte/)).toBeInTheDocument();
+    fireEvent.click(within(step).getByRole("button", { name: "Terminer v2" }));
+    expect(await screen.findByTestId("recap-card")).toBeInTheDocument();
   });
 
   it("refuses an impossible calendar, then sends with the four settings", async () => {
