@@ -13,6 +13,7 @@ from ldap3 import NONE, SUBTREE, Connection, Server, Tls
 from ldap3.core.exceptions import LDAPException
 from ldap3.utils.dn import parse_dn
 
+from lcit_sign.services.connector_fields import FieldSpec
 from lcit_sign.services.directory.base import (
     ConnectorSpec,
     DirectoryConnector,
@@ -20,7 +21,6 @@ from lcit_sign.services.directory.base import (
     DirectorySnapshot,
     DirGroup,
     DirUser,
-    FieldSpec,
     split_name,
     team_selector_field,
     teams_from_values,

@@ -11,6 +11,7 @@ from typing import Any, Protocol
 import httpx
 
 from lcit_sign.services.aad_errors import describe_token_error
+from lcit_sign.services.connector_fields import FieldSpec
 
 
 class DirectoryConnectorError(Exception):
@@ -141,33 +142,6 @@ def post_token(client: httpx.Client, url: str, data: dict[str, str]) -> str:
         return str(response.json()["access_token"])
     except (ValueError, KeyError) as exc:
         raise DirectoryConnectorError("Réponse inattendue du service d'authentification") from exc
-
-
-@dataclass(frozen=True)
-class FieldSpec:
-    """One setting of a connector, described so the admin page can show it with a help
-    bubble: what it is, and an example of what to type."""
-
-    name: str
-    label: str
-    help: str
-    example: str = ""
-    kind: str = "text"  # text | password | textarea | select
-    options: tuple[tuple[str, str], ...] = ()
-    default: str = ""
-    required: bool = True
-
-    def payload(self) -> dict[str, Any]:
-        return {
-            "name": self.name,
-            "label": self.label,
-            "help": self.help,
-            "example": self.example,
-            "kind": self.kind,
-            "options": [{"value": v, "label": label} for v, label in self.options],
-            "default": self.default,
-            "required": self.required,
-        }
 
 
 @dataclass(frozen=True)

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { KeyRound, Trash2 } from "lucide-react";
 import { api, ApiError } from "../api/client";
+import ConnectorFieldControl from "../components/ConnectorFieldControl";
 import HelpHint from "../components/HelpHint";
 import type { ConnectorField, DirectorySource } from "../api/types";
 
@@ -16,61 +17,6 @@ function isShown(field: ConnectorField, values: Record<string, string>): boolean
     return selector === "groups" || selector === "both";
   }
   return true;
-}
-
-function Control({
-  id,
-  field,
-  value,
-  onChange,
-  secret,
-  stored,
-}: {
-  id: string;
-  field: ConnectorField;
-  value: string;
-  onChange: (value: string) => void;
-  secret?: boolean;
-  stored?: boolean;
-}) {
-  const placeholder = secret && stored ? "•••• enregistré — laisser vide pour le conserver" : field.example;
-  const required = secret ? !stored : field.required;
-  if (field.kind === "select") {
-    return (
-      <select id={id} value={value || field.default} onChange={(e) => onChange(e.target.value)}>
-        {field.options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
-    );
-  }
-  if (field.kind === "textarea") {
-    return (
-      <textarea
-        id={id}
-        rows={4}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={secret && stored ? placeholder : ""}
-        required={required}
-        autoComplete="off"
-        spellCheck={false}
-      />
-    );
-  }
-  return (
-    <input
-      id={id}
-      type={field.kind === "password" ? "password" : "text"}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder={secret && stored ? placeholder : ""}
-      required={required}
-      autoComplete={field.kind === "password" ? "new-password" : "off"}
-    />
-  );
 }
 
 /** The form of one directory connector, drawn from the description the server gives of it:
@@ -136,7 +82,7 @@ export default function DirectoryConnectorForm({
                 {f.help}
               </HelpHint>
             </span>
-            <Control
+            <ConnectorFieldControl
               id={`${source.source}-${f.name}`}
               field={f}
               value={fields[f.name] ?? ""}
@@ -151,7 +97,7 @@ export default function DirectoryConnectorForm({
             {spec.secret.help}
           </HelpHint>
         </span>
-        <Control
+        <ConnectorFieldControl
           id={`${source.source}-secret`}
           field={spec.secret}
           value={secret}

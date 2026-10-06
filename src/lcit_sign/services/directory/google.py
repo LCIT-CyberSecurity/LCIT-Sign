@@ -2,16 +2,13 @@
 
 from __future__ import annotations
 
-import base64
 import json
-import time
 from collections.abc import Iterator
 from typing import Any
 
 import httpx
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
+from lcit_sign.services.connector_fields import FieldSpec
 from lcit_sign.services.directory.base import (
     ConnectorSpec,
     DirectoryConnector,
@@ -19,12 +16,11 @@ from lcit_sign.services.directory.base import (
     DirectorySnapshot,
     DirGroup,
     DirUser,
-    FieldSpec,
     get_json,
-    post_token,
     team_selector_field,
     teams_from_values,
 )
+from lcit_sign.services.google_auth import GoogleAuthError, ServiceAccount
 
 TEAM_ATTRIBUTES = (
     ("orgunit", "Unité d'organisation (OU)"),
@@ -39,7 +35,6 @@ class GoogleWorkspaceConnector:
     """
 
     source = "google"
-    TOKEN_URI = "https://oauth2.googleapis.com/token"  # noqa: S105
     API = "https://admin.googleapis.com/admin/directory/v1"
     SCOPES = " ".join(
         [
@@ -59,43 +54,15 @@ class GoogleWorkspaceConnector:
         team_attribute: str = "orgunit",
     ) -> None:
         try:
-            info = json.loads(service_account_json)
-            self._client_email: str = info["client_email"]
-            key = serialization.load_pem_private_key(info["private_key"].encode(), password=None)
-            if not isinstance(key, rsa.RSAPrivateKey):
-                raise ValueError("private_key is not an RSA key")
-            self._private_key = key
-        except (ValueError, KeyError, TypeError) as exc:
-            raise DirectoryConnectorError(f"invalid Google service account: {exc}") from exc
+            self._account = ServiceAccount(service_account_json)
+        except GoogleAuthError as exc:
+            raise DirectoryConnectorError(str(exc)) from exc
         self._client = client
         self._admin_email = admin_email
         self._groups = team_selector in ("groups", "both")
         self._team_attribute = team_attribute if team_selector in ("attribute", "both") else None
         if self._team_attribute and self._team_attribute not in dict(TEAM_ATTRIBUTES):
             raise DirectoryConnectorError(f"Attribut d'équipe inconnu : {team_attribute!r}")
-
-    @staticmethod
-    def _b64(raw: bytes) -> bytes:
-        return base64.urlsafe_b64encode(raw).rstrip(b"=")
-
-    def _assertion(self) -> str:
-        now = int(time.time())
-        header = self._b64(json.dumps({"alg": "RS256", "typ": "JWT"}).encode())
-        claims = self._b64(
-            json.dumps(
-                {
-                    "iss": self._client_email,
-                    "sub": self._admin_email,
-                    "scope": self.SCOPES,
-                    "aud": self.TOKEN_URI,
-                    "iat": now,
-                    "exp": now + 3600,
-                }
-            ).encode()
-        )
-        signing_input = header + b"." + claims
-        signature = self._private_key.sign(signing_input, padding.PKCS1v15(), hashes.SHA256())
-        return (signing_input + b"." + self._b64(signature)).decode()
 
     def _pages(
         self, url: str, key: str, headers: dict[str, str], **extra: str
@@ -112,14 +79,10 @@ class GoogleWorkspaceConnector:
                 return
 
     def fetch(self) -> DirectorySnapshot:
-        token = post_token(
-            self._client,
-            self.TOKEN_URI,
-            {
-                "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
-                "assertion": self._assertion(),
-            },
-        )
+        try:
+            token = self._account.token(self._client, self.SCOPES, self._admin_email)
+        except GoogleAuthError as exc:
+            raise DirectoryConnectorError(str(exc)) from exc
         headers = {"Authorization": f"Bearer {token}"}
 
         users: dict[str, DirUser] = {}

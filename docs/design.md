@@ -277,10 +277,31 @@ towards the upstream system.
 | `local` | Built-in fictional organisation (24 users, 6 groups) for tests and demos |
 | `entra` | Microsoft Graph, app-only OAuth2 client credentials. Needs `User.Read.All`, `Group.Read.All`, `GroupMember.Read.All` application permissions with admin consent |
 | `google` | Admin SDK Directory API, service account with domain-wide delegation, impersonating an admin. Read-only scopes only |
+| `ldap` | LDAP / Active Directory with a read-only bind account. `ldaps://`, or `ldap://` only with StartTLS (the bind password never travels in clear); the server certificate is always verified; a disabled account (AD `userAccountControl`, 389 DS `nsAccountLock`) is read as inactive |
+
+Each connector is its own module (`services/directory/entra.py`, `google.py`, `ldap.py`) over a
+shared base (`base.py`: the snapshot, nested-group flattening, the description of settings).
+A connector describes itself (`SPEC`: its settings, a help text and an example for each, its
+checks, how to build it) and `GET /api/admin/directory/sources` serves that description: the
+admin page draws each form from it. `registry.py` is the only place that lists them.
 
 All connectors implement one small interface: `fetch()` returns a snapshot
 (users, groups, memberships). One engine, `sync_directory`, applies any
 snapshot.
+
+### Where the team name comes from
+
+Teams (compta, RH, achats…) are what a campaign is aimed at in one click. Each connector has a
+**selector**: the directory's own *groups*, an *attribute* of each person, or *both*.
+
+- Entra: groups, or one user property from a fixed list (`department`, `officeLocation`,
+  `companyName`, `jobTitle`, `city`) — a fixed list, so nothing typed ends up in a Graph query.
+- Google: groups, the person's organisational unit (OU), or their department.
+- LDAP: groups (filter and member attribute), any attribute named by the admin (`department`),
+  or the folder (OU) holding the person's entry.
+
+An attribute gives one synthetic team per distinct value (everyone with `department =
+Comptabilité` is the team « Comptabilité »), next to the real groups when *both* is chosen.
 
 ### Sync rules
 
@@ -362,12 +383,17 @@ campaign**, not per version: a signature records its campaign
 (`signatures.campaign_id`, also inside the signed evidence), at most one exists
 per (user, version, campaign), and earlier signatures are never altered.
 
-## 11c. Mail connectors: SMTP and Microsoft Graph
+## 11c. Mail connectors: SMTP, Microsoft Graph and Google Workspace
 
-Both implement one `MailSender` interface (`services/mail.py`).
+Each connector is its own module and implements one `MailSender` interface
+(`services/mail.py`); `build_sender` is the only place that picks one. Each module also
+describes itself (`SPEC`: its settings, a help text and an example per setting, and its own
+checks), and `GET /api/admin/mail-connector/kinds` serves those descriptions: the admin page
+draws every form from them, with a help bubble on each field. Adding a connector means adding
+one module and listing it in `services/mail_specs.py`.
 
-- **SMTP**: host/port, TLS or STARTTLS, optional auth. SMTP 5xx answers are
-  *permanent* (the notification fails at once); 4xx, timeouts and connection
+- **SMTP** (`services/mail_smtp.py`): host/port, TLS or STARTTLS, optional auth. SMTP 5xx
+  answers are *permanent* (the notification fails at once); 4xx, timeouts and connection
   errors are retried with backoff.
 - **Microsoft Graph** (`services/mail_graph.py`): app-only OAuth2 client
   credentials, sending from **one dedicated mailbox**. The access token lives
@@ -378,6 +404,12 @@ Both implement one `MailSender` interface (`services/mail.py`).
   tries to send as another mailbox and reports whether Exchange refused. The
   step-by-step tenant procedure is in `docs/microsoft-graph-setup.md`; nothing
   in this repository modifies a tenant.
+- **Google Workspace** (`services/mail_gmail.py`): a service account authorised by
+  domain-wide delegation, for the single scope `gmail.send`, acting as the sender mailbox
+  (`from_address`) through the Gmail API. The key (JSON) is stored encrypted like the other
+  secrets. A refused token says what to fix (delegation not authorised for that scope, mailbox
+  unknown). The service-account sign-in is shared with the directory connector
+  (`services/google_auth.py`).
 
 ## 11d. HTTPS and the certificate installer
 

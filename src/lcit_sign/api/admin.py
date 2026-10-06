@@ -26,12 +26,12 @@ from lcit_sign.models.signing_key import SigningKey, SigningKeyStatus
 from lcit_sign.models.user import Role, User, UserRole
 from lcit_sign.services.audit import append_audit_event, verify_audit_chain
 from lcit_sign.services.crypto import decrypt_secret, encrypt_secret
-from lcit_sign.services.directory import entra as entra_connector
 from lcit_sign.services.mail import (
     MailSendError,
     build_sender,
 )
 from lcit_sign.services.mail_graph import GraphSender
+from lcit_sign.services.mail_specs import SPECS as MAIL_SPECS
 from lcit_sign.services.signing_keys import get_or_create_active_key, rotate_signing_key
 from lcit_sign.services.ssrf import OutboundTargetError, validate_outbound_target
 
@@ -412,7 +412,7 @@ def get_mail_http_client() -> Generator[httpx.Client]:
 
 
 class MailConnectorRequest(BaseModel):
-    kind: Literal["smtp", "graph"] = "smtp"
+    kind: Literal["smtp", "graph", "gmail"] = "smtp"
     # Microsoft Graph: the dedicated mailbox is `from_address`; the client
     # secret goes in `password` and is stored encrypted like an SMTP one.
     graph_tenant_id: str | None = None
@@ -454,6 +454,13 @@ def _mail_connector_payload(connector: MailConnector) -> dict[str, Any]:
     }
 
 
+@router.get("/mail-connector/kinds")
+def list_mail_kinds() -> list[dict[str, Any]]:
+    """The mail connectors, each with its settings and a help text per setting, for the
+    admin page to draw the form."""
+    return [spec.payload() for spec in MAIL_SPECS.values()]
+
+
 @router.get("/mail-connector")
 def get_mail_connector(db: DbSession = Depends(get_db)) -> dict[str, Any] | None:
     connector = db.get(MailConnector, 1)
@@ -469,19 +476,22 @@ def put_mail_connector(
 ) -> dict[str, Any]:
     if body.kind == "smtp":
         _check_mail_target(body.host, body.port)
-    else:
-        try:
-            entra_connector.validate(
-                {
-                    "tenant_id": body.graph_tenant_id or "",
-                    "client_id": body.graph_client_id or "",
-                },
-                body.password,
-            )
-        except ValueError as exc:
-            raise HTTPException(422, str(exc)) from exc
-        if "@" not in body.from_address:
-            raise HTTPException(422, "L'expéditeur doit être une adresse e-mail complète.")
+    # What was typed, checked by the connector's own module, in words that say what to fix.
+    typed = {
+        "host": body.host,
+        "port": str(body.port),
+        "use_tls": str(body.use_tls).lower(),
+        "use_starttls": str(body.use_starttls).lower(),
+        "username": body.username,
+        "graph_tenant_id": body.graph_tenant_id or "",
+        "graph_client_id": body.graph_client_id or "",
+        "from_address": body.from_address,
+        "reply_to": body.reply_to or "",
+    }
+    try:
+        MAIL_SPECS[body.kind].validate(typed, body.password)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
     settings: Settings = request.app.state.settings
     connector = db.get(MailConnector, 1)
     if connector is None:

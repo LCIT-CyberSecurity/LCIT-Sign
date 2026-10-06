@@ -11,12 +11,8 @@ import os
 import sys
 import time
 
-from lcit_sign.services.mail import (
-    MailSendError,
-    SmtpCredentials,
-    diagnose_connection,
-    send_email,
-)
+from lcit_sign.services.mail import MailSendError
+from lcit_sign.services.mail_smtp import SmtpCredentials, diagnose_connection, send_email
 
 HOST = os.environ.get("TEST_SMTP_HOST", "127.0.0.1")
 USER = os.environ["TEST_SMTP_USER"]

@@ -8,6 +8,7 @@ from typing import Any
 
 import httpx
 
+from lcit_sign.services.connector_fields import FieldSpec
 from lcit_sign.services.directory.base import (
     ConnectorSpec,
     DirectoryConnector,
@@ -15,7 +16,6 @@ from lcit_sign.services.directory.base import (
     DirectorySnapshot,
     DirGroup,
     DirUser,
-    FieldSpec,
     get_json,
     post_token,
     split_name,

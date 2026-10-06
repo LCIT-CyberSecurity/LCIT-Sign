@@ -204,8 +204,17 @@ export interface DirectorySyncRun {
   error: string | null;
 }
 
+/** A mail connector as the server describes it: its settings, with help for each. */
+export interface MailKindSpec {
+  kind: "smtp" | "graph" | "gmail";
+  label: string;
+  description: string;
+  fields: ConnectorField[];
+  secret: ConnectorField;
+}
+
 export interface MailConnectorConfig {
-  kind: "smtp" | "graph";
+  kind: "smtp" | "graph" | "gmail";
   graph_tenant_id: string | null;
   graph_client_id: string | null;
   host: string;
@@ -245,7 +254,7 @@ export interface ConnectorField {
   label: string;
   help: string;
   example: string;
-  kind: "text" | "password" | "textarea" | "select";
+  kind: "text" | "password" | "textarea" | "select" | "number" | "checkbox";
   options: { value: string; label: string }[];
   default: string;
   required: boolean;

@@ -7,7 +7,10 @@ from urllib.parse import quote
 import httpx
 
 from lcit_sign.services.aad_errors import describe_token_error
+from lcit_sign.services.connector_fields import FieldSpec
+from lcit_sign.services.directory import entra
 from lcit_sign.services.mail import MailSendError
+from lcit_sign.services.mail_spec import MailSpec
 
 GRAPH = "https://graph.microsoft.com/v1.0"
 LOGIN = "https://login.microsoftonline.com"
@@ -132,3 +135,66 @@ class GraphSender:
             "l'accès Mail.Send n'est pas limité. Corrigez la configuration Exchange RBAC.",
         )
         return response.status_code in (401, 403, 404)
+
+
+def validate(fields: dict[str, str], secret: str | None) -> None:
+    """Same checks as the Entra directory connector (same kind of application), plus the sender."""
+    entra.validate(
+        {
+            "tenant_id": fields.get("graph_tenant_id", ""),
+            "client_id": fields.get("graph_client_id", ""),
+        },
+        secret,
+    )
+    if "@" not in fields.get("from_address", ""):
+        raise ValueError("La boîte d'envoi doit être une adresse e-mail complète.")
+
+
+SPEC = MailSpec(
+    kind="graph",
+    label="Microsoft 365 (Graph)",
+    description=(
+        "Envoie depuis une boîte de votre tenant Microsoft 365 avec l'application déclarée dans "
+        "Entra (permission Mail.Send de type Application, avec consentement administrateur). "
+        "Limitez-la à cette seule boîte avec une stratégie d'accès Exchange."
+    ),
+    fields=(
+        FieldSpec(
+            "graph_tenant_id",
+            "ID du tenant",
+            "L'identifiant de votre annuaire Microsoft : Entra → Vue d'ensemble → « ID de "
+            "locataire ».",
+            "73405479-f042-45d7-8149-c90341261b65",
+        ),
+        FieldSpec(
+            "graph_client_id",
+            "ID de l'application (client)",
+            "L'identifiant de l'application déclarée dans Entra (Inscriptions d'applications → "
+            "« ID de l'application (client) »). Ce n'est ni l'ID d'objet, ni l'ID du secret.",
+            "9a8b7c6d-5e4f-4321-b0a9-8c7d6e5f4a3b",
+        ),
+        FieldSpec(
+            "from_address",
+            "Boîte d'envoi dédiée",
+            "La boîte (de préférence une boîte partagée, sans licence) au nom de laquelle les "
+            "e-mails partent. Elle doit exister dans votre tenant.",
+            "signature@entreprise.fr",
+        ),
+        FieldSpec(
+            "reply_to",
+            "Répondre à",
+            "Facultatif : l'adresse qui reçoit les réponses.",
+            "support@entreprise.fr",
+            required=False,
+        ),
+    ),
+    secret=FieldSpec(
+        "password",
+        "Secret client",
+        "La VALEUR du secret créé dans Entra → Certificats et secrets (colonne « Valeur »). "
+        "Chiffrée ici, jamais réaffichée.",
+        "abC8Q~xYzTn3kLw0pQe5vRsU9dFgHjKlMnOpQr",
+        kind="password",
+    ),
+    validate=validate,
+)
