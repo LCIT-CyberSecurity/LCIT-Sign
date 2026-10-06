@@ -65,11 +65,19 @@ class GoogleWorkspaceConnector:
             raise DirectoryConnectorError(f"Attribut d'équipe inconnu : {team_attribute!r}")
 
     def _pages(
-        self, url: str, key: str, headers: dict[str, str], **extra: str
+        self,
+        url: str,
+        key: str,
+        headers: dict[str, str],
+        *,
+        customer: bool = True,
+        **extra: str,
     ) -> Iterator[dict[str, Any]]:
+        """Every page of a list. `customer=my_customer` scopes users.list and groups.list to the
+        whole account; members.list takes none (the group already says whose it is)."""
         page_token: str | None = None
         while True:
-            params = {"maxResults": "200", "customer": "my_customer", **extra}
+            params = {"maxResults": "200", **({"customer": "my_customer"} if customer else {}), **extra}
             if page_token:
                 params["pageToken"] = page_token
             page = get_json(self._client, url, headers=headers, params=params)
@@ -112,7 +120,7 @@ class GoogleWorkspaceConnector:
                 DirGroup(raw["id"], raw.get("name") or raw["email"], raw.get("description") or "")
             )
             members_url = f"{self.API}/groups/{raw['id']}/members"
-            for member in self._pages(members_url, "members", headers):
+            for member in self._pages(members_url, "members", headers, customer=False):
                 if member.get("type") == "USER" and member.get("id") in users:
                     users[member["id"]].group_ids.add(raw["id"])
                 elif member.get("type") == "GROUP" and member.get("id"):
