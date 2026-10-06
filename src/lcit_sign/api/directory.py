@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import re
 import uuid
 from collections.abc import Generator
 from typing import Any
@@ -22,12 +21,8 @@ from lcit_sign.models.directory import (
 from lcit_sign.models.user import Role, User
 from lcit_sign.services.audit import append_audit_event
 from lcit_sign.services.crypto import encrypt_secret
-from lcit_sign.services.directory_connectors import (
-    REMOTE_SOURCES,
-    DirectoryConnector,
-    DirectoryConnectorError,
-    build_remote_connector,
-)
+from lcit_sign.services.directory.base import DirectoryConnector, DirectoryConnectorError
+from lcit_sign.services.directory.registry import SPECS, build_remote_connector
 from lcit_sign.services.directory_sync import LocalConnector, sync_directory
 
 router = APIRouter(prefix="/admin/directory", tags=["directory"])
@@ -85,8 +80,14 @@ def list_sources(db: DbSession = Depends(get_db), user: User = Depends(_admin)) 
             "sync_interval_minutes": local.sync_interval_minutes if local else None,
         }
     ]
-    for source in REMOTE_SOURCES:
-        payloads.append(_config_payload(source, db.get(DirectoryConnectorConfig, source)))
+    for source, spec in SPECS.items():
+        payloads.append(
+            {
+                **_config_payload(source, db.get(DirectoryConnectorConfig, source)),
+                # What the admin page needs to draw this connector's form, help bubbles included.
+                "spec": spec.payload(),
+            }
+        )
     return payloads
 
 
@@ -99,62 +100,6 @@ class ConnectorConfigRequest(BaseModel):
     sync_interval_minutes: int | None = Field(default=None, ge=5, le=10080)
 
 
-_GUID = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
-_DOMAIN = re.compile(r"^(?=.{4,253}$)([A-Za-z0-9-]+\.)+[A-Za-z]{2,}$")
-
-
-def check_connector_input(source: str, fields: dict[str, str], secret: str | None) -> None:
-    """Catch the classic mix-ups at the moment of typing, in words that say what
-    to do — a wrong value would otherwise only surface later as a refusal from
-    Microsoft or Google. Raises HTTPException(422)."""
-
-    def refuse(message: str) -> None:
-        raise HTTPException(status_code=422, detail=message)
-
-    if source == "entra":
-        tenant, client = fields.get("tenant_id", "").strip(), fields.get("client_id", "").strip()
-        if not (_GUID.match(tenant) or _DOMAIN.match(tenant)):
-            refuse(
-                "L'ID du tenant doit ressembler à 73405479-f042-45d7-8149-c90341261b65 "
-                "(Entra → Vue d'ensemble → ID de locataire) ou à votre domaine "
-                "(entreprise.onmicrosoft.com)."
-            )
-        if "~" in client:
-            refuse(
-                "Ce qui est saisi dans « ID de l'application (client) » ressemble à un "
-                "secret : le secret va dans le champ « Secret client »."
-            )
-        if not _GUID.match(client):
-            refuse(
-                "L'ID de l'application (client) doit être un code du type "
-                "9a8b7c6d-5e4f-4321-b0a9-8c7d6e5f4a3b : page « Vue d'ensemble » de l'application "
-                "dans Entra, ligne « ID de l'application (client) »."
-            )
-        if secret is not None:
-            if _GUID.match(secret.strip()):
-                refuse(
-                    "Ceci est un identifiant (ID de secret ou de l'application), pas la valeur du "
-                    "secret. Dans Entra → Certificats et secrets, copiez la colonne « Valeur » "
-                    "(une suite d'environ 40 caractères avec un « ~ »)."
-                )
-            if secret.strip() in (tenant, client):
-                refuse("Le secret client ne peut pas être identique à un des identifiants.")
-    elif source == "google":
-        if "@" not in fields.get("admin_email", ""):
-            refuse("L'e-mail de l'administrateur doit être une adresse (admin@votre-domaine.fr).")
-        if secret is not None:
-            try:
-                key = json.loads(secret)
-                valid = isinstance(key, dict) and "client_email" in key and "private_key" in key
-            except ValueError:
-                valid = False
-            if not valid:
-                refuse(
-                    "La clé du compte de service doit être le fichier JSON téléchargé "
-                    "depuis Google Cloud (« client_email » et « private_key »)."
-                )
-
-
 @router.put("/sources/{source}/config")
 def put_source_config(
     source: str,
@@ -163,19 +108,30 @@ def put_source_config(
     db: DbSession = Depends(get_db),
     user: User = Depends(_admin),
 ) -> dict[str, Any]:
-    if source != "local" and source not in REMOTE_SOURCES:
+    spec = SPECS.get(source)
+    if source != "local" and spec is None:
         raise HTTPException(status_code=404, detail=f"unknown directory source {source!r}")
     # `local` has no credentials: its row only carries the sync schedule.
-    allowed_fields = REMOTE_SOURCES[source][0] if source in REMOTE_SOURCES else ()
-    unknown = set(body.fields) - set(allowed_fields)
-    if unknown:
-        raise HTTPException(status_code=422, detail=f"unknown fields: {sorted(unknown)}")
-    check_connector_input(source, body.fields, body.secret)
+    fields = body.fields
+    if spec is not None:
+        unknown = set(body.fields) - {f.name for f in spec.fields}
+        if unknown:
+            raise HTTPException(status_code=422, detail=f"unknown fields: {sorted(unknown)}")
+        fields = spec.with_defaults(body.fields)
+        missing = [f.label for f in spec.fields if f.required and not fields[f.name]]
+        if missing:
+            raise HTTPException(status_code=422, detail="À renseigner : " + ", ".join(missing))
+        try:
+            spec.validate(fields, body.secret)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+    elif body.fields:
+        raise HTTPException(status_code=422, detail="the local directory has no settings")
     config = db.get(DirectoryConnectorConfig, source)
     if config is None:
         config = DirectoryConnectorConfig(source=source)
         db.add(config)
-    config.settings_json = json.dumps(body.fields)
+    config.settings_json = json.dumps(fields)
     config.sync_interval_minutes = body.sync_interval_minutes
     config.updated_by = user.id
     if body.secret and source == "local":
@@ -219,7 +175,7 @@ def trigger_sync(
     connector: DirectoryConnector
     if source == "local":
         connector = LocalConnector()
-    elif source in REMOTE_SOURCES:
+    elif source in SPECS:
         config = db.get(DirectoryConnectorConfig, source)
         if config is None:
             raise HTTPException(status_code=409, detail=f"connector {source!r} is not configured")

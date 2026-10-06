@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Cloud, Database, FolderCog, Network, RefreshCw, Settings2, Workflow } from "lucide-react";
+import { Cloud, Database, FolderCog, Network, RefreshCw, Settings2 } from "lucide-react";
 import { api, ApiError } from "../api/client";
 import DirectoryConnectorForm from "./DirectoryConnectorForm";
 import type { DirectoryGroup, DirectorySource, DirectorySyncRun } from "../api/types";
@@ -12,29 +12,26 @@ interface SourceInfo {
   remote: boolean;
 }
 
-const SOURCES: SourceInfo[] = [
-  {
-    source: "entra",
-    title: "Microsoft Entra ID",
-    description: "Utilisateurs et groupes de votre tenant Microsoft 365, en lecture seule.",
-    icon: Cloud,
+const ICONS: Record<string, typeof Cloud> = { entra: Cloud, google: Cloud, ldap: Network };
+const LOCAL: SourceInfo = {
+  source: "local",
+  title: "Annuaire de démonstration",
+  description: "Une organisation fictive (24 personnes, 6 groupes) pour tester sans rien connecter.",
+  icon: Database,
+  remote: false,
+};
+
+/** A card per connector, titled and described by the connector itself. */
+function infoFor(source: DirectorySource): SourceInfo {
+  if (!source.spec) return LOCAL;
+  return {
+    source: source.source,
+    title: source.spec.label,
+    description: source.spec.description,
+    icon: ICONS[source.source] ?? Cloud,
     remote: true,
-  },
-  {
-    source: "google",
-    title: "Google Workspace",
-    description: "Utilisateurs et groupes de votre domaine Google, en lecture seule.",
-    icon: Cloud,
-    remote: true,
-  },
-  {
-    source: "local",
-    title: "Annuaire de démonstration",
-    description: "Une organisation fictive (24 personnes, 6 groupes) pour tester sans rien connecter.",
-    icon: Database,
-    remote: false,
-  },
-];
+  };
+}
 
 const SCHEDULES: { minutes: number | null; label: string }[] = [
   { minutes: null, label: "Manuelle" },
@@ -184,8 +181,6 @@ export default function AdminDirectoryPage() {
       .sort((a, b) => a.name.localeCompare(b.name, "fr", { sensitivity: "base" }));
   }, [groups, query]);
 
-  const byId = new Map(sources.map((s) => [s.source, s]));
-
   return (
     <div className="stack">
       <div>
@@ -200,35 +195,20 @@ export default function AdminDirectoryPage() {
       </div>
 
       <div className="source-grid">
-        {SOURCES.map((info) => {
-          const source = byId.get(info.source);
-          return source ? (
-            <SourceCard
-              key={info.source}
-              info={info}
-              source={source}
-              lastRun={runs?.find((r) => r.source === info.source)}
-              onChanged={load}
-            />
-          ) : null;
-        })}
-        <section className="card source-card source-card--soon" data-testid="source-ldap">
-          <div className="source-card__head">
-            <span className="metric-icon" aria-hidden="true">
-              <Network size={16} />
-            </span>
-            <div>
-              <div className="card-title" style={{ margin: 0 }}>
-                LDAP / Active Directory
-              </div>
-              <div className="muted small">Annuaires d&apos;entreprise sur site (LDAP, LDAPS).</div>
-            </div>
-            <span className="badge badge--draft">Bientôt</span>
-          </div>
-          <p className="muted small" style={{ marginTop: 12 }}>
-            <Workflow size={13} aria-hidden="true" /> Pas encore disponible.
-          </p>
-        </section>
+        {[...sources]
+          .sort((x, y) => Number(x.source === "local") - Number(y.source === "local"))
+          .map((source) => {
+            const info = infoFor(source);
+            return (
+              <SourceCard
+                key={info.source}
+                info={info}
+                source={source}
+                lastRun={runs?.find((r) => r.source === info.source)}
+                onChanged={load}
+              />
+            );
+          })}
       </div>
 
       <div className="section-panel">

@@ -28,14 +28,16 @@ def _forbidden(address: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     )
 
 
-def validate_outbound_target(host: str, port: int) -> None:
+def validate_outbound_target(
+    host: str, port: int, *, allow_ports: frozenset[int] = frozenset()
+) -> None:
     """Raise OutboundTargetError unless `host:port` is an acceptable
     admin-configured mail target. Resolves the name, so a hostname that
     points at a forbidden address is caught too."""
     host = host.strip()
     if not host or any(c.isspace() or c in "/@?#" for c in host):
         raise OutboundTargetError("invalid host")
-    if not 1 <= port <= 65535 or port in _FORBIDDEN_PORTS:
+    if not 1 <= port <= 65535 or (port in _FORBIDDEN_PORTS and port not in allow_ports):
         raise OutboundTargetError(f"port {port} is not allowed")
     try:
         infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)

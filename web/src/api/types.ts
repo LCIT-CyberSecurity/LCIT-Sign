@@ -239,11 +239,32 @@ export interface ReportSummary {
   csv_sha256: string;
 }
 
+/** One setting of a connector, as the server describes it (label, help bubble, example). */
+export interface ConnectorField {
+  name: string;
+  label: string;
+  help: string;
+  example: string;
+  kind: "text" | "password" | "textarea" | "select";
+  options: { value: string; label: string }[];
+  default: string;
+  required: boolean;
+}
+
+export interface ConnectorSpec {
+  label: string;
+  description: string;
+  fields: ConnectorField[];
+  secret: ConnectorField;
+}
+
 export interface DirectorySource {
   source: string;
   configured: boolean;
   fields: Record<string, string>;
   sync_interval_minutes: number | null;
+  /** Absent for the demonstration directory, which has nothing to configure. */
+  spec?: ConnectorSpec;
 }
 
 export interface OperatorDashboard {

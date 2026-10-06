@@ -8,10 +8,18 @@ vi.mock("../api/client", async () => {
   return { ...actual, api: { get: vi.fn(), post: vi.fn(), put: vi.fn(), del: vi.fn() } };
 });
 
+const spec = (label: string) => ({
+  label,
+  description: `Lit les utilisateurs de ${label}.`,
+  fields: [],
+  secret: { name: "s", label: "Secret", help: "Un secret.", example: "", kind: "password", options: [], default: "", required: true },
+});
+
 const sources = [
   { source: "local", configured: true, fields: {}, sync_interval_minutes: null },
-  { source: "entra", configured: false, fields: {}, sync_interval_minutes: null },
-  { source: "google", configured: true, fields: { admin_email: "a@corp.test" }, sync_interval_minutes: 60 },
+  { source: "entra", configured: false, fields: {}, sync_interval_minutes: null, spec: spec("Microsoft Entra ID") },
+  { source: "google", configured: true, fields: { admin_email: "a@corp.test" }, sync_interval_minutes: 60, spec: spec("Google Workspace") },
+  { source: "ldap", configured: false, fields: {}, sync_interval_minutes: null, spec: spec("LDAP / Active Directory") },
 ];
 
 describe("AdminDirectoryPage", () => {
@@ -42,11 +50,13 @@ describe("AdminDirectoryPage", () => {
     expect(within(screen.getByTestId("source-local")).getByTestId("source-state")).toHaveTextContent("Toujours disponible");
   });
 
-  it("is honest that LDAP is not available yet", async () => {
+  it("offers LDAP like the others, titled and described by the connector itself", async () => {
     render(<AdminDirectoryPage />);
     const ldap = await screen.findByTestId("source-ldap");
-    expect(ldap).toHaveTextContent("Bientôt");
-    expect(within(ldap).queryByRole("button")).toBeNull();
+    expect(ldap).toHaveTextContent("LDAP / Active Directory");
+    expect(ldap).toHaveTextContent("Lit les utilisateurs de LDAP / Active Directory.");
+    expect(within(ldap).getByTestId("source-state")).toHaveTextContent("Non configurée");
+    expect(within(ldap).getByRole("button", { name: /Configurer/ })).toBeInTheDocument();
   });
 
   it("lists the synchronised groups", async () => {

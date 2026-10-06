@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session as DbSession
 from lcit_sign.models.directory import DirectorySyncRun, Group, GroupMembership
 from lcit_sign.models.user import User
 from lcit_sign.services.audit import append_audit_event
-from lcit_sign.services.directory_connectors import (
+from lcit_sign.services.directory.base import (
     DirectoryConnector,
     DirectoryConnectorError,
     DirectorySnapshot,

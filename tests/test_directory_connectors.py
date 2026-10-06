@@ -93,7 +93,7 @@ def test_sources_listing(tmp_path, mock_oidc_base_url):
     _configure_entra(admin)
     sources = {s["source"]: s["configured"] for s in
                admin.get("/api/admin/directory/sources").json()}
-    assert sources == {"local": True, "entra": True, "google": False}
+    assert sources == {"local": True, "entra": True, "google": False, "ldap": False}
 
 
 def test_entra_sync(tmp_path, mock_oidc_base_url):
@@ -239,7 +239,12 @@ def test_secret_is_encrypted_at_rest_and_never_returned(tmp_path, mock_oidc_base
     assert "s3cr3t-value~Xyz" not in response.text
     assert "secret" not in response.json()
     assert response.json()["configured"] is True
-    assert response.json()["fields"] == ENTRA_FIELDS
+    # What was typed, completed with the defaults of the settings left alone.
+    assert response.json()["fields"] == {
+        **ENTRA_FIELDS,
+        "team_selector": "groups",
+        "team_attribute": "department",
+    }
     assert "s3cr3t-value~Xyz" not in admin.get("/api/admin/directory/sources").text
 
     with app.state.session_factory() as db:
@@ -272,7 +277,7 @@ def test_config_requires_admin_and_valid_source(tmp_path, mock_oidc_base_url):
 
 
 def test_nested_groups_are_expanded_without_duplicates():
-    from lcit_sign.services.directory_connectors import (
+    from lcit_sign.services.directory.base import (
         DirectorySnapshot,
         DirGroup,
         DirUser,
@@ -293,7 +298,7 @@ def test_nested_groups_are_expanded_without_duplicates():
 
 
 def test_nested_group_cycle_is_cut_and_reported():
-    from lcit_sign.services.directory_connectors import (
+    from lcit_sign.services.directory.base import (
         DirectorySnapshot,
         DirGroup,
         DirUser,
@@ -313,7 +318,7 @@ def test_nested_group_cycle_is_cut_and_reported():
 
 
 def test_nested_group_depth_is_limited():
-    from lcit_sign.services.directory_connectors import (
+    from lcit_sign.services.directory.base import (
         DirectorySnapshot,
         DirGroup,
         DirUser,

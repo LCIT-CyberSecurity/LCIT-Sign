@@ -12,7 +12,6 @@ from pydantic import BaseModel, model_validator
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session as DbSession
 
-from lcit_sign.api.directory import check_connector_input
 from lcit_sign.config import Settings
 from lcit_sign.deps import get_db, require_roles, user_roles
 from lcit_sign.models.audit import AuditEvent
@@ -27,6 +26,7 @@ from lcit_sign.models.signing_key import SigningKey, SigningKeyStatus
 from lcit_sign.models.user import Role, User, UserRole
 from lcit_sign.services.audit import append_audit_event, verify_audit_chain
 from lcit_sign.services.crypto import decrypt_secret, encrypt_secret
+from lcit_sign.services.directory import entra as entra_connector
 from lcit_sign.services.mail import (
     MailSendError,
     build_sender,
@@ -470,14 +470,16 @@ def put_mail_connector(
     if body.kind == "smtp":
         _check_mail_target(body.host, body.port)
     else:
-        check_connector_input(
-            "entra",
-            {
-                "tenant_id": body.graph_tenant_id or "",
-                "client_id": body.graph_client_id or "",
-            },
-            body.password,
-        )
+        try:
+            entra_connector.validate(
+                {
+                    "tenant_id": body.graph_tenant_id or "",
+                    "client_id": body.graph_client_id or "",
+                },
+                body.password,
+            )
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
         if "@" not in body.from_address:
             raise HTTPException(422, "L'expéditeur doit être une adresse e-mail complète.")
     settings: Settings = request.app.state.settings

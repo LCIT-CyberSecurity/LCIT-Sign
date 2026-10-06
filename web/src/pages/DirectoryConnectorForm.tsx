@@ -2,70 +2,79 @@ import { useState } from "react";
 import { KeyRound, Trash2 } from "lucide-react";
 import { api, ApiError } from "../api/client";
 import HelpHint from "../components/HelpHint";
-import type { DirectorySource } from "../api/types";
+import type { ConnectorField, DirectorySource } from "../api/types";
 
-interface Help {
-  text: string;
-  example: string;
+/** Some settings only matter for some choices of "where does the team name come from":
+ *  the attribute when it is read from an attribute, the group filter when it is read from groups. */
+function isShown(field: ConnectorField, values: Record<string, string>): boolean {
+  const selector = values.team_selector ?? "groups";
+  if (field.name === "team_attribute") {
+    // LDAP can also read the team from the person's folder: no attribute then.
+    return selector === "attribute" || selector === "both";
+  }
+  if (field.name === "group_filter" || field.name === "member_attribute") {
+    return selector === "groups" || selector === "both";
+  }
+  return true;
 }
 
-interface Spec {
-  title: string;
-  fields: { key: string; label: string; help: Help }[];
-  secretLabel: string;
-  secretHelp: Help;
-  secretMultiline: boolean;
+function Control({
+  id,
+  field,
+  value,
+  onChange,
+  secret,
+  stored,
+}: {
+  id: string;
+  field: ConnectorField;
+  value: string;
+  onChange: (value: string) => void;
+  secret?: boolean;
+  stored?: boolean;
+}) {
+  const placeholder = secret && stored ? "•••• enregistré — laisser vide pour le conserver" : field.example;
+  const required = secret ? !stored : field.required;
+  if (field.kind === "select") {
+    return (
+      <select id={id} value={value || field.default} onChange={(e) => onChange(e.target.value)}>
+        {field.options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+    );
+  }
+  if (field.kind === "textarea") {
+    return (
+      <textarea
+        id={id}
+        rows={4}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={secret && stored ? placeholder : ""}
+        required={required}
+        autoComplete="off"
+        spellCheck={false}
+      />
+    );
+  }
+  return (
+    <input
+      id={id}
+      type={field.kind === "password" ? "password" : "text"}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={secret && stored ? placeholder : ""}
+      required={required}
+      autoComplete={field.kind === "password" ? "new-password" : "off"}
+    />
+  );
 }
 
-const SPECS: Record<string, Spec> = {
-  entra: {
-    title: "Microsoft Entra ID",
-    fields: [
-      {
-        key: "tenant_id",
-        label: "ID du tenant",
-        help: {
-          text: "L'identifiant de votre annuaire Microsoft 365 (le « locataire »). Dans le centre d'administration Entra : Vue d'ensemble → ID de locataire.",
-          example: "1b2c3d4e-5f60-4a7b-8c9d-0e1f2a3b4c5d",
-        },
-      },
-      {
-        key: "client_id",
-        label: "ID de l'application (client)",
-        help: {
-          text: "L'identifiant de l'application « LCIT Sign » que vous avez inscrite dans Entra : Inscriptions d'applications → votre application → ID de l'application (client).",
-          example: "9a8b7c6d-5e4f-4321-b0a9-8c7d6e5f4a3b",
-        },
-      },
-    ],
-    secretLabel: "Secret client",
-    secretHelp: {
-      text: "Le mot de passe de l'application (pas d'une personne). Il n'est affiché qu'une seule fois, à sa création dans Entra : Certificats et secrets → Nouveau secret client → copiez la Valeur. Il est chiffré dès l'enregistrement et n'est plus jamais réaffiché.",
-      example: "abC8Q~xYzTn3kLw0pQe5vRsU9dFgHjKlMnOpQr",
-    },
-    secretMultiline: false,
-  },
-  google: {
-    title: "Google Workspace",
-    fields: [
-      {
-        key: "admin_email",
-        label: "E-mail de l'administrateur à usurper",
-        help: {
-          text: "L'adresse d'un administrateur Google Workspace au nom duquel le compte de service lit l'annuaire (délégation à l'échelle du domaine). Lecture seule : rien n'est modifié.",
-          example: "admin@votre-domaine.fr",
-        },
-      },
-    ],
-    secretLabel: "Clé du compte de service (JSON)",
-    secretHelp: {
-      text: "Le fichier de clé JSON du compte de service créé dans Google Cloud (IAM → Comptes de service → Clés → Ajouter une clé). Collez tout son contenu. Il est chiffré dès l'enregistrement.",
-      example: '{ "type": "service_account", "client_email": "lcit-sign@projet.iam.gserviceaccount.com", … }',
-    },
-    secretMultiline: true,
-  },
-};
-
+/** The form of one directory connector, drawn from the description the server gives of it:
+ *  its settings, a help bubble with an example on each, and its one write-only secret. */
 export default function DirectoryConnectorForm({
   source,
   onChanged,
@@ -73,7 +82,7 @@ export default function DirectoryConnectorForm({
   source: DirectorySource;
   onChanged: () => void;
 }) {
-  const spec = SPECS[source.source];
+  const spec = source.spec;
   const [fields, setFields] = useState<Record<string, string>>(source.fields);
   const [secret, setSecret] = useState("");
   const [message, setMessage] = useState<string | null>(null);
@@ -83,9 +92,15 @@ export default function DirectoryConnectorForm({
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
     setMessage(null);
+    // Only the settings that apply to the choices made are sent.
+    const sent = Object.fromEntries(
+      spec.fields
+        .filter((f) => isShown(f, fields))
+        .map((f) => [f.name, fields[f.name] ?? (f.kind === "select" ? f.default : "")]),
+    );
     try {
       await api.put(`/admin/directory/sources/${source.source}/config`, {
-        fields,
+        fields: sent,
         secret: secret || undefined,
         sync_interval_minutes: source.sync_interval_minutes,
       });
@@ -109,54 +124,41 @@ export default function DirectoryConnectorForm({
   return (
     <form className="card form" onSubmit={save} autoComplete="off">
       <div className="card-title">
-        <KeyRound size={14} aria-hidden="true" /> {spec.title}{" "}
-        {source.configured ? "(configuré)" : "(non configuré)"}
+        <KeyRound size={14} aria-hidden="true" /> {spec.label} {source.configured ? "(configuré)" : "(non configuré)"}
       </div>
-      {spec.fields.map((f) => (
-        <div key={f.key} className="field">
-          <span className="label-line">
-            <label htmlFor={`${source.source}-${f.key}`}>{f.label}</label>
-            <HelpHint title={f.label} example={f.help.example}>
-              {f.help.text}
-            </HelpHint>
-          </span>
-          <input
-            id={`${source.source}-${f.key}`}
-            value={fields[f.key] ?? ""}
-            onChange={(e) => setFields({ ...fields, [f.key]: e.target.value })}
-            required
-          />
-        </div>
-      ))}
+      {spec.fields
+        .filter((f) => isShown(f, fields))
+        .map((f) => (
+          <div key={f.name} className="field">
+            <span className="label-line">
+              <label htmlFor={`${source.source}-${f.name}`}>{f.label}</label>
+              <HelpHint title={f.label} example={f.example || undefined}>
+                {f.help}
+              </HelpHint>
+            </span>
+            <Control
+              id={`${source.source}-${f.name}`}
+              field={f}
+              value={fields[f.name] ?? ""}
+              onChange={(value) => setFields({ ...fields, [f.name]: value })}
+            />
+          </div>
+        ))}
       <div className="field">
         <span className="label-line">
-          <label htmlFor={`${source.source}-secret`}>{spec.secretLabel}</label>
-          <HelpHint title={spec.secretLabel} example={spec.secretHelp.example}>
-            {spec.secretHelp.text}
+          <label htmlFor={`${source.source}-secret`}>{spec.secret.label}</label>
+          <HelpHint title={spec.secret.label} example={spec.secret.example || undefined}>
+            {spec.secret.help}
           </HelpHint>
         </span>
-        {spec.secretMultiline ? (
-          <textarea
-            id={`${source.source}-secret`}
-            rows={4}
-            value={secret}
-            onChange={(e) => setSecret(e.target.value)}
-            placeholder={source.configured ? "•••• enregistré — laisser vide pour le conserver" : ""}
-            required={!source.configured}
-            autoComplete="off"
-            spellCheck={false}
-          />
-        ) : (
-          <input
-            id={`${source.source}-secret`}
-            type="password"
-            value={secret}
-            onChange={(e) => setSecret(e.target.value)}
-            placeholder={source.configured ? "•••• enregistré — laisser vide pour le conserver" : ""}
-            required={!source.configured}
-            autoComplete="new-password"
-          />
-        )}
+        <Control
+          id={`${source.source}-secret`}
+          field={spec.secret}
+          value={secret}
+          onChange={setSecret}
+          secret
+          stored={source.configured}
+        />
       </div>
       <div className="form-row">
         <button className="button button--primary" type="submit">

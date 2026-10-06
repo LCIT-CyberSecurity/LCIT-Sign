@@ -24,11 +24,11 @@ from lcit_sign.models.user import User
 from lcit_sign.services.audit import append_audit_event
 from lcit_sign.services.campaign_launch import create_assignments
 from lcit_sign.services.campaign_roles import RoleSpec, load_roles, save_roles
-from lcit_sign.services.directory_connectors import (
+from lcit_sign.services.directory.base import (
     DirectoryConnector,
     DirectoryConnectorError,
-    build_remote_connector,
 )
+from lcit_sign.services.directory.registry import build_remote_connector
 from lcit_sign.services.directory_sync import LocalConnector, sync_directory
 from lcit_sign.services.notification_queue import enqueue_notification
 from lcit_sign.services.storage import StorageService
