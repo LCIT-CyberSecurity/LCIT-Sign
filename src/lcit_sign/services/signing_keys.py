@@ -19,6 +19,12 @@ class SigningKeyError(Exception):
     pass
 
 
+class SigningKeyMismatch(SigningKeyError):
+    """The server's master key no longer derives the public key recorded for the active signing
+    key (a replaced or mistyped LCIT_SIGN_MASTER_KEY). The message is safe to show: it names no
+    secret."""
+
+
 def derive_private_key(master_key: str, key_id: str) -> Ed25519PrivateKey:
     """Re-derive a signing key's Ed25519 seed on demand.
 
@@ -43,16 +49,30 @@ def load_public_key(public_key_hex_value: str) -> Ed25519PublicKey:
     return Ed25519PublicKey.from_public_bytes(bytes.fromhex(public_key_hex_value))
 
 
-def get_or_create_active_key(db: DbSession, master_key: str) -> SigningKey:
+def get_or_create_active_key(
+    db: DbSession, master_key: str, *, verify: bool = True
+) -> SigningKey:
     """Return the current ACTIVE signing key, lazily minting the very
     first one. Later rotations are an explicit admin action
     (`rotate_signing_key`); this only ever creates a key when none exists
     at all, which is the one-time MVP bootstrap case.
+
+    With `verify` (the default) the key is only returned if the master key really derives the
+    public key recorded for it: otherwise a proof would be signed with a different key than the
+    one announced, so nothing may be signed (SigningKeyMismatch). Rotation turns it off, since it
+    replaces the key and is how an administrator recovers from a changed master key.
     """
     active = db.execute(
         select(SigningKey).where(SigningKey.status == SigningKeyStatus.ACTIVE)
     ).scalar_one_or_none()
     if active is not None:
+        if verify:
+            derived = public_key_hex(derive_private_key(master_key, active.key_id))
+            if derived != active.public_key_hex:
+                raise SigningKeyMismatch(
+                    "La clé maître du serveur ne correspond pas à la clé de signature "
+                    "enregistrée : rien n'a été signé. Prévenez un administrateur."
+                )
         return active
 
     key_id = secrets.token_hex(8)

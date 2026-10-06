@@ -40,6 +40,7 @@ from lcit_sign.services.field_stamping import resolve as resolve_fields
 from lcit_sign.services.notification_queue import enqueue_notification
 from lcit_sign.services.signature_pdf import append_signature_page, render_certificate_pdf
 from lcit_sign.services.signing_keys import (
+    SigningKeyMismatch,
     derive_private_key,
     get_or_create_active_key,
 )
@@ -295,6 +296,8 @@ def perform_signature(
     storage: StorageService = request.app.state.storage
     try:
         signing_key = get_or_create_active_key(db, settings.master_key)
+    except SigningKeyMismatch as exc:
+        raise HTTPException(503, str(exc)) from exc
     except Exception as exc:  # signing_keys.SigningKeyError, kept generic for the HTTP boundary
         raise HTTPException(503, "Signing is not configured") from exc
 

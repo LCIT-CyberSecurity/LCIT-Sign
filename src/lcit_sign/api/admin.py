@@ -393,7 +393,7 @@ def rotate_signing_keys(
     if not settings.master_key:
         raise HTTPException(503, "LCIT_SIGN_MASTER_KEY is not configured")
     # Ensures a key exists at all before "rotating" it on a brand-new install.
-    get_or_create_active_key(db, settings.master_key)
+    get_or_create_active_key(db, settings.master_key, verify=False)
     new_key = rotate_signing_key(db, settings.master_key, actor_id=user.id)
     db.commit()
     return _signing_key_payload(new_key)
