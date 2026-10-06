@@ -14,6 +14,7 @@ import OperatorCampaignDetailPage from "./pages/OperatorCampaignDetailPage";
 import AdminUsersPage from "./pages/AdminUsersPage";
 import AdminDirectoryPage from "./pages/AdminDirectoryPage";
 import AdminMailPage from "./pages/AdminMailPage";
+import AdminDocusignPage from "./pages/AdminDocusignPage";
 import AdminAuditPage from "./pages/AdminAuditPage";
 import AdminSigningKeysPage from "./pages/AdminSigningKeysPage";
 import AdminBrandingPage from "./pages/AdminBrandingPage";
@@ -129,6 +130,14 @@ export default function App() {
           element={
             <RoleRoute allowed={isAdmin}>
               <AdminMailPage />
+            </RoleRoute>
+          }
+        />
+        <Route
+          path="/admin/docusign"
+          element={
+            <RoleRoute allowed={isAdmin}>
+              <AdminDocusignPage />
             </RoleRoute>
           }
         />

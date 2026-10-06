@@ -75,6 +75,8 @@ export interface MyAssignment {
   deadline: string | null;
   signed_at: string | null;
   signature_id: string | null;
+  signature_method?: SignatureMethod;
+  docusign?: DocusignFollowUp | null;
 }
 
 export interface CampaignAssignment {
@@ -110,7 +112,27 @@ export interface CampaignDocumentInfo {
   released: boolean;
 }
 
+export type SignatureMethod = "LOCAL" | "DOCUSIGN";
+
+/** One way to sign a request, as the "Faire signer" choice offers it. */
+export interface SignatureMethodOption {
+  method: SignatureMethod;
+  label: string;
+  description: string;
+  available: boolean;
+  unavailable_reason?: string | null;
+}
+
+/** What the signer is told about the DocuSign envelope of a request signed through DocuSign. */
+export interface DocusignFollowUp {
+  status: "QUEUED" | "SENT" | "COMPLETED" | "DECLINED" | "VOIDED" | "FAILED";
+  error: string | null;
+  /** Only on the test stack: where the mock DocuSign's mailbox is. */
+  inbox_url: string | null;
+}
+
 export interface CampaignPlan {
+  signature_method?: SignatureMethod;
   all_users?: boolean;
   group_ids?: string[];
   user_ids?: string[];
@@ -130,6 +152,7 @@ export interface Campaign {
   description: string;
   status: CampaignStatus;
   target_mode: string;
+  signature_method?: SignatureMethod;
   created_at: string;
   launch_at: string | null;
   scheduled_start: string | null;
@@ -408,4 +431,16 @@ export interface SignatureChain {
 export interface Branding {
   has_logo: boolean;
   logo_sha256: string | null;
+}
+
+/** The DocuSign connection as the administration page shows it (the private key never comes back). */
+export interface DocusignAdmin {
+  configured: boolean;
+  values: { environment: string; integration_key: string; user_id: string; account_id: string };
+  has_private_key: boolean;
+  fields: ConnectorField[];
+  private_key: ConnectorField;
+  guide: string[];
+  test_setup_available: boolean;
+  mock: boolean;
 }

@@ -8,6 +8,7 @@ import PrepareStep from "../components/PrepareStep";
 import { missingSignatureText, missingSignatures } from "../lib/signatures";
 import ConfirmButton from "../components/ConfirmButton";
 import RecipientPicker from "../components/RecipientPicker";
+import SignatureMethodPicker from "../components/SignatureMethodPicker";
 import SignedDocuments from "../components/SignedDocuments";
 import ScheduleFields, {
   defaultSchedule,
@@ -17,7 +18,7 @@ import ScheduleFields, {
   scheduleProblem,
   type Schedule,
 } from "../components/Schedule";
-import type { Campaign, DirectoryGroup, DocumentDetail } from "../api/types";
+import type { Campaign, DirectoryGroup, DocumentDetail, SignatureMethod } from "../api/types";
 
 interface TargetUserOption {
   id: string;
@@ -55,6 +56,7 @@ export default function SignRequestPage() {
   const [busy, setBusy] = useState(false);
   const [recipientCount, setRecipientCount] = useState<number | null>(null);
   const [schedule, setSchedule] = useState<Schedule>(defaultSchedule);
+  const [method, setMethod] = useState<SignatureMethod>("LOCAL");
 
   const load = () => {
     if (!id) return;
@@ -72,6 +74,7 @@ export default function SignRequestPage() {
       setSelectedGroupIds(plan.group_ids ?? []);
       setSelectedUserIds(plan.user_ids ?? []);
       setSchedule(scheduleFromPlan(plan));
+      setMethod(plan.signature_method ?? "LOCAL");
     }
     setHydrated(true);
   }, [campaign, hydrated]);
@@ -82,6 +85,7 @@ export default function SignRequestPage() {
       api
         .put(`/campaigns/${id}/plan`, {
           ...scheduleBody(schedule),
+          signature_method: method,
           all_users: allUsers,
           group_ids: allUsers ? [] : selectedGroupIds,
           user_ids: allUsers ? [] : selectedUserIds,
@@ -90,7 +94,7 @@ export default function SignRequestPage() {
     }, 500);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hydrated, allUsers, selectedGroupIds, selectedUserIds, schedule]);
+  }, [hydrated, allUsers, selectedGroupIds, selectedUserIds, schedule, method]);
 
   useEffect(() => {
     load();
@@ -154,6 +158,7 @@ export default function SignRequestPage() {
     try {
       await api.post(`/campaigns/${id}/launch`, {
         ...scheduleBody(schedule),
+        signature_method: method,
         all_users: allUsers,
         group_ids: allUsers ? [] : selectedGroupIds,
         user_ids: allUsers ? [] : selectedUserIds,
@@ -268,6 +273,8 @@ export default function SignRequestPage() {
               />
             )}
           </div>
+
+          <SignatureMethodPicker value={method} onChange={setMethod} />
 
           <div className="card" data-testid="policy-card">
             <div className="card-title">Planning</div>
@@ -406,8 +413,16 @@ export default function SignRequestPage() {
               .{" "}
               {schedule.startDate && schedule.startDate > new Date().toISOString().slice(0, 10)
                 ? "L'envoi est programmé : personne n'est prévenu avant la date de début."
-                : "Les personnes concernées sont prévenues par e-mail dès l'envoi."}
+                : method === "DOCUSIGN"
+                  ? "Chaque signataire reçoit un e-mail de DocuSign dès que c'est son tour."
+                  : "Les personnes concernées sont prévenues par e-mail dès l'envoi."}
             </p>
+            {method === "DOCUSIGN" && (
+              <p className="muted small" data-testid="docusign-note">
+                Signature eIDAS (DocuSign) : les signataires signent chez DocuSign, pas dans LCIT Sign.
+                Le logo et l&apos;heure placés sur le document ne sont pas repris par DocuSign.
+              </p>
+            )}
             <p className="muted small">
               Une fois envoyée, la demande ne se modifie plus : pour changer quelque chose, on l&apos;annule
               et on en crée une autre. Elle se suit ensuite dans Suivi.

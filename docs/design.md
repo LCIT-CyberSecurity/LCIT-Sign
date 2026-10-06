@@ -711,3 +711,12 @@ Inherent limits:
   rewrite all of it. Keep an off-site copy of the latest hash if that matters.
 - The rate limiter is in memory (one API process); the API runs the background
   worker and applies migrations, so it is deployed as a single replica.
+
+## Signature eIDAS avec DocuSign (branche `docusign`)
+
+Une demande se signe soit avec la signature LCIT, soit avec DocuSign (`campaigns.signature_method`,
+choisie à l'écran 1 de « Faire signer », gardée avec le brouillon). Pour DocuSign : une enveloppe par
+assignation (`docusign_envelopes`), envoyée puis suivie par le worker, rapatriée à la fin (PDF signé +
+certificat), enregistrée comme une signature (`identity_provider = docusign`) et suivie du
+signataire suivant. Détails, limites et DocuSign de test : [docusign.md](docusign.md).
+

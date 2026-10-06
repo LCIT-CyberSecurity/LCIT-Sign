@@ -46,6 +46,44 @@ export function groupInputs(inputs: FormField[]) {
   return [...groups.values()];
 }
 
+const DOCUSIGN_TEXT: Record<string, string> = {
+  QUEUED:
+    "Votre demande de signature part chez DocuSign. Vous allez recevoir un e-mail de DocuSign : ouvrez-le pour signer.",
+  SENT: "DocuSign vous a envoyé un e-mail : ouvrez-le pour signer. Dès que c'est fait, votre document signé apparaît ici.",
+  DECLINED: "Vous avez refusé de signer chez DocuSign. Cette demande n'est plus à signer.",
+  VOIDED: "Cette demande a été retirée : il n'y a plus rien à signer.",
+  FAILED: "L'envoi à DocuSign a échoué. Prévenez la personne qui a lancé la demande.",
+};
+
+/** The signature is made on DocuSign (eIDAS): say where it stands, and where to go. */
+function DocusignCard({
+  assignment,
+  onRefresh,
+}: {
+  assignment: MyAssignment;
+  onRefresh: () => void | Promise<void>;
+}) {
+  const follow = assignment.docusign;
+  const status = follow?.status ?? "QUEUED";
+  return (
+    <div className="card stack" style={{ gap: 12 }} data-testid="docusign-card">
+      <div className="card-title">Signature eIDAS avec DocuSign</div>
+      <p data-testid="docusign-status">{DOCUSIGN_TEXT[status] ?? DOCUSIGN_TEXT.QUEUED}</p>
+      {follow?.error && status === "FAILED" && <p className="error-text">{follow.error}</p>}
+      <div className="button-row">
+        {follow?.inbox_url && (
+          <a className="button button--primary" href={follow.inbox_url} target="_blank" rel="noreferrer">
+            Ouvrir la boîte DocuSign de test
+          </a>
+        )}
+        <button type="button" className="button button--secondary" onClick={onRefresh}>
+          Actualiser
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function SignerAssignmentDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
@@ -80,6 +118,16 @@ export default function SignerAssignmentDetailPage() {
       .then((r) => setForm({ inputs: r.inputs ?? [], automatic: r.automatic ?? [] }))
       .catch(() => setForm(null));
   }, [versionId, alreadySigned]);
+
+  // Signing through DocuSign happens on DocuSign: this page only follows the envelope, and looks
+  // again every few seconds so the signed document appears by itself.
+  const throughDocusign = assignment?.signature_method === "DOCUSIGN" && !alreadySigned;
+  useEffect(() => {
+    if (!throughDocusign) return;
+    const timer = setInterval(load, 8000);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [throughDocusign, id]);
 
   if (!assignment) return <p className="muted">Chargement…</p>;
 
@@ -172,6 +220,15 @@ export default function SignerAssignmentDetailPage() {
             </a>
           </div>
         </div>
+      ) : assignment.signature_method === "DOCUSIGN" ? (
+        <DocusignCard
+          assignment={assignment}
+          onRefresh={async () => {
+            // Look at the envelope now, rather than waiting for the next round of the worker.
+            await api.post(`/assignments/${assignment.id}/docusign-refresh`).catch(() => undefined);
+            load();
+          }}
+        />
       ) : (
         <div className="card stack" style={{ gap: 16 }}>
           <div className="signature-preview" aria-label="Aperçu de votre signature">

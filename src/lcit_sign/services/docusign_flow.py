@@ -11,7 +11,7 @@ import hashlib
 import json
 import logging
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from datetime import UTC, datetime
 
 import httpx
@@ -323,14 +323,15 @@ def process_docusign(
     settings: Settings,
     storage: StorageService,
     client_factory: Callable[[DocusignSettings], DocusignClient] | None = None,
+    only_assignments: Collection[uuid.UUID] | None = None,
 ) -> int:
     """Send what is queued, follow what was sent, bring back what is signed. Idempotent and
-    safe to run often. Returns how many envelopes changed."""
-    active = list(
-        db.execute(
-            select(DocusignEnvelope).where(DocusignEnvelope.status.in_(["QUEUED", "SENT"]))
-        ).scalars()
-    )
+    safe to run often. `only_assignments` limits it to some people (their own "Actualiser").
+    Returns how many envelopes changed."""
+    query = select(DocusignEnvelope).where(DocusignEnvelope.status.in_(["QUEUED", "SENT"]))
+    if only_assignments is not None:
+        query = query.where(DocusignEnvelope.assignment_id.in_(only_assignments))
+    active = list(db.execute(query).scalars())
     if not active:
         return 0
     config = load_settings(db, settings.master_key)

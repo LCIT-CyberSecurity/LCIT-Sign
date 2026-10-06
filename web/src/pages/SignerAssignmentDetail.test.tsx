@@ -141,3 +141,38 @@ describe("signing a document with elements to fill in", () => {
     });
   });
 });
+
+
+describe("signing through DocuSign: the page follows the envelope instead of asking for a signature", () => {
+  const through = (docusign: unknown) =>
+    vi.mocked(api.get).mockImplementation(async (path: string) => {
+      if (path === "/config") return { consent_text: "x", consent_version: "1.0", app_version: "x" };
+      if (path.endsWith("/signing-form")) return { inputs: [], automatic: [] };
+      return [{ ...assignment, signature_method: "DOCUSIGN", docusign }];
+    });
+
+  it("says DocuSign mails the signer, and offers no signing here", async () => {
+    through({ status: "SENT", error: null, inbox_url: null });
+    renderPage();
+    expect(await screen.findByTestId("docusign-status")).toHaveTextContent("DocuSign vous a envoyé un e-mail");
+    expect(screen.queryByRole("button", { name: /^Signer/ })).toBeNull();
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    expect(screen.queryByRole("link", { name: /boîte DocuSign de test/ })).toBeNull();
+  });
+
+  it("points to the mailbox of the test DocuSign when there is one", async () => {
+    through({ status: "SENT", error: null, inbox_url: "/mock-docusign/" });
+    renderPage();
+    expect(await screen.findByRole("link", { name: /Ouvrir la boîte DocuSign de test/ })).toHaveAttribute(
+      "href",
+      "/mock-docusign/",
+    );
+  });
+
+  it("says what went wrong when the envelope could not be sent", async () => {
+    through({ status: "FAILED", error: "DocuSign a refusé la demande (test).", inbox_url: null });
+    renderPage();
+    expect(await screen.findByTestId("docusign-status")).toHaveTextContent("L'envoi à DocuSign a échoué");
+    expect(screen.getByText("DocuSign a refusé la demande (test).")).toBeInTheDocument();
+  });
+});
