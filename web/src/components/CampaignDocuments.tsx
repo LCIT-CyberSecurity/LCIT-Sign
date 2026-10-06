@@ -20,12 +20,18 @@ export default function CampaignDocuments({
   library,
   onChanged,
   active = false,
+  showPrepare = true,
+  onImported,
 }: {
   campaign: Campaign;
   library: DocumentDetail[] | null;
   onChanged: () => void;
   /** The campaign is already sent: a document added now is prepared, then sent on its own. */
   active?: boolean;
+  /** Offer "Préparer" on each document (not in the wizard, where preparing is a step of its own). */
+  showPrepare?: boolean;
+  /** Called after a drop was imported, instead of opening the editor. */
+  onImported?: () => void;
 }) {
   const navigate = useNavigate();
   const [pending, setPending] = useState<File[]>([]);
@@ -80,9 +86,10 @@ export default function CampaignDocuments({
     setNotes(messages);
     setBusy(false);
     onChanged();
-    // Straight to placing the elements: that is the next thing to do.
-    if (created.length > 0 && messages.length === 0 && hasSigners) {
-      navigate(`/documents/versions/${created[0]}/prepare?campaign=${campaign.id}`);
+    if (created.length > 0 && messages.length === 0) {
+      // On to placing the elements: that is the next thing to do.
+      if (onImported) onImported();
+      else if (hasSigners) navigate(`/documents/versions/${created[0]}/prepare?campaign=${campaign.id}`);
     }
   };
 
@@ -102,8 +109,9 @@ export default function CampaignDocuments({
     <div className="card" data-testid="campaign-documents">
       <div className="card-title">Documents à faire signer</div>
       <p className="muted small">
-        Déposez un ou plusieurs PDF, puis « Préparer » chacun : vous placez la signature, la date, le nom…
-        pour chaque personne de la liste ci-dessus.
+        {showPrepare
+          ? "Déposez un ou plusieurs PDF, puis « Préparer » chacun : vous placez la signature, la date, le nom… pour chaque signataire."
+          : "Déposez un ou plusieurs PDF, ou reprenez-en un déjà déposé. Vous placerez les éléments à signer à l'étape suivante."}
       </p>
 
       {campaign.documents.length === 0 && <p className="muted small">Aucun document pour le moment.</p>}
@@ -117,14 +125,14 @@ export default function CampaignDocuments({
                 {d.elements > 0 ? `${d.elements} élément(s) placé(s)` : ""}
               </span>
               {active && d.released && <span className="badge badge--signed">Envoyé</span>}
-              {!(active && d.released) && d.elements === 0 && (
+              {showPrepare && !(active && d.released) && d.elements === 0 && (
                 <span className="badge badge--pending" data-testid="to-prepare">
                   À préparer : placez la signature, la date, le nom…
                 </span>
               )}
             </span>
             <span className="row-actions">
-              {active && d.released ? null : hasSigners ? (
+              {!showPrepare || (active && d.released) ? null : hasSigners ? (
                 <Link
                   className={`button ${d.elements === 0 ? "button--primary" : "button--secondary"} button--sm`}
                   to={`/documents/versions/${d.version_id}/prepare?campaign=${campaign.id}`}

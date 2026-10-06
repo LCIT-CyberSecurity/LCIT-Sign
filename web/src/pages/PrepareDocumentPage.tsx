@@ -175,7 +175,7 @@ export default function PrepareDocumentPage() {
     ? "/sign"
     : campaign && campaign.status !== "DRAFT"
       ? `/campaigns/${campaignId}`
-      : `/sign/${campaignId}?step=2`;
+      : `/sign/${campaignId}?step=3`;
   const selected = fields.find((f) => f.id === selectedId) ?? null;
 
   const update = useCallback((fieldId: string, patch: Partial<EditorField>) => {

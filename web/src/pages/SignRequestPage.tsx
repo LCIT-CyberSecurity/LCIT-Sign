@@ -4,6 +4,7 @@ import { ArrowLeft, ArrowRight, Check, Rocket } from "lucide-react";
 import { api, ApiError } from "../api/client";
 import CampaignDocuments from "../components/CampaignDocuments";
 import CampaignSigners from "../components/CampaignSigners";
+import PrepareDocuments from "../components/PrepareDocuments";
 import ConfirmButton from "../components/ConfirmButton";
 import RecipientPicker from "../components/RecipientPicker";
 import ScheduleFields, {
@@ -21,7 +22,7 @@ interface TargetUserOption {
   display_name: string;
 }
 
-const STEPS = ["Signataires et relances", "Documents et éléments", "Vérifier et envoyer"];
+const STEPS = ["Signataires et relances", "Documents", "Préparer", "Vérifier et envoyer"];
 
 /** Preparing and sending a request for signature: who signs, what, for which people.
  *  Once launched it is followed in Campagnes (the reporting). */
@@ -29,7 +30,7 @@ export default function SignRequestPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [query, setQuery] = useSearchParams();
-  const step = Math.min(3, Math.max(1, Number(query.get("step")) || 1));
+  const step = Math.min(4, Math.max(1, Number(query.get("step")) || 1));
   const goTo = (n: number) => setQuery({ step: String(n) }, { replace: false });
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [documents, setDocuments] = useState<DocumentDetail[] | null>(null);
@@ -177,19 +178,54 @@ export default function SignRequestPage() {
 
       {step === 2 && (
         <>
-          <CampaignDocuments campaign={campaign} library={documents} onChanged={load} />
+          <CampaignDocuments
+            campaign={campaign}
+            library={documents}
+            onChanged={load}
+            showPrepare={false}
+            onImported={() => goTo(3)}
+          />
           <div className="row-actions">
             <button type="button" className="button button--ghost" onClick={() => goTo(1)}>
               <ArrowLeft size={14} aria-hidden="true" /> Les signataires
             </button>
-            <button type="button" className="button button--primary" onClick={() => goTo(3)}>
-              Suivant : vérifier et envoyer <ArrowRight size={14} aria-hidden="true" />
+            <button
+              type="button"
+              className="button button--primary"
+              onClick={() => goTo(3)}
+              disabled={campaign.documents.length === 0}
+            >
+              Suivant : préparer les documents <ArrowRight size={14} aria-hidden="true" />
             </button>
           </div>
         </>
       )}
 
       {step === 3 && (
+        <>
+          <PrepareDocuments campaign={campaign} />
+          <div className="row-actions">
+            <button type="button" className="button button--ghost" onClick={() => goTo(2)}>
+              <ArrowLeft size={14} aria-hidden="true" /> Les documents
+            </button>
+            <button
+              type="button"
+              className="button button--primary"
+              onClick={() => goTo(4)}
+              disabled={unprepared.length > 0 || campaign.documents.length === 0}
+            >
+              Suivant : vérifier et envoyer <ArrowRight size={14} aria-hidden="true" />
+            </button>
+          </div>
+          {unprepared.length > 0 && (
+            <p className="muted small">
+              Il reste à préparer : {unprepared.map((d) => d.title).join(", ")}.
+            </p>
+          )}
+        </>
+      )}
+
+      {step === 4 && (
         <>
           <div className="card" data-testid="recap-card">
             <div className="card-title">Récapitulatif</div>
@@ -213,7 +249,7 @@ export default function SignRequestPage() {
               </div>
               <div>
                 <dt>
-                  Documents <button className="link-button" onClick={() => goTo(2)}>Modifier</button>
+                  Documents <button className="link-button" onClick={() => goTo(3)}>Modifier</button>
                 </dt>
                 <dd>
                   <ul className="plain-list">
@@ -265,8 +301,8 @@ export default function SignRequestPage() {
             )}
             {error && <p className="error-text">{error}</p>}
             <div className="row-actions">
-              <button type="button" className="button button--ghost" onClick={() => goTo(2)}>
-                <ArrowLeft size={14} aria-hidden="true" /> Les documents
+              <button type="button" className="button button--ghost" onClick={() => goTo(3)}>
+                <ArrowLeft size={14} aria-hidden="true" /> La préparation
               </button>
               <ConfirmButton
                 className="button button--primary"

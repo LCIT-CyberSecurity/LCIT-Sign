@@ -28,6 +28,10 @@ export default function SignerAssignmentsPage() {
   const pending = assignments.filter((a) => a.status === "PENDING" || a.status === "VIEWED");
   const signed = assignments.filter((a) => a.status === "SIGNED");
   const upcoming = assignments.filter((a) => a.status === "WAITING");
+  // A campaign with several documents to sign: one click for all of them.
+  const bulk = [...new Map(pending.map((a) => [a.campaign_id, a.campaign_name])).entries()]
+    .map(([id, name]) => ({ id, name, count: pending.filter((a) => a.campaign_id === id).length }))
+    .filter((c) => c.count > 1);
 
   return (
     <div className="stack">
@@ -56,6 +60,18 @@ export default function SignerAssignmentsPage() {
           </div>
         </div>
       </div>
+      {bulk.map((c) => (
+        <Link key={c.id} to={`/sign-all/${c.id}`} className="card card--link" data-testid="sign-all-link">
+          <div>
+            <div className="card-title">Tout signer d&apos;un coup</div>
+            <div className="muted small">
+              {c.count} documents de « {c.name} » : un seul consentement, chaque document a sa preuve.
+            </div>
+          </div>
+          <div className="card-meta">Signer les {c.count} documents</div>
+        </Link>
+      ))}
+
       <section>
         <h1 className="page-title">
           <FileText size={20} aria-hidden="true" /> À signer

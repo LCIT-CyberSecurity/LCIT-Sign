@@ -7,6 +7,7 @@ import SignerAssignmentsPage from "./pages/SignerAssignmentsPage";
 import SignerAssignmentDetailPage from "./pages/SignerAssignmentDetailPage";
 import OperatorDocumentsPage from "./pages/OperatorDocumentsPage";
 import OperatorCampaignsPage from "./pages/OperatorCampaignsPage";
+import SignAllPage from "./pages/SignAllPage";
 import SignedDocumentsPage from "./pages/SignedDocumentsPage";
 import SignPage from "./pages/SignPage";
 import SignRequestPage from "./pages/SignRequestPage";
@@ -81,6 +82,7 @@ export default function App() {
             </RoleRoute>
           }
         />
+        <Route path="/sign-all/:campaignId" element={<SignAllPage />} />
         <Route
           path="/signed"
           element={

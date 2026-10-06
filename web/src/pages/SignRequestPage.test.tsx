@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import SignRequestPage from "./SignRequestPage";
 import { api } from "../api/client";
@@ -41,7 +41,7 @@ describe("SignRequestPage", () => {
     vi.mocked(api.put).mockResolvedValue({});
   });
 
-  it("goes through the three screens: signers and reminders, documents, then sending", async () => {
+  it("goes through the four screens: signers, documents, preparing, then review and send", async () => {
     open(1);
     // Screen 1: who signs (in order), the mail merge list, deadline, reminders, renewal.
     expect(await screen.findByTestId("signers-card")).toBeInTheDocument();
@@ -51,13 +51,38 @@ describe("SignRequestPage", () => {
     expect(screen.getByTestId("policy-card")).toHaveTextContent("Renouvellement");
     expect(screen.queryByTestId("campaign-documents")).toBeNull();
 
+    // Screen 2: the documents only (no editing of elements here).
     fireEvent.click(screen.getByRole("button", { name: /Suivant : les documents/ }));
-    expect(await screen.findByTestId("campaign-documents")).toBeInTheDocument();
+    const documents = await screen.findByTestId("campaign-documents");
+    expect(documents).toHaveTextContent("PSSI");
+    expect(within(documents).queryByRole("link", { name: /Préparer/ })).toBeNull();
     expect(screen.queryByTestId("signers-card")).toBeNull();
 
+    // Screen 3: preparing, a page of its own.
+    fireEvent.click(screen.getByRole("button", { name: /Suivant : préparer les documents/ }));
+    const prepare = await screen.findByTestId("prepare-step");
+    expect(screen.getByTestId("prepare-progress")).toHaveTextContent("1/1");
+    expect(within(prepare).getByRole("link", { name: /Modifier/ })).toHaveAttribute(
+      "href",
+      "/documents/versions/v1/prepare?campaign=c1",
+    );
+
+    // Screen 4: review and send.
     fireEvent.click(screen.getByRole("button", { name: /Suivant : vérifier et envoyer/ }));
     expect(await screen.findByTestId("recap-card")).toHaveTextContent("PSSI — 2 élément(s) placé(s)");
     expect(screen.getByTestId("recap-card")).toHaveTextContent("Chaque destinataire");
+  });
+
+  it("does not leave the preparing screen while a document has no element, and says which", async () => {
+    open(3, [prepared, { ...prepared, version_id: "v2", title: "Charte", elements: 0 }]);
+    const step = await screen.findByTestId("prepare-step");
+    expect(screen.getByTestId("prepare-progress")).toHaveTextContent("1/2");
+    expect(within(step).getByRole("link", { name: /Préparer « Charte »/ })).toHaveAttribute(
+      "href",
+      "/documents/versions/v2/prepare?campaign=c1",
+    );
+    expect(screen.getByRole("button", { name: /Suivant : vérifier et envoyer/ })).toBeDisabled();
+    expect(screen.getByText(/Il reste à préparer : Charte/)).toBeInTheDocument();
   });
 
   it("refuses an impossible calendar, then sends with the four settings", async () => {
@@ -116,7 +141,7 @@ describe("SignRequestPage", () => {
   });
 
   it("will not send before every document has its elements, and says which one", async () => {
-    open(3, [prepared, { ...prepared, version_id: "v2", title: "Charte", elements: 0 }]);
+    open(4, [prepared, { ...prepared, version_id: "v2", title: "Charte", elements: 0 }]);
     const blocker = await screen.findByTestId("launch-blocker");
     expect(blocker).toHaveTextContent("Placez les éléments");
     expect(blocker).toHaveTextContent("Charte");
@@ -125,14 +150,14 @@ describe("SignRequestPage", () => {
   });
 
   it("asks for a document when there is none", async () => {
-    open(3, []);
+    open(4, []);
     expect(await screen.findByTestId("launch-blocker")).toHaveTextContent("Ajoutez au moins un document");
     expect(screen.getByRole("button", { name: /Envoyer pour signature/ })).toBeDisabled();
   });
 
   it("asks to choose the people when the mail merge list is empty", async () => {
     vi.mocked(api.post).mockResolvedValue({ population_count: 0 });
-    open(3);
+    open(4);
     expect(await screen.findByTestId("launch-blocker")).toHaveTextContent("Choisissez les personnes");
   });
 });

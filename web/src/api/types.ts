@@ -341,3 +341,24 @@ export interface SignedDocumentsResponse {
   outstanding: OutstandingRow[];
   totals: { signed: number; outstanding: number; waiting: number };
 }
+
+export interface SignAllInput {
+  id: string;
+  label: string;
+  required: boolean;
+  group_key: string | null;
+  kind: string;
+}
+
+export interface SignAllDocument {
+  version_id: string;
+  title: string;
+  version_label: string;
+  inputs: SignAllInput[];
+}
+
+export interface SignAllPlan {
+  campaign: { id: string; name: string };
+  documents: SignAllDocument[];
+  waiting: number;
+}
