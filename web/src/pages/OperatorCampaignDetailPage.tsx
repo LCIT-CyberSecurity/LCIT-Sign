@@ -371,9 +371,25 @@ export default function OperatorCampaignDetailPage() {
                   <td>
                     <div className="row-actions">
                       {a.signature_id && (
-                        <Link className="button button--ghost button--sm" to={`/signatures/${a.signature_id}`}>
-                          Voir la signature
-                        </Link>
+                        <>
+                          <a
+                            className="button button--secondary button--sm"
+                            href={`/api/signatures/${a.signature_id}/signed-pdf?inline=true`}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Ouvrir le PDF signé
+                          </a>
+                          <a
+                            className="button button--ghost button--sm"
+                            href={`/api/signatures/${a.signature_id}/signed-pdf`}
+                          >
+                            Télécharger
+                          </a>
+                          <Link className="button button--ghost button--sm" to={`/signatures/${a.signature_id}`}>
+                            Preuve
+                          </Link>
+                        </>
                       )}
                       {campaign.status === "ACTIVE" && isOutstanding(a.status) && (
                         <button

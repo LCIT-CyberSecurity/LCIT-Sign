@@ -24,7 +24,12 @@ from lcit_sign.models.signature import Signature
 from lcit_sign.models.user import Role, User
 from lcit_sign.services import branding
 from lcit_sign.services.audit import append_audit_event
-from lcit_sign.services.campaign_roles import release_next_role, waiting_on
+from lcit_sign.services.campaign_roles import (
+    load_roles,
+    release_next_role,
+    role_label,
+    waiting_on,
+)
 from lcit_sign.services.evidence import canonical_evidence_fields, canonical_json
 from lcit_sign.services.field_stamping import (
     FieldError,
@@ -94,6 +99,95 @@ def _authorize_signature_access(signature: Signature, user: User, db: DbSession)
     if user_roles(db, user) & {Role.OPERATOR, Role.ADMIN}:
         return
     raise HTTPException(403, "Not authorized to access this signature")
+
+
+def prior_stamps(
+    db: DbSession, campaign_id: uuid.UUID | None, version_id: uuid.UUID, role: int
+) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+    """What the signers before this position have already put on the document, and which
+    signatures those are. Cumulative: the latest earlier signature carries all of it."""
+    if campaign_id is None or role <= 1:
+        return [], []
+    earlier = list(
+        db.execute(
+            select(Signature)
+            .join(SignatureAssignment, SignatureAssignment.signature_id == Signature.id)
+            .where(
+                SignatureAssignment.campaign_id == campaign_id,
+                SignatureAssignment.document_version_id == version_id,
+                SignatureAssignment.role < role,
+                SignatureAssignment.status == AssignmentStatus.SIGNED,
+            )
+            .order_by(SignatureAssignment.role)
+        ).scalars()
+    )
+    if not earlier:
+        return [], []
+    return (
+        list(earlier[-1].field_values or []),
+        [{"signature_id": str(e.id), "evidence_hash": e.evidence_hash} for e in earlier],
+    )
+
+
+@router.get("/assignments/{assignment_id}/preview")
+def preview_assignment(
+    request: Request,
+    assignment_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: DbSession = Depends(get_db),
+) -> Response:
+    """The document as this person sees it: once signed, their signed copy; before, the
+    document with what the signers before them have already put on it (the RSSI's signature
+    and date), so they sign what they are shown."""
+    assignment = db.get(SignatureAssignment, assignment_id)
+    if assignment is None or assignment.user_id != user.id:
+        raise HTTPException(404, "Assignment not found")
+    storage: StorageService = request.app.state.storage
+
+    if assignment.signature_id is not None and assignment.status == AssignmentStatus.SIGNED:
+        data = storage.read(SIGNED_BUCKET, assignment.signature_id, PDF_SUFFIX)
+    else:
+        data = storage.read(DOCUMENTS_BUCKET, assignment.document_version_id, PDF_SUFFIX)
+        values, _ = prior_stamps(
+            db, assignment.campaign_id, assignment.document_version_id, assignment.role
+        )
+        logo = branding.read_logo(storage)
+        settings: Settings = request.app.state.settings
+        # The person's own elements too, where they will be, with their real name and today's date
+        # (an answer not typed yet shows its label), in a dotted frame: not signed yet.
+        own = resolve_fields(
+            to_prepared(load_fields(db, assignment.document_version_id)),
+            role=assignment.role,
+            signer_name=user.display_name,
+            signer_email=user.email,
+            signed_at=datetime.now(UTC),
+            inputs={},
+            logo_sha256=logo[1] if logo else None,
+            signer_first_name=user.given_name or "",
+            signer_last_name=user.family_name or "",
+            tz=settings.timezone,
+            preview=True,
+        )
+        if values or own:
+            data = stamp_fields(data, [*values, *own], logo[0] if logo else None)
+        if assignment.status == AssignmentStatus.PENDING:
+            assignment.status = AssignmentStatus.VIEWED
+            assignment.first_viewed_at = datetime.now(UTC)
+    version = db.get(DocumentVersion, assignment.document_version_id)
+    append_audit_event(
+        db, action="DOCUMENT_VIEWED", actor_id=user.id,
+        target_type="document_version", target_id=str(assignment.document_version_id),
+        document_id=version.document_id if version else None,
+    )
+    db.commit()
+    return Response(
+        content=data,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": 'inline; filename="apercu.pdf"',
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 def perform_signature(
@@ -200,32 +294,8 @@ def perform_signature(
     # and stamp them on a copy of the original.
     logo = branding.read_logo(storage)
 
-    # In a campaign with several signers, this copy carries the stamps of those who
-    # signed before (they are cumulative: the latest earlier signature has them all).
-    prior_values: list[dict[str, Any]] = []
-    prior_refs: list[dict[str, str]] = []
-    if campaign_id is not None and role > 1:
-        earlier = list(
-            db.execute(
-                select(Signature)
-                .join(
-                    SignatureAssignment,
-                    SignatureAssignment.signature_id == Signature.id,
-                )
-                .where(
-                    SignatureAssignment.campaign_id == campaign_id,
-                    SignatureAssignment.document_version_id == version.id,
-                    SignatureAssignment.role < role,
-                    SignatureAssignment.status == AssignmentStatus.SIGNED,
-                )
-                .order_by(SignatureAssignment.role)
-            ).scalars()
-        )
-        if earlier:
-            prior_values = list(earlier[-1].field_values or [])
-            prior_refs = [
-                {"signature_id": str(e.id), "evidence_hash": e.evidence_hash} for e in earlier
-            ]
+    # In a campaign with several signers, this copy carries the stamps of those who signed before.
+    prior_values, prior_refs = prior_stamps(db, campaign_id, version.id, role)
     try:
         own_fields = resolve_fields(
             to_prepared(load_fields(db, version.id)),
@@ -407,6 +477,95 @@ def list_my_signatures(
         .order_by(Signature.signed_at_utc.desc())
     ).scalars()
     return [_described(row, db) for row in rows]
+
+
+@router.get("/signatures/{signature_id}/chain")
+def signature_chain(
+    signature_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: DbSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Who signed this document in this campaign, in order, and who is still to. Someone from
+    the "every recipient" list sees their own line and a count for the others (colleagues'
+    names are not theirs to read); named signers (the RSSI) are visible to everyone in the chain;
+    operators and administrators see everyone."""
+    signature = db.get(Signature, signature_id)
+    if signature is None:
+        raise HTTPException(404, "Signature not found")
+    _authorize_signature_access(signature, user, db)
+    staff = bool(user_roles(db, user) & {Role.OPERATOR, Role.ADMIN})
+
+    if signature.campaign_id is None:
+        return {
+            "steps": [_step(signature.display_name_snapshot, signature.email_snapshot, "SIGNED",
+                            signature, 1, "")],
+            "others": None,
+            "complete": True,
+        }
+
+    rows = db.execute(
+        select(SignatureAssignment, User)
+        .join(User, User.id == SignatureAssignment.user_id)
+        .where(
+            SignatureAssignment.campaign_id == signature.campaign_id,
+            SignatureAssignment.document_version_id == signature.document_version_id,
+            SignatureAssignment.status != AssignmentStatus.CANCELLED,
+        )
+        .order_by(SignatureAssignment.role, User.display_name)
+    ).all()
+    roles = {r.role: r for r in load_roles(db, signature.campaign_id)}
+    signatures = {
+        s.id: s
+        for s in db.execute(
+            select(Signature).where(
+                Signature.id.in_([a.signature_id for a, _ in rows if a.signature_id])
+            )
+        ).scalars()
+    }
+    steps: list[dict[str, Any]] = []
+    hidden = {"count": 0, "signed": 0}
+    for assignment, person in rows:
+        crowd = roles.get(assignment.role) is not None and roles[assignment.role].mode == "EACH"
+        mine = assignment.user_id == user.id
+        if crowd and not mine and not staff:
+            hidden["count"] += 1
+            hidden["signed"] += 1 if assignment.status == AssignmentStatus.SIGNED else 0
+            continue
+        steps.append(
+            _step(
+                person.display_name, person.email, assignment.status.value,
+                signatures.get(assignment.signature_id) if assignment.signature_id else None,
+                assignment.role, role_label(roles.get(assignment.role), assignment.role),
+                mine=mine,
+            )
+        )
+    return {
+        "steps": steps,
+        "others": hidden if hidden["count"] else None,
+        "complete": all(a.status == AssignmentStatus.SIGNED for a, _ in rows),
+    }
+
+
+def _step(
+    name: str,
+    email: str,
+    status: str,
+    signature: Signature | None,
+    role: int,
+    label: str,
+    *,
+    mine: bool = True,
+) -> dict[str, Any]:
+    return {
+        "role": role,
+        "role_label": label,
+        "name": name,
+        "email": email,
+        "status": status,
+        "signed_at": signature.signed_at_utc.isoformat() if signature else None,
+        "display_id": signature.display_id if signature else None,
+        "mine": mine,
+    }
 
 
 @router.get("/signatures/{signature_id}")

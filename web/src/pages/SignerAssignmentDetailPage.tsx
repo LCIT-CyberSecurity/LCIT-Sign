@@ -87,7 +87,12 @@ export default function SignerAssignmentDetailPage() {
   const missing = inputGroups.some((g) => g.required && !(typed[g.key] ?? "").trim());
 
   const isSigned = assignment.status === "SIGNED";
-  const contentUrl = `/api/documents/versions/${assignment.document_version_id}/content`;
+  // What this person is shown is what they sign: the document with what the signers before them
+  // put on it, and once signed, their own signed copy. The address changes when they sign, so the
+  // frame is loaded again.
+  const contentUrl = `/api/assignments/${assignment.id}/preview?v=${
+    signature?.id ?? assignment.signature_id ?? "pending"
+  }`;
 
   const sign = async () => {
     setSigning(true);

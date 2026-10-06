@@ -44,6 +44,8 @@ services:
       LCIT_SIGN_ENVIRONMENT: development
       LCIT_SIGN_DATABASE_URL: postgresql+psycopg://lcit_sign:${LCIT_SIGN_DB_PASSWORD:-lcit_sign}@postgres:5432/lcit_sign
       LCIT_SIGN_LOG_LEVEL: INFO
+      # Only the throwaway test stack turns this off (a browser suite signs in dozens of times).
+      LCIT_SIGN_RATE_LIMIT_ENABLED: ${LCIT_SIGN_RATE_LIMIT_ENABLED:-true}
       LCIT_SIGN_SESSION_SECRET: ${LCIT_SIGN_SESSION_SECRET:-dev-only-insecure-secret-change-me}
       # http only for now (TLS/cert installer lands in a later phase).
       LCIT_SIGN_COOKIE_SECURE: ${LCIT_SIGN_COOKIE_SECURE:-false}

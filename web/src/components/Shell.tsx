@@ -65,7 +65,7 @@ const TITLES: [prefix: string, label: string][] = [
 ];
 
 function sectionTitle(pathname: string): string {
-  return TITLES.find(([prefix]) => pathname.startsWith(prefix))?.[1] ?? "Mes documents";
+  return TITLES.find(([prefix]) => pathname.startsWith(prefix))?.[1] ?? "Mes signatures";
 }
 
 export default function Shell() {
@@ -103,13 +103,7 @@ export default function Shell() {
         </div>
         <nav aria-label="Navigation principale">
           <div className="nav-heading">Mon espace</div>
-          <NavItem to="/" end icon={<FileText size={18} />} label="Mes documents" onNavigate={close} />
-          <NavItem
-            to="/signatures"
-            icon={<FileSignature size={18} />}
-            label="Mes signatures"
-            onNavigate={close}
-          />
+          <NavItem to="/" end icon={<FileSignature size={18} />} label="Mes signatures" onNavigate={close} />
           {isOperator && (
             <>
               <div className="nav-heading">Opérateur</div>

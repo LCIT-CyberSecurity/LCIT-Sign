@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { describePolicies, describeSchedule, scheduleBody, scheduleProblem, EMPTY_SCHEDULE } from "./Schedule";
+import {
+  DEFAULT_DEADLINE_DAYS,
+  EMPTY_SCHEDULE,
+  addDays,
+  defaultSchedule,
+  describePolicies,
+  describeSchedule,
+  scheduleBody,
+  scheduleFromPlan,
+  scheduleProblem,
+} from "./Schedule";
 
 const day = (offset: number) => new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
 
@@ -67,5 +77,38 @@ describe("schedule", () => {
         renewal_unit: "MONTHS",
       }),
     ).toEqual(["Relance à J+7, puis tous les 7 jours.", "Renouvellement tous les 12 mois."]);
+  });
+
+  it("starts a new request from today, due in 30 days, with no reminder and no renewal", () => {
+    const fresh = defaultSchedule();
+    expect(fresh.startDate).toBe(day(0));
+    expect(fresh.deadline).toBe(day(DEFAULT_DEADLINE_DAYS));
+    expect(fresh.reminderDays).toBe("");
+    expect(fresh.renewalMonths).toBe("");
+    // Starting today is "as soon as it is sent": nothing is scheduled, nothing is refused.
+    const body = scheduleBody(fresh);
+    expect(body.start_at).toBeNull();
+    expect(body.deadline).not.toBeNull();
+    expect(body.reminder_first_days).toBeNull();
+    expect(body.renewal_every).toBeNull();
+    expect(scheduleProblem(fresh)).toBeNull();
+    expect(describeSchedule(fresh)).toEqual([
+      "Début dès l'envoi",
+      expect.stringMatching(/^Échéance le /),
+      "Pas de relance automatique",
+      "Pas de renouvellement",
+    ]);
+  });
+
+  it("adds days across month ends", () => {
+    expect(addDays("2026-01-15", 30)).toBe("2026-02-14");
+    expect(addDays("2026-12-20", 30)).toBe("2027-01-19");
+  });
+
+  it("puts a saved plan back: no start saved is today, no deadline saved stays none", () => {
+    const back = scheduleFromPlan({ deadline: null, reminder_first_days: 7, reminder_interval_days: 7 });
+    expect(back.startDate).toBe(day(0));
+    expect(back.deadline).toBe("");
+    expect(back.reminderDays).toBe("7");
   });
 });

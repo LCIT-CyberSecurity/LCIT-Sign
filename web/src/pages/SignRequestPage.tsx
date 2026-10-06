@@ -5,11 +5,12 @@ import { api, ApiError } from "../api/client";
 import CampaignDocuments from "../components/CampaignDocuments";
 import CampaignSigners from "../components/CampaignSigners";
 import PrepareStep from "../components/PrepareStep";
+import { missingSignatureText, missingSignatures } from "../lib/signatures";
 import ConfirmButton from "../components/ConfirmButton";
 import RecipientPicker from "../components/RecipientPicker";
 import SignedDocuments from "../components/SignedDocuments";
 import ScheduleFields, {
-  EMPTY_SCHEDULE,
+  defaultSchedule,
   describeSchedule,
   scheduleBody,
   scheduleFromPlan,
@@ -53,7 +54,7 @@ export default function SignRequestPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [recipientCount, setRecipientCount] = useState<number | null>(null);
-  const [schedule, setSchedule] = useState<Schedule>(EMPTY_SCHEDULE);
+  const [schedule, setSchedule] = useState<Schedule>(defaultSchedule);
 
   const load = () => {
     if (!id) return;
@@ -123,14 +124,18 @@ export default function SignRequestPage() {
 
   const scheduled = scheduleBody(schedule).start_at !== null;
   const unprepared = campaign.documents.filter((d) => d.elements === 0);
+  const noSignature = missingSignatures(campaign);
+  // What stops the sending, in the order a person would fix it.
   const blocker =
     hasList && recipientCount === 0
       ? "Choisissez les personnes concernées (écran « Signataires et relances »)."
       : campaign.documents.length === 0
-      ? "Ajoutez au moins un document."
-      : unprepared.length > 0
-        ? `Placez les éléments (signature, date, nom…) sur : ${unprepared.map((d) => d.title).join(", ")}.`
-        : null;
+        ? "Ajoutez au moins un document."
+        : unprepared.length > 0
+          ? `Placez les éléments (signature, date, nom…) sur : ${unprepared.map((d) => d.title).join(", ")}.`
+          : noSignature.length > 0
+            ? missingSignatureText(noSignature)
+            : null;
 
   const launch = async () => {
     const problem = scheduleProblem(schedule);
@@ -302,7 +307,9 @@ export default function SignRequestPage() {
               type="button"
               className="button button--primary"
               onClick={() => goTo(4)}
-              disabled={unprepared.length > 0 || campaign.documents.length === 0}
+              disabled={
+                unprepared.length > 0 || noSignature.length > 0 || campaign.documents.length === 0
+              }
             >
               Suivant : vérifier et envoyer <ArrowRight size={14} aria-hidden="true" />
             </button>

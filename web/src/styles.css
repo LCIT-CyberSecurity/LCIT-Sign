@@ -1323,3 +1323,11 @@ a.attention:hover strong { color: var(--primary); }
 .prepare-tabs { list-style: none; margin: 0; padding: 0; display: flex; gap: 6px; flex-wrap: wrap; }
 .prepare-tab { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--text-secondary); font: inherit; font-size: 13.5px; cursor: pointer; }
 .prepare-tab.is-current { border-color: var(--accent, #65459b); color: var(--text-primary); font-weight: 600; box-shadow: inset 0 0 0 1px var(--accent, #65459b); }
+
+.card--row { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+.card--row .card-link { color: inherit; text-decoration: none; flex: 1 1 260px; min-width: 0; }
+.card--row .card-link:hover .card-title { text-decoration: underline; }
+
+.chain { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 8px; }
+.chain li { display: flex; gap: 10px; align-items: baseline; }
+.chain__me { font-weight: 500; }

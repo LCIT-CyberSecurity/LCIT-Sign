@@ -9,7 +9,9 @@ vi.mock("../api/client", () => ({
   api: { get: vi.fn(), post: vi.fn(), del: vi.fn(), put: vi.fn() },
   ApiError: class ApiError extends Error {},
 }));
-vi.mock("../auth/AuthContext", () => ({ useAuth: () => ({ user: { display_name: "Erwan Petit" } }) }));
+vi.mock("../auth/AuthContext", () => ({
+  useAuth: () => ({ user: { display_name: "Erwan Petit" }, hasRole: () => false }),
+}));
 
 const users = [
   { id: "u1", email: "rssi@lcit.fr", display_name: "Rita Rssi" },
@@ -85,13 +87,17 @@ describe("choosing who signs, among the users", () => {
 
 describe("a signer whose turn has not come", () => {
   it("sees the document under 'À venir', with who must sign first", async () => {
-    vi.mocked(api.get).mockResolvedValue([
-      {
-        id: "a1", campaign_id: "c1", campaign_name: "PSSI 2026", document_version_id: "v1",
-        document_title: "PSSI", version_label: "1.0", status: "WAITING", assigned_at: "",
-        deadline: null, signed_at: null, signature_id: null, waiting_on: ["Rita Rssi"],
-      },
-    ]);
+    vi.mocked(api.get).mockImplementation(async (path: string) =>
+      path === "/signatures/me"
+        ? []
+        : [
+            {
+              id: "a1", campaign_id: "c1", campaign_name: "PSSI 2026", document_version_id: "v1",
+              document_title: "PSSI", version_label: "1.0", status: "WAITING", assigned_at: "",
+              deadline: null, signed_at: null, signature_id: null, waiting_on: ["Rita Rssi"],
+            },
+          ],
+    );
     render(
       <MemoryRouter>
         <SignerAssignmentsPage />

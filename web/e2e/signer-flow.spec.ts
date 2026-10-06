@@ -12,7 +12,8 @@ async function loginAs(page: Page, name: string) {
 
 test("a signer sees nothing of the operator and admin areas", async ({ page }) => {
   await loginAs(page, "Erwan");
-  await expect(page.getByRole("link", { name: "Mes documents" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Mes signatures" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Mes documents" })).toHaveCount(0); // one page, not two
   await expect(page.getByText("Administration")).toHaveCount(0);
   await page.goto("/admin/diagnostics");
   await expect(page).toHaveURL(/\/$/); // bounced back by the route guard
@@ -86,7 +87,7 @@ test("an administrator reaches the diagnostics page", async ({ page }) => {
 
 test("an operator sees the dashboard and can filter a campaign's follow-up", async ({ page }) => {
   await loginAs(page, "Diane");
-  await page.getByRole("link", { name: "Suivi" }).click();
+  await page.getByRole("link", { name: "Suivi", exact: true }).click();
   await expect(page.getByRole("region", { name: "Tableau de bord" })).toBeVisible();
   await expect(page.getByTestId("stat-Signatures attendues")).not.toHaveText("0");
 
@@ -293,6 +294,13 @@ test("an operator sends a request through the screens; the RSSI signs first, the
   await bobPage.getByRole("checkbox").check();
   await bobPage.getByRole("button", { name: "Signer", exact: true }).click();
   await expect(bobPage.getByTestId("signature-id")).toHaveText(/^SIG-[0-9A-F]{12}$/);
+  // The frame now shows his signed copy, not the bare original; and the signed PDF is one click away
+  // on his list of documents.
+  await expect(bobPage.locator(".pdf-viewer iframe")).toHaveAttribute("src", /\/preview\?v=[0-9a-f-]{36}/);
+  await bobPage.goto("/");
+  const signedCard = bobPage.getByTestId(`signed-${title}`);
+  await expect(signedCard.getByRole("link", { name: "PDF signé" })).toHaveAttribute("href", /signed-pdf$/);
+  await expect(signedCard.getByRole("link", { name: "Ouvrir" })).toHaveAttribute("href", /signed-pdf\?inline=true/);
   await bob.close();
   await erwan.close();
 

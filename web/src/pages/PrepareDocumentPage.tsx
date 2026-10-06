@@ -162,7 +162,9 @@ export function DocumentEditor({
         setInfo(loaded);
         setFields(loaded.fields);
         setPages(sizes);
-        setRecipients(Math.max(1, ...loaded.fields.map((f) => f.role)));
+        // The signers also come from the campaign (loaded on its own): whichever answer arrives
+        // last must not shrink the list the other one made.
+        setRecipients((n) => Math.max(n, 1, ...loaded.fields.map((f) => f.role)));
       })
       .catch((err) => setLoadError(err instanceof ApiError ? err.message : "Document introuvable."));
   }, [id]);

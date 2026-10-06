@@ -28,7 +28,29 @@ export const RENEWAL_CHOICES: [string, string][] = [
   ["12", "Tous les ans"],
 ];
 
-const today = () => new Date().toISOString().slice(0, 10);
+const two = (n: number) => String(n).padStart(2, "0");
+const dayOf = (date: Date) => `${date.getFullYear()}-${two(date.getMonth() + 1)}-${two(date.getDate())}`;
+// The company's day is the person's local one, not UTC's (just after midnight it is already tomorrow).
+const today = () => dayOf(new Date());
+
+/** `day` (yyyy-mm-dd) moved by `n` days. */
+export function addDays(day: string, n: number): string {
+  const date = new Date(`${day}T12:00:00`);
+  date.setDate(date.getDate() + n);
+  return dayOf(date);
+}
+
+export const DEFAULT_DEADLINE_DAYS = 30;
+
+/** What a new request starts with: from today, due in 30 days, no reminder, no renewal. */
+export function defaultSchedule(): Schedule {
+  return {
+    startDate: today(),
+    deadline: addDays(today(), DEFAULT_DEADLINE_DAYS),
+    reminderDays: "",
+    renewalMonths: "",
+  };
+}
 
 /** The fields the API expects for the launch. A start date today or earlier means "now". */
 export function scheduleBody(s: Schedule): CampaignPolicies & {
@@ -50,16 +72,13 @@ export function scheduleBody(s: Schedule): CampaignPolicies & {
   };
 }
 
-const two = (n: number) => String(n).padStart(2, "0");
-const localDate = (iso: string) => {
-  const d = new Date(iso);
-  return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}`;
-};
+const localDate = (iso: string) => dayOf(new Date(iso));
 
-/** The form as it was when saved: the reverse of `scheduleBody`. */
+/** The form as it was when saved: the reverse of `scheduleBody`. No start date saved means "as
+ *  soon as it is sent", which is today; no deadline saved means the person chose none. */
 export function scheduleFromPlan(plan: CampaignPlan): Schedule {
   return {
-    startDate: plan.start_at ? localDate(plan.start_at) : "",
+    startDate: plan.start_at ? localDate(plan.start_at) : today(),
     deadline: plan.deadline ? localDate(plan.deadline) : "",
     reminderDays: plan.reminder_first_days ? String(plan.reminder_first_days) : "",
     renewalMonths:
@@ -120,15 +139,25 @@ export default function ScheduleFields({
   onChange: (next: Schedule) => void;
 }) {
   const set = (patch: Partial<Schedule>) => onChange({ ...value, ...patch });
+  // Starting after the deadline makes no sense: the deadline follows, keeping the same time to sign.
+  const setStart = (startDate: string) =>
+    onChange({
+      ...value,
+      startDate,
+      deadline:
+        startDate && value.deadline && value.deadline <= startDate
+          ? addDays(startDate, DEFAULT_DEADLINE_DAYS)
+          : value.deadline,
+    });
   return (
     <div className="stack" style={{ gap: 12 }}>
       <div className="form-row">
         <label>
-          Date de début <span className="muted small">(vide : dès l&apos;envoi)</span>
-          <input type="date" value={value.startDate} min={today()} onChange={(e) => set({ startDate: e.target.value })} />
+          Date de début <span className="muted small">(aujourd&apos;hui : dès l&apos;envoi)</span>
+          <input type="date" value={value.startDate} min={today()} onChange={(e) => setStart(e.target.value)} />
         </label>
         <label>
-          Date d&apos;échéance <span className="muted small">(dernier jour pour signer)</span>
+          Date d&apos;échéance <span className="muted small">(dernier jour pour signer, 30 jours par défaut)</span>
           <input
             type="date"
             value={value.deadline}

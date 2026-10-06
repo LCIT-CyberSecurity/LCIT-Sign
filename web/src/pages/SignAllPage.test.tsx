@@ -9,7 +9,13 @@ vi.mock("../api/client", () => ({
   api: { get: vi.fn(), post: vi.fn() },
   ApiError: class ApiError extends Error {},
 }));
-vi.mock("../auth/AuthContext", () => ({ useAuth: () => ({ user: { display_name: "Rita Rssi" } }) }));
+const auth = { roles: ["SIGNER"] as string[] };
+vi.mock("../auth/AuthContext", () => ({
+  useAuth: () => ({
+    user: { display_name: "Rita Rssi", roles: auth.roles },
+    hasRole: (r: string) => auth.roles.includes(r),
+  }),
+}));
 
 const input = (id: string, extra = {}) => ({
   id, label: "Fonction", required: true, group_key: "fonction", kind: "TEXT", ...extra,
@@ -77,11 +83,15 @@ describe("SignAllPage", () => {
       id, campaign_id: campaign, campaign_name: name, document_version_id: `v-${id}`, document_title: `Doc ${id}`,
       version_label: "1.0", status, assigned_at: "", deadline: null, signed_at: null, signature_id: null,
     });
-    vi.mocked(api.get).mockResolvedValue([
-      row("a", "c1", "Politiques 2026"),
-      row("b", "c1", "Politiques 2026"),
-      row("c", "c2", "Charte 2026"),
-    ]);
+    vi.mocked(api.get).mockImplementation(async (path: string) =>
+      path === "/signatures/me"
+        ? []
+        : [
+            row("a", "c1", "Politiques 2026"),
+            row("b", "c1", "Politiques 2026"),
+            row("c", "c2", "Charte 2026"),
+          ],
+    );
     render(
       <MemoryRouter>
         <SignerAssignmentsPage />
@@ -92,5 +102,51 @@ describe("SignAllPage", () => {
     expect(links).toHaveLength(1);
     expect(links[0]).toHaveAttribute("href", "/sign-all/c1");
     expect(links[0]).toHaveTextContent("2 documents de « Politiques 2026 »");
+  });
+
+  it("is one page, 'Mes signatures': what is to sign, what is next, and what was signed, with the proofs", async () => {
+    const todo = {
+      id: "a2", campaign_id: "c1", campaign_name: "Politiques 2026", document_version_id: "v2",
+      document_title: "Charte", version_label: "1.0", status: "PENDING", assigned_at: "",
+      deadline: null, signed_at: null, signature_id: null,
+    };
+    const signature = {
+      id: "s9", display_id: "SIG-9", signed_at_utc: "2026-10-06T10:00:00Z", document_title: "PSSI",
+      version_label: "1.0", campaign_name: "Politiques 2026",
+    };
+    vi.mocked(api.get).mockImplementation(async (path: string) =>
+      path === "/signatures/me" ? [signature] : [todo],
+    );
+    render(
+      <MemoryRouter>
+        <SignerAssignmentsPage />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByRole("heading", { level: 1, name: /Mes signatures/ })).toBeInTheDocument();
+    expect(screen.getByTestId("count-pending")).toHaveTextContent("1");
+    expect(screen.getByTestId("count-signed")).toHaveTextContent("1");
+    // What is to sign leads to signing; what was signed gives the PDF, and the proof page.
+    expect(screen.getByRole("link", { name: /Charte/ })).toHaveAttribute("href", "/assignments/a2");
+    const card = screen.getByTestId("signed-PSSI");
+    expect(card.querySelector('a[href="/api/signatures/s9/signed-pdf?inline=true"]')).not.toBeNull();
+    expect(card.querySelector('a[href="/api/signatures/s9/signed-pdf"]')).toHaveTextContent("PDF signé");
+    expect(card.querySelector('a[href="/signatures/s9"]')).not.toBeNull();
+    // A plain signer is not sent to Suivi.
+    expect(screen.queryByRole("link", { name: /Suivi/ })).toBeNull();
+  });
+
+  it("says where to see what others signed, to the staff only", async () => {
+    auth.roles = ["OPERATOR"];
+    vi.mocked(api.get).mockImplementation(async () => []);
+    render(
+      <MemoryRouter>
+        <SignerAssignmentsPage />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByRole("link", { name: /Suivi → Documents signés/ })).toHaveAttribute(
+      "href",
+      "/campaigns?tab=signed",
+    );
+    auth.roles = ["SIGNER"];
   });
 });

@@ -29,6 +29,7 @@ from lcit_sign.models.document import (
     DocumentField,
     DocumentVersion,
     DocumentVersionStatus,
+    FieldKind,
 )
 from lcit_sign.models.mail import Notification, NotificationType
 from lcit_sign.models.report import Report
@@ -308,9 +309,12 @@ def _documents_payload(db: DbSession, campaign: Campaign) -> list[dict[str, Any]
         document = db.get(Document, version.document_id) if version else None
         if version is None or document is None:
             continue
-        placed = db.execute(
-            select(func.count()).where(DocumentField.document_version_id == version.id)
-        ).scalar_one()
+        fields = db.execute(
+            select(DocumentField.role, DocumentField.kind).where(
+                DocumentField.document_version_id == version.id
+            )
+        ).all()
+        placed = len(fields)
         result.append(
             {
                 "version_id": str(version.id),
@@ -318,6 +322,12 @@ def _documents_payload(db: DbSession, campaign: Campaign) -> list[dict[str, Any]
                 "version_label": version.version_label,
                 "status": version.status.value,
                 "elements": placed,
+                # Which signers (positions) have something to fill on it, and which of them
+                # have a signature placed: a signer with elements but no signature is a mistake.
+                "element_roles": sorted({role for role, _ in fields}),
+                "signature_roles": sorted(
+                    {role for role, kind in fields if kind == FieldKind.SIGNATURE}
+                ),
                 "released": is_released(db, campaign, version.id),
             }
         )

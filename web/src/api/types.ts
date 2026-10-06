@@ -103,6 +103,9 @@ export interface CampaignDocumentInfo {
   version_label: string;
   status: string;
   elements: number;
+  /** The signers (positions) with something to fill on it, and those with a signature placed. */
+  element_roles: number[];
+  signature_roles: number[];
   /** Copies sent to the signers. A document added to a running campaign is not until released. */
   released: boolean;
 }
@@ -379,6 +382,25 @@ export interface SignAllPlan {
   campaign: { id: string; name: string };
   documents: SignAllDocument[];
   waiting: number;
+}
+
+/** Who signed a document in a campaign, in order, and who is left. */
+export interface SignatureStep {
+  role: number;
+  role_label: string;
+  name: string;
+  email: string;
+  status: "SIGNED" | "PENDING" | "VIEWED" | "WAITING" | "EXPIRED";
+  signed_at: string | null;
+  display_id: string | null;
+  mine: boolean;
+}
+
+export interface SignatureChain {
+  steps: SignatureStep[];
+  /** Other recipients, counted but not named (for someone who is only a recipient). */
+  others: { count: number; signed: number } | null;
+  complete: boolean;
 }
 
 export interface Branding {

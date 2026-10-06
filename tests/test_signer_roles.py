@@ -282,7 +282,8 @@ def test_a_draft_is_prepared_from_the_campaign_and_published_at_launch(
     shown = operator.get(f"/api/campaigns/{campaign['id']}").json()
     assert shown["documents"] == [
         {"version_id": version_id, "title": "Annexe", "version_label": "1.0",
-         "status": "DRAFT", "elements": 2, "released": False}
+         "status": "DRAFT", "elements": 2, "element_roles": [1], "signature_roles": [1],
+         "released": False}
     ]
     # A draft cannot be signed yet...
     assert signer1.post(
@@ -319,3 +320,23 @@ def test_launch_refuses_cleanly_when_a_draft_cannot_be_published(tmp_path, mock_
     assert operator.get(f"/api/campaigns/{campaign['id']}").json()["status"] == "DRAFT"
     assert operator.get(f"/api/documents/versions/{version_id}/fields").json()["editable"] is True
     assert operator.get(f"/api/campaigns/{campaign['id']}/assignments").json() == []
+
+
+def test_the_campaign_says_which_signers_have_a_signature_placed(tmp_path, mock_oidc_base_url):
+    """The case that got missed: a signer with a date and a name but no signature."""
+    _, _, operator, *_ = setup_campaign_fixture(tmp_path, mock_oidc_base_url)
+    version_id = upload(operator, title="Attestation", pages=1)
+    operator.put(
+        f"/api/documents/versions/{version_id}/fields",
+        json={"fields": [
+            element("DATE", role=1, y=0.1),
+            element("FULL_NAME", role=1, y=0.2),
+            element("SIGNATURE", role=2, y=0.3),
+            element("DATE", role=2, y=0.4),
+        ]},
+    )
+    campaign = new_campaign(operator, version_id)
+    document = operator.get(f"/api/campaigns/{campaign['id']}").json()["documents"][0]
+    assert document["elements"] == 4
+    assert document["element_roles"] == [1, 2]
+    assert document["signature_roles"] == [2]  # position 1 has no signature

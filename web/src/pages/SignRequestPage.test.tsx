@@ -27,7 +27,10 @@ vi.mock("../api/client", () => ({
   ApiError: class ApiError extends Error {},
 }));
 
-const prepared = { version_id: "v1", title: "PSSI", version_label: "1.0", status: "DRAFT", elements: 2 };
+const prepared = {
+  version_id: "v1", title: "PSSI", version_label: "1.0", status: "DRAFT", elements: 2,
+  element_roles: [1], signature_roles: [1],
+};
 const everyone = { role: 1, label: "", mode: "EACH", user_id: null, user_display_name: null };
 
 const campaign = (documents: unknown[] = [prepared], roles: unknown[] = [everyone]) => ({
@@ -238,5 +241,67 @@ describe("SignRequestPage", () => {
     await screen.findByTestId("signed-step");
     await new Promise((resolve) => setTimeout(resolve, 700));
     expect(vi.mocked(api.put).mock.calls.some((c) => c[0] === "/campaigns/c1/plan")).toBe(false);
+  });
+
+  it("proposes to start today, due in 30 days, with no reminder; moving the start moves the deadline", async () => {
+    open(1);
+    const plusDays = (n: number) => {
+      const d = new Date();
+      d.setDate(d.getDate() + n);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    };
+    await waitFor(() => expect(screen.getByLabelText(/Date de début/)).toHaveValue(plusDays(0)));
+    expect(screen.getByLabelText(/Date d.échéance/)).toHaveValue(plusDays(30));
+    expect(screen.getByLabelText(/Relance en cas de non-réponse/)).toHaveValue("");
+    expect(screen.getByLabelText(/^Renouvellement/)).toHaveValue("");
+
+    // A start date after the deadline carries the deadline with it, 30 days later.
+    fireEvent.change(screen.getByLabelText(/Date de début/), { target: { value: "2099-06-01" } });
+    expect(screen.getByLabelText(/Date d.échéance/)).toHaveValue("2099-07-01");
+  });
+
+  it("will not go on while a signer has a date and a name but no signature placed", async () => {
+    // The case that got through: Alice has elements, but the only signature is Bob's.
+    const roles = [
+      { role: 1, label: "", mode: "FIXED", user_id: "u1", user_display_name: "Alice Martin" },
+      { role: 2, label: "", mode: "EACH", user_id: null, user_display_name: null },
+    ];
+    const attestation = { ...prepared, title: "Test03", elements: 4, element_roles: [1, 2], signature_roles: [2] };
+    vi.mocked(api.get).mockImplementation(async (path: string) =>
+      path === "/campaigns/c1" ? { ...campaign([attestation], roles), plan: null } : [],
+    );
+    render(
+      <MemoryRouter initialEntries={["/sign/c1?step=3"]}>
+        <Routes>
+          <Route path="/sign/:id" element={<SignRequestPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    const step = await screen.findByTestId("prepare-step");
+    expect(within(step).getByTestId("missing-signature")).toHaveTextContent(
+      "Placez une signature pour Alice Martin sur « Test03 ».",
+    );
+    // The document is marked as needing attention in the strip.
+    expect(within(within(step).getByRole("tab", { name: /Test03/ })).getByLabelText("signature manquante")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Suivant : vérifier et envoyer/ })).toBeDisabled();
+  });
+
+  it("and says so on the review screen too, so it cannot be sent", async () => {
+    const roles = [{ role: 1, label: "", mode: "EACH", user_id: null, user_display_name: null }];
+    const nameOnly = { ...prepared, title: "Test03", element_roles: [1], signature_roles: [] };
+    vi.mocked(api.get).mockImplementation(async (path: string) =>
+      path === "/campaigns/c1" ? { ...campaign([nameOnly], roles), plan: null } : [],
+    );
+    render(
+      <MemoryRouter initialEntries={["/sign/c1?step=4"]}>
+        <Routes>
+          <Route path="/sign/:id" element={<SignRequestPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByTestId("launch-blocker")).toHaveTextContent(
+      "Placez une signature pour Chaque destinataire sur « Test03 ».",
+    );
+    expect(screen.getByRole("button", { name: /Envoyer pour signature/ })).toBeDisabled();
   });
 });

@@ -18,7 +18,6 @@ import AdminAuditPage from "./pages/AdminAuditPage";
 import AdminSigningKeysPage from "./pages/AdminSigningKeysPage";
 import AdminBrandingPage from "./pages/AdminBrandingPage";
 import AdminDiagnosticsPage from "./pages/AdminDiagnosticsPage";
-import MySignaturesPage from "./pages/MySignaturesPage";
 import PrepareDocumentPage from "./pages/PrepareDocumentPage";
 import SignatureDetailPage from "./pages/SignatureDetailPage";
 
@@ -47,7 +46,7 @@ export default function App() {
       <Route element={<Shell />}>
         <Route path="/" element={<SignerAssignmentsPage />} />
         <Route path="/assignments/:id" element={<SignerAssignmentDetailPage />} />
-        <Route path="/signatures" element={<MySignaturesPage />} />
+        <Route path="/signatures" element={<Navigate to="/" replace />} />
         <Route path="/signatures/:id" element={<SignatureDetailPage />} />
 
         <Route

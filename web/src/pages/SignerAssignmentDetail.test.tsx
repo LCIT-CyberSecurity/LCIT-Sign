@@ -56,6 +56,26 @@ describe("signing: preview, consent, then one deliberate click", () => {
     expect(screen.queryByRole("textbox")).toBeNull(); // no way to type another identity
   });
 
+  it("shows the document as it will be signed, and the signed copy once it is", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    const frame = () => document.querySelector("iframe") as HTMLIFrameElement;
+    // Before: the document with what the signers before already put on it, not the bare original.
+    await screen.findByRole("button", { name: "Signer" });
+    expect(frame().getAttribute("src")).toBe("/api/assignments/a1/preview?v=pending");
+
+    // After: the signed copy (the address changes, so the frame is loaded again).
+    vi.mocked(api.get).mockImplementation(async (path: string) =>
+      path === "/config"
+        ? { consent_text: "J'atteste.", consent_version: "1.0", app_version: "x" }
+        : [{ ...assignment, status: "SIGNED", signature_id: "s1" }],
+    );
+    await user.click(screen.getByRole("checkbox"));
+    await user.click(screen.getByRole("button", { name: "Signer" }));
+    await screen.findByText("Document signé");
+    expect(frame().getAttribute("src")).toBe("/api/assignments/a1/preview?v=s1");
+  });
+
   it("does not sign without consent, and signs on one click once consent is given", async () => {
     const user = userEvent.setup();
     renderPage();

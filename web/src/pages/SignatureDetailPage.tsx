@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, BadgeCheck, Download, FileText, ShieldAlert, ShieldCheck } from "lucide-react";
 import { api, ApiError } from "../api/client";
-import type { SignatureDetail, VerificationResult } from "../api/types";
+import { useAuth } from "../auth/AuthContext";
+import type { SignatureChain, SignatureDetail, VerificationResult } from "../api/types";
 
 export const CHECK_LABELS: Record<string, string> = {
   original_document_hash: "Le document original est intact",
@@ -22,12 +23,22 @@ export default function SignatureDetailPage() {
   const [result, setResult] = useState<VerificationResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [verifying, setVerifying] = useState(false);
+  const [chain, setChain] = useState<SignatureChain | null>(null);
+  const { hasRole } = useAuth();
+  const staff = hasRole("OPERATOR") || hasRole("ADMIN");
 
   useEffect(() => {
     api
       .get<SignatureDetail>(`/signatures/${id}`)
       .then(setSignature)
       .catch((err) => setError(err instanceof ApiError ? err.message : "Signature introuvable."));
+  }, [id]);
+
+  useEffect(() => {
+    api
+      .get<SignatureChain>(`/signatures/${id}/chain`)
+      .then(setChain)
+      .catch(() => setChain(null));
   }, [id]);
 
   const verify = async () => {
@@ -47,7 +58,7 @@ export default function SignatureDetailPage() {
 
   return (
     <div className="stack">
-      <Link to="/signatures" className="back-link">
+      <Link to="/" className="back-link">
         <ArrowLeft size={14} aria-hidden="true" /> Mes signatures
       </Link>
       <h1 className="page-title">
@@ -68,6 +79,52 @@ export default function SignatureDetailPage() {
         </div>
 
         <div className="stack">
+          {chain && (
+            <section className="card" data-testid="signature-chain">
+              <div className="card-title">Qui a signé ce document ?</div>
+              <ol className="chain">
+                {chain.steps.map((step) => (
+                  <li key={`${step.role}-${step.email}`} className={step.mine ? "chain__me" : undefined}>
+                    <span className={step.status === "SIGNED" ? "status-ok" : "muted"} aria-hidden="true">
+                      {step.status === "SIGNED" ? "✓" : "…"}
+                    </span>
+                    <span>
+                      <strong>{step.name}</strong>
+                      {step.mine ? " (vous)" : ""}
+                      <span className="muted small">
+                        {" "}
+                        —{" "}
+                        {step.status === "SIGNED" && step.signed_at
+                          ? `a signé le ${new Date(step.signed_at).toLocaleString("fr-FR")}`
+                          : step.status === "WAITING"
+                            ? "pas encore son tour"
+                            : "doit encore signer"}
+                      </span>
+                    </span>
+                  </li>
+                ))}
+              </ol>
+              {chain.others && (
+                <p className="muted small" data-testid="chain-others">
+                  {chain.others.count} autre(s) destinataire(s), dont {chain.others.signed} ont signé.
+                </p>
+              )}
+              <p className="muted small">
+                {chain.complete
+                  ? "Tout le monde a signé."
+                  : "Il reste des signatures à recueillir."}{" "}
+                Ce PDF est <strong>votre exemplaire</strong> : il porte les signatures de ceux qui ont signé
+                avant vous.
+                {staff && (
+                  <>
+                    {" "}
+                    Toute la campagne se suit dans <Link to="/campaigns?tab=signed">Suivi</Link>.
+                  </>
+                )}
+              </p>
+            </section>
+          )}
+
           <section className="card">
             <div className="card-title">Signature</div>
             <dl className="kv">

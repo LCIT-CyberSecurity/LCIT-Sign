@@ -109,10 +109,15 @@ def resolve(
     signer_first_name: str = "",
     signer_last_name: str = "",
     tz: str = "Europe/Paris",
+    preview: bool = False,
 ) -> list[dict[str, Any]]:
     """Final value of each of this signer's elements, as stored with the
     signature. Raises FieldError for a missing required input, an unknown
-    input id, or a logo that was never configured."""
+    input id, or a logo that was never configured.
+
+    With `preview` it is what the signer is shown BEFORE signing: nothing is refused (an
+    answer not typed yet shows its label in brackets, a missing logo is left out), and each
+    element is flagged so that it is drawn as "not signed yet". It is never stored."""
     mine = [f for f in fields if f.role == role]
     typed = {f.id for f in mine if f.kind in INPUT_KINDS}
     # "Today" and "now" are the signer's, not UTC's: just after midnight in Paris
@@ -142,10 +147,12 @@ def resolve(
             if len(value) > MAX_TEXT_LENGTH:
                 label = f.label or default_label
                 raise FieldError(f"« {label} » is too long ({MAX_TEXT_LENGTH} max)")
-            if not value and f.required:
+            if not value and preview:
+                value = f"[{f.label or default_label}]"
+            elif not value and f.required:
                 missing.append(f.label or default_label)
                 continue
-            if not value:
+            elif not value:
                 continue
         elif f.kind == FieldKind.DATE:
             value = local.strftime("%d/%m/%Y")
@@ -160,6 +167,8 @@ def resolve(
         elif f.kind == FieldKind.EMAIL:
             value = signer_email
         elif f.kind == FieldKind.LOGO:
+            if not logo_sha256 and preview:
+                continue
             if not logo_sha256:
                 raise FieldError("Aucun logo d'entreprise n'est configuré (Administration)")
             value = f"logo:{logo_sha256}"
@@ -177,6 +186,7 @@ def resolve(
                 "width": round(f.width, 6),
                 "height": round(f.height, 6),
                 "value": value,
+                **({"preview": True} if preview else {}),
             }
         )
     if missing:
@@ -209,6 +219,16 @@ def _draw_field(
     y = bottom + (1 - item["y"] - item["height"]) * height  # PDF origin is bottom-left
     kind = FieldKind(item["kind"])
     value = str(item["value"])
+
+    if item.get("preview"):
+        # Not signed yet: the place where it will be, in a dotted frame.
+        c.saveState()
+        c.setStrokeColor(HexColor("#7c5cc4"))
+        c.setFillColor(HexColor("#f3effb"))
+        c.setLineWidth(0.8)
+        c.setDash(3, 2)
+        c.roundRect(x - 1, y - 1, box_w + 2, box_h + 2, 2, stroke=1, fill=1)
+        c.restoreState()
 
     if kind == FieldKind.LOGO:
         if not logo:

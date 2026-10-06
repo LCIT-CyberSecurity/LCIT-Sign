@@ -249,3 +249,32 @@ def test_a_place_is_typed_by_the_signer_like_free_text():
     # ... and it cannot be filled in by anyone but the signer, nor for automatic kinds.
     with pytest.raises(FieldError, match="automatically"):
         resolve_all([field(FieldKind.FIRST_NAME, id="x")], {"x": "Autre"})
+
+
+def test_a_preview_shows_where_each_element_will_be_without_refusing_anything():
+    """What a signer sees before signing: their own elements in place, answers not typed yet shown
+    by their label, nothing stored."""
+    fields = [
+        PreparedField(
+            id="1", page=1, x=0.1, y=0.1, width=0.3, height=0.05, kind=FieldKind.SIGNATURE
+        ),
+        PreparedField(id="2", page=1, x=0.1, y=0.3, width=0.4, height=0.04, kind=FieldKind.TEXT,
+                      label="Fonction", required=True),
+        PreparedField(id="3", page=1, x=0.1, y=0.5, width=0.2, height=0.06, kind=FieldKind.LOGO),
+    ]
+    kwargs = dict(
+        signer_name="Bob Dupont", signer_email="bob@lcit-test.local",
+        signed_at=datetime(2026, 10, 6, 10, 0, tzinfo=UTC), inputs={}, logo_sha256=None,
+    )
+    # For real, a missing required answer (and a missing logo) are refused...
+    with pytest.raises(FieldError):
+        resolve(fields, **kwargs)
+    # ...in a preview they are not: the answer shows its label, the logo is left out.
+    shown = resolve(fields, preview=True, **kwargs)
+    assert [(v["kind"], v["value"]) for v in shown] == [
+        ("SIGNATURE", "Bob Dupont"),
+        ("TEXT", "[Fonction]"),
+    ]
+    assert all(v["preview"] is True for v in shown)
+    # Never mixed up with a real result.
+    assert all("preview" not in v for v in resolve(fields[:1], **kwargs))

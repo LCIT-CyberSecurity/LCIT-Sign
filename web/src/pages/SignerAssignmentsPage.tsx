@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { FileText, CheckCircle2, Clock, PartyPopper, FileSignature } from "lucide-react";
+import { FileText, CheckCircle2, Clock, PartyPopper, FileSignature, Download, ExternalLink } from "lucide-react";
 import EmptyState from "../components/EmptyState";
 import { useAuth } from "../auth/AuthContext";
 import { api } from "../api/client";
-import type { MyAssignment } from "../api/types";
+import type { MyAssignment, SignatureDetail } from "../api/types";
 
 function formatDate(value: string | null): string {
   if (!value) return "—";
@@ -15,18 +15,25 @@ function formatDate(value: string | null): string {
   });
 }
 
+/** Everything about the person's own signatures in one place: what is to be signed, what comes
+ *  later, and what they signed, with the signed PDF, the certificate and the proof. (What others
+ *  signed is followed in Suivi.) */
 export default function SignerAssignmentsPage() {
   const [assignments, setAssignments] = useState<MyAssignment[] | null>(null);
-  const { user } = useAuth();
+  const [signatures, setSignatures] = useState<SignatureDetail[] | null>(null);
+  const { user, hasRole } = useAuth();
+  const staff = hasRole("OPERATOR") || hasRole("ADMIN");
 
   useEffect(() => {
     api.get<MyAssignment[]>("/me/assignments").then(setAssignments);
+    api.get<SignatureDetail[]>("/signatures/me").then(setSignatures);
   }, []);
 
-  if (assignments === null) return <p className="muted">Chargement…</p>;
+  if (assignments === null || signatures === null) return <p className="muted">Chargement…</p>;
 
   const pending = assignments.filter((a) => a.status === "PENDING" || a.status === "VIEWED");
-  const signed = assignments.filter((a) => a.status === "SIGNED");
+  // The signatures themselves (they also cover what was signed outside any campaign).
+  const signed = signatures;
   const upcoming = assignments.filter((a) => a.status === "WAITING");
   // A campaign with several documents to sign: one click for all of them.
   const bulk = [...new Map(pending.map((a) => [a.campaign_id, a.campaign_name])).entries()]
@@ -36,6 +43,9 @@ export default function SignerAssignmentsPage() {
   return (
     <div className="stack">
       <div>
+        <h1 className="page-title" style={{ marginBottom: 4 }}>
+          <FileSignature size={22} aria-hidden="true" /> Mes signatures
+        </h1>
         <p className="greeting">Bonjour {user?.display_name?.split(" ")[0]}</p>
         <div className="metrics" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(190px, 260px))" }}>
           <div className="metric">
@@ -73,10 +83,10 @@ export default function SignerAssignmentsPage() {
       ))}
 
       <section>
-        <h1 className="page-title">
+        <h2 className="page-title">
           <FileText size={20} aria-hidden="true" /> À signer
           <span className="count-badge">{pending.length}</span>
-        </h1>
+        </h2>
         {pending.length === 0 ? (
           <EmptyState icon={<PartyPopper size={24} />} title="Tout est à jour">
             Aucun document n&apos;attend votre signature. Vous serez prévenu par e-mail dès qu&apos;un nouveau document vous est adressé.
@@ -103,10 +113,10 @@ export default function SignerAssignmentsPage() {
 
       {upcoming.length > 0 && (
         <section data-testid="upcoming">
-          <h1 className="page-title">
+          <h2 className="page-title">
             <Clock size={20} aria-hidden="true" /> À venir
             <span className="count-badge">{upcoming.length}</span>
-          </h1>
+          </h2>
           <div className="card-list">
             {upcoming.map((a) => (
               <div key={a.id} className="card">
@@ -125,27 +135,54 @@ export default function SignerAssignmentsPage() {
         </section>
       )}
 
-      <section>
-        <h1 className="page-title">
+      <section data-testid="signed-section">
+        <h2 className="page-title">
           <CheckCircle2 size={20} aria-hidden="true" /> Signés
           <span className="count-badge">{signed.length}</span>
-        </h1>
+        </h2>
+        <p className="muted small">
+          Ce que <strong>vous</strong> avez signé, avec le PDF signé, le certificat et la preuve.
+          {staff && (
+            <>
+              {" "}
+              Ce que d&apos;autres ont signé se suit dans <Link to="/campaigns?tab=signed">Suivi → Documents signés</Link>.
+            </>
+          )}
+        </p>
         {signed.length === 0 ? (
           <EmptyState icon={<FileSignature size={24} />} title="Aucune signature pour le moment">
             Les documents que vous signerez apparaîtront ici, avec leur preuve vérifiable.
           </EmptyState>
         ) : (
           <div className="card-list">
-            {signed.map((a) => (
-              <Link key={a.id} to={`/assignments/${a.id}`} className="card card--link">
-                <div>
-                  <div className="card-title">{a.document_title}</div>
+            {signed.map((s) => (
+              <div key={s.id} className="card card--row" data-testid={`signed-${s.document_title}`}>
+                <Link to={`/signatures/${s.id}`} className="card-link">
+                  <div className="card-title">{s.document_title}</div>
                   <div className="muted small">
-                    Version {a.version_label} — {a.campaign_name}
+                    Version {s.version_label}
+                    {s.campaign_name ? ` — ${s.campaign_name}` : ""} — signé le {formatDate(s.signed_at_utc)} —{" "}
+                    <span className="mono">{s.display_id}</span>
                   </div>
+                </Link>
+                {/* The signed PDF itself, at once: no detour through another page or a ZIP. */}
+                <div className="row-actions">
+                  <a
+                    className="button button--secondary button--sm"
+                    href={`/api/signatures/${s.id}/signed-pdf?inline=true`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <ExternalLink size={13} aria-hidden="true" /> Ouvrir
+                  </a>
+                  <a className="button button--ghost button--sm" href={`/api/signatures/${s.id}/signed-pdf`}>
+                    <Download size={13} aria-hidden="true" /> PDF signé
+                  </a>
+                  <Link className="button button--ghost button--sm" to={`/signatures/${s.id}`}>
+                    Preuve et signataires
+                  </Link>
                 </div>
-                <div className="card-meta">Signé le {formatDate(a.signed_at)}</div>
-              </Link>
+              </div>
             ))}
           </div>
         )}

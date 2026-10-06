@@ -84,7 +84,7 @@ export default function SignAllPage() {
           </div>
           <p>Chaque signature a sa propre preuve, que vous retrouvez dans « Mes signatures ».</p>
           <div className="row-actions">
-            <Link className="button button--primary" to="/signatures">
+            <Link className="button button--primary" to="/">
               Mes signatures
             </Link>
             <Link className="button button--ghost" to="/">

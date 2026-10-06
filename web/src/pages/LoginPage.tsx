@@ -80,34 +80,7 @@ export default function LoginPage() {
           </div>
 
           <div className="auth-message">
-            <span className="auth-eyebrow">SIGNATURE INTERNE</span>
-            <h2>
-              Facilitez la signature
-              <br />
-              <em>de vos documents.</em>
-            </h2>
-            <p>
-              Diffusez vos chartes et politiques, recueillez la signature de chaque collaborateur
-              et conservez une preuve vérifiable : qui a signé quoi, quelle version, quand.
-            </p>
-          </div>
-
-          <div className="auth-process">
-            <div>
-              <span>01</span>
-              <strong>Consulter</strong>
-              <small>Lire la version exacte du document</small>
-            </div>
-            <div>
-              <span>02</span>
-              <strong>Signer</strong>
-              <small>Un acte volontaire, avec votre identité SSO</small>
-            </div>
-            <div>
-              <span>03</span>
-              <strong>Prouver</strong>
-              <small>Empreinte, signature cryptographique, audit</small>
-            </div>
+            <h2>Signez facilement vos documents !</h2>
           </div>
 
           <div className="auth-foot">

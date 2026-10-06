@@ -18,11 +18,14 @@ describe("<LoginPage />", () => {
     expect(screen.getByRole("heading", { level: 1, name: "Connexion" })).toBeInTheDocument();
   });
 
-  it("explains the product and its three steps", () => {
+  it("says one thing, plainly, and nothing more", () => {
     render(<LoginPage />);
-    expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent(/Facilitez la signature\s*de vos documents/);
-    for (const step of ["Consulter", "Signer", "Prouver"]) {
-      expect(screen.getByText(step)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent("Signez facilement vos documents !");
+    // No pitch, no eyebrow, no three-step explainer next to it.
+    expect(screen.queryByText(/Diffusez vos chartes/)).toBeNull();
+    expect(screen.queryByText("SIGNATURE INTERNE")).toBeNull();
+    for (const step of ["Consulter", "Prouver"]) {
+      expect(screen.queryByText(step)).toBeNull();
     }
   });
 

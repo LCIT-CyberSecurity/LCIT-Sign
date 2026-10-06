@@ -1,4 +1,5 @@
-import { CheckCircle2, Circle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Circle } from "lucide-react";
+import { missingSignatureText, missingSignatures } from "../lib/signatures";
 import { DocumentEditor } from "../pages/PrepareDocumentPage";
 import type { Campaign } from "../api/types";
 
@@ -31,6 +32,7 @@ export default function PrepareStep({
     documents.find((d) => d.version_id === selected) ??
     documents.find((d) => d.elements === 0) ??
     documents[0];
+  const missing = missingSignatures(campaign);
   const done = documents.filter((d) => d.elements > 0).length;
 
   return (
@@ -55,7 +57,9 @@ export default function PrepareStep({
                 className={`prepare-tab${d.version_id === current.version_id ? " is-current" : ""}`}
                 onClick={() => onSelect(d.version_id)}
               >
-                {d.elements > 0 ? (
+                {missing.some((m) => m.versionId === d.version_id) ? (
+                  <AlertTriangle size={14} aria-label="signature manquante" />
+                ) : d.elements > 0 ? (
                   <CheckCircle2 size={14} aria-label="préparé" />
                 ) : (
                   <Circle size={14} aria-label="à préparer" />
@@ -66,6 +70,11 @@ export default function PrepareStep({
           ))}
         </ul>
       </div>
+      {missing.length > 0 && (
+        <p className="error-text" role="alert" data-testid="missing-signature">
+          {missingSignatureText(missing)}
+        </p>
+      )}
       <DocumentEditor
         key={current.version_id}
         versionId={current.version_id}
