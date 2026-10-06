@@ -14,6 +14,8 @@ export interface PublicConfig {
   app_version: string;
   consent_text: string;
   consent_version: string;
+  /** Word / LibreOffice files can be dropped (the server converts them to PDF). */
+  office_conversion?: boolean;
 }
 
 export interface DocumentVersion {

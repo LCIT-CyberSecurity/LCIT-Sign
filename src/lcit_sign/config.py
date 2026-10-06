@@ -56,6 +56,9 @@ class Settings(BaseSettings):
     # Persistent filesystem root (spec §8) — never PostgreSQL, never S3/MinIO.
     storage_root: str = "/var/lib/lcit-sign"
     max_upload_size_mb: int = 25
+    # The isolated converter for Word / LibreOffice files (empty = only PDFs are accepted).
+    converter_url: str = ""
+    converter_timeout_seconds: int = 90
 
     # The time zone people live in. "Today's date" and the time stamped on a
     # document follow it; stored timestamps stay UTC.

@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import ConfirmButton from "../components/ConfirmButton";
 import UploadDropzone from "../components/UploadDropzone";
+import { DOCUMENT_HINT, DOCUMENT_REFUSED, isAcceptedDocument } from "../lib/uploads";
 import type { DocumentDetail } from "../api/types";
 
 interface UploadResult {
@@ -57,8 +58,8 @@ export default function OperatorDocumentsPage() {
       setResults([...batch]);
     };
     for (const [index, file] of files.entries()) {
-      if (!/\.pdf$/i.test(file.name)) {
-        update(index, { state: "error", message: "Seuls les PDF sont acceptés pour le moment." });
+      if (!isAcceptedDocument(file.name)) {
+        update(index, { state: "error", message: DOCUMENT_REFUSED });
         continue;
       }
       update(index, { state: "uploading" });
@@ -130,7 +131,7 @@ export default function OperatorDocumentsPage() {
       </p>
 
       <section className="card form" aria-label="Ajouter des documents">
-        <UploadDropzone onFiles={stage} disabled={uploading} hint="PDF, plusieurs à la fois" />
+        <UploadDropzone onFiles={stage} disabled={uploading} hint={DOCUMENT_HINT} />
         <details className="upload-options">
           <summary>
             Options <span className="muted small">— titre, version, catégorie (facultatif)</span>

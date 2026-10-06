@@ -406,7 +406,7 @@ test("an operator drops several PDFs on the documents page", async ({ page }) =>
   await expect(results).toContainText(`contrat_alpha-${stamp}.pdf`);
   await expect(results.locator("li").nth(0)).toContainText("ajouté en brouillon");
   await expect(results.locator("li").nth(1)).toContainText("ajouté en brouillon");
-  await expect(results.locator("li").nth(2)).toContainText("Seuls les PDF");
+  await expect(results.locator("li").nth(2)).toContainText("Formats acceptés");
 
   // Each became its own draft document, titled from its file name.
   await page.getByLabel("Rechercher un document").fill(`${stamp}`);

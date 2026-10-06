@@ -4,6 +4,7 @@ import { FileText, PencilRuler, Upload, X } from "lucide-react";
 import { api, ApiError } from "../api/client";
 import ConfirmButton from "./ConfirmButton";
 import UploadDropzone from "./UploadDropzone";
+import { DOCUMENT_HINT, DOCUMENT_REFUSED, isAcceptedDocument } from "../lib/uploads";
 import type { Campaign, DocumentDetail } from "../api/types";
 
 /** "charte_informatique-2026.pdf" -> "Charte informatique 2026". */
@@ -64,8 +65,8 @@ export default function CampaignDocuments({
     const messages: string[] = [];
     const created: string[] = [];
     for (const file of pending) {
-      if (!/\.pdf$/i.test(file.name)) {
-        messages.push(`${file.name} : seuls les PDF sont acceptés pour le moment.`);
+      if (!isAcceptedDocument(file.name)) {
+        messages.push(`${file.name} : ${DOCUMENT_REFUSED}`);
         continue;
       }
       try {
@@ -110,8 +111,8 @@ export default function CampaignDocuments({
       <div className="card-title">Documents à faire signer</div>
       <p className="muted small">
         {showPrepare
-          ? "Déposez un ou plusieurs PDF, puis « Préparer » chacun : vous placez la signature, la date, le nom… pour chaque signataire."
-          : "Déposez un ou plusieurs PDF, ou reprenez-en un déjà déposé. Vous placerez les éléments à signer à l'étape suivante."}
+          ? "Déposez un ou plusieurs documents (PDF, Word ou LibreOffice), puis « Préparer » chacun : vous placez la signature, la date, le nom… pour chaque signataire."
+          : "Déposez un ou plusieurs documents (PDF, Word ou LibreOffice), ou reprenez-en un déjà déposé. Vous placerez les éléments à signer à l'étape suivante."}
       </p>
 
       {campaign.documents.length === 0 && <p className="muted small">Aucun document pour le moment.</p>}
@@ -176,7 +177,7 @@ export default function CampaignDocuments({
         ))}
       </ul>
 
-      <UploadDropzone onFiles={stage} disabled={busy} hint="PDF, plusieurs à la fois" />
+      <UploadDropzone onFiles={stage} disabled={busy} hint={DOCUMENT_HINT} />
       {pending.length > 0 && (
         <div className="stack" data-testid="pending-files">
           <ul className="upload-results">

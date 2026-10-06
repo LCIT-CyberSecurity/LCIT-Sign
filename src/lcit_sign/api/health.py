@@ -38,6 +38,7 @@ def public_config(request: Request, user: User = Depends(get_current_user)) -> d
     settings: Settings = request.app.state.settings
     return {
         "app_version": __version__,
+        "office_conversion": bool(settings.converter_url),
         "consent_text": settings.consent_text,
         "consent_version": settings.consent_version,
     }

@@ -30,6 +30,8 @@ services:
       dockerfile: docker/backend.Dockerfile
     image: lcit-sign-api:latest
     container_name: lcit-sign-api
+    # Also on the converter's private network (it has no route out, and nothing else is on it).
+    networks: [default, converter-net]
     depends_on:
       postgres:
         condition: service_healthy
@@ -56,6 +58,9 @@ services:
       LCIT_SIGN_MASTER_KEY_FILE: ${LCIT_SIGN_MASTER_KEY_FILE:-}
       LCIT_SIGN_SESSION_SECRET_FILE: ${LCIT_SIGN_SESSION_SECRET_FILE:-}
       LCIT_SIGN_BOOTSTRAP_ADMIN: ${LCIT_SIGN_BOOTSTRAP_ADMIN:-alice.martin@lcit-test.local}
+      # Word / LibreOffice files as input: the isolated converter (profile "office"). Empty =
+      # only PDFs are accepted. Example: LCIT_SIGN_CONVERTER_URL=http://converter:8090
+      LCIT_SIGN_CONVERTER_URL: ${LCIT_SIGN_CONVERTER_URL:-}
     volumes:
       - lcit-sign-data:/var/lib/lcit-sign
       - ${LCIT_SIGN_SECRETS_DIR:-./secrets}:/run/secrets/lcit-sign:ro
@@ -99,6 +104,29 @@ services:
       retries: 5
     restart: unless-stopped
 
+  # Converts Word / LibreOffice documents to PDF, in a container of its own: no network, no
+  # database, no access to LCIT Sign's files, read-only, little memory and time. Started with
+  # the "office" profile:  docker compose --profile office up -d
+  converter:
+    build:
+      context: converter
+    image: lcit-sign-converter:latest
+    container_name: lcit-sign-converter
+    profiles: ["office"]
+    networks: [converter-net]
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 1g
+    pids_limit: 200
+    environment:
+      CONVERTER_WORKDIR: /tmp
+    expose:
+      - "8090"
+    restart: unless-stopped
+
   # Dev-only fake OpenID Connect provider — never started unless the
   # dev-sso profile is requested: docker compose --profile dev-sso up
   mock-oidc:
@@ -129,6 +157,11 @@ services:
       start_period: 5s
       retries: 5
     restart: unless-stopped
+
+networks:
+  # No route to the outside and no other container: only the API can talk to the converter.
+  converter-net:
+    internal: true
 
 volumes:
   lcit-sign-postgres-data:

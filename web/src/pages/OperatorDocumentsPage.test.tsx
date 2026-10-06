@@ -51,4 +51,20 @@ describe("OperatorDocumentsPage upload", () => {
     expect(screen.queryByTestId("pending-files")).toBeNull();
     expect(api.postForm).toHaveBeenCalledTimes(1);
   });
+
+  it("takes Word and LibreOffice files like a PDF, and refuses other types in words", async () => {
+    render(<MemoryRouter><OperatorDocumentsPage /></MemoryRouter>);
+    expect(screen.getByTestId("dropzone-input")).toHaveAttribute("accept", expect.stringContaining(".docx"));
+    drop(
+      new File(["x"], "contrat_alpha.docx"),
+      new File(["x"], "note.odt"),
+      new File(["x"], "ancien.doc"),
+      new File(["x"], "virus.exe"),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Importer 4 documents" }));
+    await waitFor(() => expect(api.postForm).toHaveBeenCalledTimes(3));
+    const titles = vi.mocked(api.postForm).mock.calls.map((c) => (c[1] as FormData).get("title"));
+    expect(titles).toEqual(["Contrat alpha", "Note", "Ancien"]);
+    expect(await screen.findByText(/Formats acceptés : PDF, Word/)).toBeInTheDocument();
+  });
 });

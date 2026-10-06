@@ -54,6 +54,9 @@ class DocumentVersion(Base):
     file_size: Mapped[int] = mapped_column(Integer)
     mime_type: Mapped[str] = mapped_column(String(100))
     sha256: Mapped[str] = mapped_column(String(64))
+    # A document uploaded as Word / LibreOffice: the hash of that source file, which is kept
+    # next to the PDF made from it (the PDF is what gets signed; `sha256` is its hash).
+    source_sha256: Mapped[str | None] = mapped_column(String(64))
 
     status: Mapped[DocumentVersionStatus] = mapped_column(
         Enum(DocumentVersionStatus, native_enum=False, length=20),

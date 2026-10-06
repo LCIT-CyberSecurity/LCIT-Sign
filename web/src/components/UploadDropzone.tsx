@@ -1,12 +1,13 @@
 import { useRef, useState, type DragEvent, type KeyboardEvent } from "react";
 import { UploadCloud } from "lucide-react";
+import { DOCUMENT_ACCEPT } from "../lib/uploads";
 
 /** Drop files here, or click to browse. It only hands the files over: what to do
  *  with them (and what is accepted) is the page's business. */
 export default function UploadDropzone({
   onFiles,
   disabled,
-  accept = "application/pdf,.pdf",
+  accept = DOCUMENT_ACCEPT,
   hint,
 }: {
   onFiles: (files: File[]) => void;

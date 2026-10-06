@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import uuid
+from collections.abc import Generator
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+import httpx
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session as DbSession
@@ -29,6 +33,14 @@ from lcit_sign.models.user import Role, User
 from lcit_sign.services import branding
 from lcit_sign.services.audit import append_audit_event
 from lcit_sign.services.document_validation import DocumentValidationError, validate_pdf_upload
+from lcit_sign.services.office_conversion import (
+    OFFICE_EXTENSIONS,
+    SOURCES_BUCKET,
+    ConversionError,
+    check_source,
+    convert_to_pdf,
+    extension_of,
+)
 from lcit_sign.services.storage import StorageService
 
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -87,6 +99,7 @@ def _version_payload(
         "file_size": version.file_size,
         "mime_type": version.mime_type,
         "sha256": version.sha256,
+        "source_sha256": version.source_sha256,
         "status": version.status.value,
         "created_at": version.created_at.isoformat(),
         "published_at": version.published_at.isoformat() if version.published_at else None,
@@ -109,19 +122,66 @@ def _document_payload(
     }
 
 
-async def _validated_upload(request: Request, file: UploadFile) -> tuple[bytes, str]:
+@dataclass(frozen=True)
+class Upload:
+    pdf: bytes
+    sha256: str
+    filename: str
+    # Set when the file was Word / LibreOffice: what it was made from, kept with its hash.
+    source: bytes | None = None
+    source_sha256: str | None = None
+    source_extension: str | None = None
+
+
+def get_converter_client(request: Request) -> Generator[httpx.Client]:
+    # A dependency so tests can swap in a mock transport.
+    settings: Settings = request.app.state.settings
+    with httpx.Client(timeout=settings.converter_timeout_seconds) as client:
+        yield client
+
+
+async def _validated_upload(
+    request: Request, file: UploadFile, converter: httpx.Client
+) -> Upload:
+    """The PDF to store: the file itself when it is a PDF, or the PDF the isolated converter
+    made from a Word / LibreOffice file (checked like any upload, and its source kept)."""
     settings: Settings = request.app.state.settings
     data = await file.read()
+    max_bytes = settings.max_upload_size_mb * 1024 * 1024
+    name = file.filename or ""
+    extension = extension_of(name)
+    source: bytes | None = None
+    if extension is not None:
+        try:
+            check_source(extension, data, max_bytes=max_bytes)
+            pdf = await asyncio.to_thread(
+                convert_to_pdf, converter, settings.converter_url, extension, data
+            )
+        except ConversionError as exc:
+            raise HTTPException(exc.status, str(exc)) from None
+        source, data = data, pdf
+        # Checked as the PDF it is now: the converter is not trusted with what it returns.
+        name, content_type = name[: -len(extension)] + ".pdf", "application/pdf"
+    else:
+        content_type = file.content_type or ""
     try:
-        validate_pdf_upload(
-            file.filename or "",
-            file.content_type or "",
-            data,
-            max_bytes=settings.max_upload_size_mb * 1024 * 1024,
-        )
+        validate_pdf_upload(name, content_type, data, max_bytes=max_bytes)
     except DocumentValidationError as exc:
         raise HTTPException(400, str(exc)) from None
-    return data, StorageService.sha256_hex(data)
+    return Upload(
+        pdf=data,
+        sha256=StorageService.sha256_hex(data),
+        filename=file.filename or "document.pdf",
+        source=source,
+        source_sha256=StorageService.sha256_hex(source) if source is not None else None,
+        source_extension=extension,
+    )
+
+
+def _store_upload(storage: StorageService, version: DocumentVersion, upload: Upload) -> None:
+    storage.save(DOCUMENTS_BUCKET, version.id, PDF_SUFFIX, upload.pdf)
+    if upload.source is not None and upload.source_extension:
+        storage.save(SOURCES_BUCKET, version.id, upload.source_extension, upload.source)
 
 
 @router.post("", status_code=201)
@@ -134,8 +194,9 @@ async def create_document(
     file: UploadFile = File(...),
     user: User = Depends(_manage),
     db: DbSession = Depends(get_db),
+    converter: httpx.Client = Depends(get_converter_client),
 ) -> dict[str, Any]:
-    data, sha256 = await _validated_upload(request, file)
+    upload = await _validated_upload(request, file, converter)
     storage: StorageService = request.app.state.storage
 
     document = Document(
@@ -147,16 +208,17 @@ async def create_document(
     version = DocumentVersion(
         document_id=document.id,
         version_label=version_label,
-        original_filename=file.filename or "document.pdf",
-        file_size=len(data),
+        original_filename=upload.filename,
+        file_size=len(upload.pdf),
         mime_type="application/pdf",
-        sha256=sha256,
+        sha256=upload.sha256,
+        source_sha256=upload.source_sha256,
         created_by=user.id,
     )
     db.add(version)
     db.flush()
 
-    storage.save(DOCUMENTS_BUCKET, version.id, PDF_SUFFIX, data)
+    _store_upload(storage, version, upload)
 
     append_audit_event(
         db, action="DOCUMENT_CREATED", actor_id=user.id,
@@ -178,27 +240,29 @@ async def create_document_version(
     file: UploadFile = File(...),
     user: User = Depends(_manage),
     db: DbSession = Depends(get_db),
+    converter: httpx.Client = Depends(get_converter_client),
 ) -> dict[str, Any]:
     document = db.get(Document, document_id)
     if document is None:
         raise HTTPException(404, "Document not found")
 
-    data, sha256 = await _validated_upload(request, file)
+    upload = await _validated_upload(request, file, converter)
     storage: StorageService = request.app.state.storage
 
     version = DocumentVersion(
         document_id=document.id,
         version_label=version_label,
-        original_filename=file.filename or "document.pdf",
-        file_size=len(data),
+        original_filename=upload.filename,
+        file_size=len(upload.pdf),
         mime_type="application/pdf",
-        sha256=sha256,
+        sha256=upload.sha256,
+        source_sha256=upload.source_sha256,
         created_by=user.id,
     )
     db.add(version)
     db.flush()
 
-    storage.save(DOCUMENTS_BUCKET, version.id, PDF_SUFFIX, data)
+    _store_upload(storage, version, upload)
 
     append_audit_event(
         db, action="DOCUMENT_VERSION_CREATED", actor_id=user.id,
@@ -305,6 +369,8 @@ def _erase_version(db: DbSession, storage: StorageService, version: DocumentVers
     db.execute(delete(DocumentField).where(DocumentField.document_version_id == version.id))
     db.delete(version)
     storage.delete(DOCUMENTS_BUCKET, version.id, PDF_SUFFIX)
+    for extension in OFFICE_EXTENSIONS:
+        storage.delete(SOURCES_BUCKET, version.id, extension)
 
 
 @router.delete("/versions/{version_id}")
