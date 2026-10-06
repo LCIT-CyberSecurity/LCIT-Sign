@@ -162,6 +162,16 @@ export default function SignRequestPage() {
     }
   };
 
+  const deleteDraft = async () => {
+    setError(null);
+    try {
+      await api.del(`/campaigns/${id}`);
+      navigate("/sign");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "La suppression a échoué.");
+    }
+  };
+
   return (
     <div className="stack">
       <Link to="/sign" className="back-link">
@@ -173,6 +183,11 @@ export default function SignRequestPage() {
         <span className={`badge badge--${sent ? campaign.status.toLowerCase() : "draft"}`}>
           {sent ? (campaign.status === "SCHEDULED" ? "Programmée" : "Envoyée") : "En préparation"}
         </span>
+        {!sent && (
+          <ConfirmButton confirmLabel="Oui, supprimer cette demande" onConfirm={deleteDraft}>
+            Supprimer cette demande
+          </ConfirmButton>
+        )}
       </div>
 
       <ol className="wizard-steps" data-testid="wizard-steps">

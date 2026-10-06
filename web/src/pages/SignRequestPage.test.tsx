@@ -55,6 +55,7 @@ function open(step = 1, documents?: unknown[], plan: unknown = null) {
       <Routes>
         <Route path="/sign/:id" element={<SignRequestPage />} />
         <Route path="/campaigns/:id" element={<p>suivi</p>} />
+        <Route path="/sign" element={<p>liste des demandes</p>} />
       </Routes>
     </MemoryRouter>,
   );
@@ -233,6 +234,24 @@ describe("SignRequestPage", () => {
       },
       { timeout: 3000 },
     );
+  });
+
+  it("deletes a request still being prepared, after a second click; a sent one has no such button", async () => {
+    vi.mocked(api.del).mockResolvedValue({});
+    open(1);
+    await screen.findByRole("heading", { name: "PSSI 2026" });
+    fireEvent.click(screen.getByRole("button", { name: "Supprimer cette demande" }));
+    expect(api.del).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Oui, supprimer cette demande" }));
+    await waitFor(() => expect(api.del).toHaveBeenCalledWith("/campaigns/c1"));
+    expect(await screen.findByText("liste des demandes")).toBeInTheDocument();
+  });
+
+  it("offers no deletion once the request was sent", async () => {
+    server.status = "ACTIVE";
+    open(5);
+    await screen.findByTestId("signed-step");
+    expect(screen.queryByRole("button", { name: "Supprimer cette demande" })).toBeNull();
   });
 
   it("does not write anything for a request that was already sent", async () => {
