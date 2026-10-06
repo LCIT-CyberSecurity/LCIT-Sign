@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import SignRequestPage from "./SignRequestPage";
 import { api } from "../api/client";
@@ -18,10 +18,16 @@ const campaign = (documents: unknown[] = [prepared], roles: unknown[] = [everyon
   roles, documents, assignment_counts: {}, policies: {}, renewal_of_campaign_id: null,
 });
 
+// What the server says once the request was sent.
+const server = { status: "DRAFT" };
+const NOTHING_SIGNED = { campaigns: [], signed: [], outstanding: [], totals: { signed: 0, outstanding: 0, waiting: 0 } };
+
 function open(step = 1, documents?: unknown[]) {
-  vi.mocked(api.get).mockImplementation(async (path: string) =>
-    path === "/campaigns/c1" ? campaign(documents) : [],
-  );
+  vi.mocked(api.get).mockImplementation(async (path: string) => {
+    if (path === "/campaigns/c1") return { ...campaign(documents), status: server.status };
+    if (path.startsWith("/signed/documents")) return NOTHING_SIGNED;
+    return [];
+  });
   render(
     <MemoryRouter initialEntries={[`/sign/c1?step=${step}`]}>
       <Routes>
@@ -37,11 +43,18 @@ const stepButton = (name: RegExp) => screen.getByRole("button", { name });
 describe("SignRequestPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(api.post).mockResolvedValue({ population_count: 3 });
+    server.status = "DRAFT";
+    vi.mocked(api.post).mockImplementation(async (path: string, body?: unknown) => {
+      if (path.endsWith("/launch")) {
+        server.status = (body as { start_at: string | null }).start_at ? "SCHEDULED" : "ACTIVE";
+        return {};
+      }
+      return { population_count: 3 };
+    });
     vi.mocked(api.put).mockResolvedValue({});
   });
 
-  it("goes through the four screens: signers, documents, preparing, then review and send", async () => {
+  it("goes through the screens: signers, documents, preparing, then review and send", async () => {
     open(1);
     // Screen 1: who signs (in order), the mail merge list, deadline, reminders, renewal.
     expect(await screen.findByTestId("signers-card")).toBeInTheDocument();
@@ -71,6 +84,8 @@ describe("SignRequestPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /Suivant : vérifier et envoyer/ }));
     expect(await screen.findByTestId("recap-card")).toHaveTextContent("PSSI — 2 élément(s) placé(s)");
     expect(screen.getByTestId("recap-card")).toHaveTextContent("Chaque destinataire");
+    // Nothing is signed before it is sent: the last step is not reachable yet.
+    expect(screen.getByRole("button", { name: /Documents signés/ })).toBeDisabled();
   });
 
   it("does not leave the preparing screen while a document has no element, and says which", async () => {
@@ -113,7 +128,10 @@ describe("SignRequestPage", () => {
     expect(screen.getByTestId("send-summary")).toHaveTextContent("1 document(s) à signer par chaque destinataire");
     expect(vi.mocked(api.post).mock.calls.some((c) => c[0] === "/campaigns/c1/launch")).toBe(false);
     fireEvent.click(screen.getByRole("button", { name: /Oui, envoyer maintenant/ }));
-    await waitFor(() => expect(screen.getByText("suivi")).toBeInTheDocument());
+    // Sent: the last step shows what comes back, and the earlier ones are closed.
+    expect(await screen.findByTestId("signed-step")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Signataires et relances/ })).toBeDisabled();
+    expect(screen.getByRole("link", { name: /Ouvrir le suivi complet/ })).toHaveAttribute("href", "/campaigns/c1");
     const call = vi.mocked(api.post).mock.calls.find((c) => c[0] === "/campaigns/c1/launch")!;
     expect(call[1]).toMatchObject({
       reminder_first_days: 7,
@@ -135,7 +153,7 @@ describe("SignRequestPage", () => {
     expect(screen.getByTestId("send-summary")).toHaveTextContent("programmé : personne n'est prévenu avant");
     fireEvent.click(screen.getByRole("button", { name: /Programmer l.envoi/ }));
     fireEvent.click(screen.getByRole("button", { name: /Oui, programmer/ }));
-    await waitFor(() => expect(screen.getByText("suivi")).toBeInTheDocument());
+    expect(await screen.findByTestId("signed-step")).toHaveTextContent("démarre à la date prévue");
     const call = vi.mocked(api.post).mock.calls.find((c) => c[0] === "/campaigns/c1/launch")!;
     expect((call[1] as { start_at: string }).start_at.startsWith("2099-01-01")).toBe(true);
   });

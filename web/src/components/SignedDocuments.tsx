@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Download, ExternalLink, FileCheck2, ShieldCheck } from "lucide-react";
+import { Download, ExternalLink, ShieldCheck } from "lucide-react";
 import { api } from "../api/client";
 import type { SignedDocumentsResponse } from "../api/types";
 
@@ -12,12 +12,22 @@ const STATUS_LABEL: Record<string, string> = {
 
 const day = (value: string | null) => (value ? new Date(value).toLocaleDateString("fr-FR") : "—");
 
-/** The signed documents of one or several campaigns, in one place: who signed what, who still
- *  has to, the PDFs, and a ZIP of them all. */
-export default function SignedDocumentsPage() {
+/** The signed documents of one or several campaigns: who signed what, who still has to, the
+ *  PDFs, and a ZIP of them all. With `campaignIds` it is about those campaigns only (a campaign's
+ *  own page, the last step of sending); without, the campaigns can be picked. */
+export default function SignedDocuments({
+  campaignIds,
+  refreshKey = 0,
+}: {
+  campaignIds?: string[];
+  refreshKey?: number;
+}) {
   const [data, setData] = useState<SignedDocumentsResponse | null>(null);
-  const [selected, setSelected] = useState<string[]>([]);
+  const [picked, setPicked] = useState<string[]>([]);
   const [query, setQuery] = useState("");
+  const fixed = campaignIds !== undefined;
+  const selected = fixed ? campaignIds : picked;
+  const setSelected = setPicked;
 
   const params = () => {
     const search = new URLSearchParams();
@@ -34,22 +44,21 @@ export default function SignedDocumentsPage() {
     }, 200);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected, query]);
+  }, [selected.join(","), query, refreshKey]);
 
   const toggle = (id: string) =>
     setSelected(selected.includes(id) ? selected.filter((c) => c !== id) : [...selected, id]);
 
   return (
     <div className="stack">
-      <div className="page-header">
-        <div>
-          <h1 className="page-title" style={{ margin: 0 }}>
-            <FileCheck2 size={22} aria-hidden="true" /> Documents signés
-          </h1>
-          <p className="page-subtitle" style={{ margin: "6px 0 0" }}>
-            Ce qui a été signé, par qui, et ce qu&apos;il reste à signer — pour une ou plusieurs campagnes.
-          </p>
-        </div>
+      <div className="signed-toolbar">
+        <input
+          type="search"
+          placeholder="Rechercher une personne, un document, une campagne…"
+          aria-label="Rechercher"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
         <a
           className={`button button--primary${data && data.totals.signed > 0 ? "" : " is-disabled"}`}
           aria-disabled={!data || data.totals.signed === 0}
@@ -59,39 +68,34 @@ export default function SignedDocumentsPage() {
         </a>
       </div>
 
-      <div className="card" data-testid="signed-filters">
-        <div className="field-label">
-          Campagnes{" "}
-          <span className="muted small">
-            {selected.length === 0 ? "— toutes" : `— ${selected.length} sélectionnée(s)`}
-          </span>
+      {!fixed && (
+        <div className="card" data-testid="signed-filters">
+          <div className="field-label">
+            Campagnes{" "}
+            <span className="muted small">
+              {selected.length === 0 ? "— toutes" : `— ${selected.length} sélectionnée(s)`}
+            </span>
+          </div>
+          <div className="chip-list">
+            {data?.campaigns.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                className={`chip${selected.includes(c.id) ? " chip--active" : ""}`}
+                aria-pressed={selected.includes(c.id)}
+                onClick={() => toggle(c.id)}
+              >
+                {c.name}
+              </button>
+            ))}
+            {selected.length > 0 && (
+              <button type="button" className="button button--ghost button--sm" onClick={() => setSelected([])}>
+                Toutes les campagnes
+              </button>
+            )}
+          </div>
         </div>
-        <div className="chip-list">
-          {data?.campaigns.map((c) => (
-            <button
-              key={c.id}
-              type="button"
-              className={`chip${selected.includes(c.id) ? " chip--active" : ""}`}
-              aria-pressed={selected.includes(c.id)}
-              onClick={() => toggle(c.id)}
-            >
-              {c.name}
-            </button>
-          ))}
-          {selected.length > 0 && (
-            <button type="button" className="button button--ghost button--sm" onClick={() => setSelected([])}>
-              Toutes les campagnes
-            </button>
-          )}
-        </div>
-        <input
-          type="search"
-          placeholder="Rechercher une personne, un document, une campagne…"
-          aria-label="Rechercher"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
-      </div>
+      )}
 
       {data && (
         <div className="metrics" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(170px, 240px))" }}>

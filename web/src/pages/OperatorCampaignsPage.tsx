@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { Megaphone, PenLine } from "lucide-react";
 import { api } from "../api/client";
 import DashboardCards from "../components/DashboardCards";
+import SignedDocuments from "../components/SignedDocuments";
 import type { Campaign, OperatorDashboard } from "../api/types";
 
 const TARGETS: Record<string, string> = {
@@ -34,6 +35,8 @@ function formatDate(value: string | null): string {
 export default function OperatorCampaignsPage() {
   const [campaigns, setCampaigns] = useState<Campaign[] | null>(null);
   const [dashboard, setDashboard] = useState<OperatorDashboard | null>(null);
+  const [query, setQuery] = useSearchParams();
+  const tab = query.get("tab") === "signed" ? "signed" : "campaigns";
 
   const load = () => {
     api.get<Campaign[]>("/campaigns").then(setCampaigns);
@@ -58,7 +61,30 @@ export default function OperatorCampaignsPage() {
         </Link>
       </div>
 
-      {dashboard && <DashboardCards data={dashboard} />}
+      <div className="tabs" role="tablist" aria-label="Suivi">
+        <button
+          role="tab"
+          type="button"
+          aria-selected={tab === "campaigns"}
+          className={tab === "campaigns" ? "tab is-active" : "tab"}
+          onClick={() => setQuery({})}
+        >
+          Campagnes
+        </button>
+        <button
+          role="tab"
+          type="button"
+          aria-selected={tab === "signed"}
+          className={tab === "signed" ? "tab is-active" : "tab"}
+          onClick={() => setQuery({ tab: "signed" })}
+        >
+          Documents signés
+        </button>
+      </div>
+
+      {tab === "signed" && <SignedDocuments />}
+
+      {tab === "campaigns" && dashboard && <DashboardCards data={dashboard} />}
 
       <div className="table-wrap">
         <table className="simple-table campaigns-table">

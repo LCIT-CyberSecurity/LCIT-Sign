@@ -8,7 +8,6 @@ import {
   FolderCog,
   KeyRound,
   Mail,
-  FileCheck2,
   Megaphone,
   PenLine,
   Menu,
@@ -54,7 +53,6 @@ const TITLES: [prefix: string, label: string][] = [
   ["/documents", "Documents"],
   ["/sign", "Faire signer"],
   ["/campaigns", "Suivi"],
-  ["/signed", "Documents signés"],
   ["/admin/users", "Utilisateurs"],
   ["/admin/directory", "Annuaire"],
   ["/admin/mail", "E-mail"],
@@ -113,7 +111,6 @@ export default function Shell() {
               <NavItem to="/documents" icon={<FileText size={18} />} label="Documents" onNavigate={close} />
               <NavItem to="/sign" icon={<PenLine size={18} />} label="Faire signer" onNavigate={close} />
               <NavItem to="/campaigns" icon={<Megaphone size={18} />} label="Suivi" onNavigate={close} />
-              <NavItem to="/signed" icon={<FileCheck2 size={18} />} label="Documents signés" onNavigate={close} />
             </>
           )}
           {isAdmin && (

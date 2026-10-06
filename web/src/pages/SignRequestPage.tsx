@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
-import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { ArrowLeft, ArrowRight, Check, Rocket } from "lucide-react";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { ArrowLeft, ArrowRight, Check, RefreshCw, Rocket } from "lucide-react";
 import { api, ApiError } from "../api/client";
 import CampaignDocuments from "../components/CampaignDocuments";
 import CampaignSigners from "../components/CampaignSigners";
 import PrepareDocuments from "../components/PrepareDocuments";
 import ConfirmButton from "../components/ConfirmButton";
 import RecipientPicker from "../components/RecipientPicker";
+import SignedDocuments from "../components/SignedDocuments";
 import ScheduleFields, {
   EMPTY_SCHEDULE,
   describeSchedule,
@@ -22,16 +23,24 @@ interface TargetUserOption {
   display_name: string;
 }
 
-const STEPS = ["Signataires et relances", "Documents", "Préparer", "Vérifier et envoyer"];
+const STEPS = [
+  "Signataires et relances",
+  "Documents",
+  "Préparer",
+  "Vérifier et envoyer",
+  "Documents signés",
+];
 
 /** Preparing and sending a request for signature: who signs, what, for which people.
- *  Once launched it is followed in Campagnes (the reporting). */
+ *  The last step shows what comes back: the signed documents, live. A request already sent
+ *  opens on it, and the whole follow-up (reminders, changes…) is in Suivi. */
 export default function SignRequestPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [query, setQuery] = useSearchParams();
-  const step = Math.min(4, Math.max(1, Number(query.get("step")) || 1));
+  const asked = Math.min(5, Math.max(1, Number(query.get("step")) || 1));
   const goTo = (n: number) => setQuery({ step: String(n) }, { replace: false });
+  const [refresh, setRefresh] = useState(0);
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [documents, setDocuments] = useState<DocumentDetail[] | null>(null);
   const [groups, setGroups] = useState<DirectoryGroup[] | null>(null);
@@ -72,8 +81,9 @@ export default function SignRequestPage() {
   }, [id, campaign?.status, allUsers, selectedGroupIds, selectedUserIds]);
 
   if (!campaign) return <p className="muted">Chargement…</p>;
-  // Already launched: it is followed in Campagnes.
-  if (campaign.status !== "DRAFT") return <Navigate to={`/campaigns/${campaign.id}`} replace />;
+  // Sent (or scheduled): only the last step is left; before sending, it is not reachable yet.
+  const sent = campaign.status !== "DRAFT";
+  const step = sent ? 5 : Math.min(asked, 4);
 
   // Nobody chosen yet means the usual case: everyone targeted signs their own copy.
   const hasList = campaign.roles.length === 0 || campaign.roles.some((r) => r.mode === "EACH");
@@ -104,7 +114,9 @@ export default function SignRequestPage() {
         group_ids: allUsers ? [] : selectedGroupIds,
         user_ids: allUsers ? [] : selectedUserIds,
       });
-      navigate(`/campaigns/${id}`);
+      // The request is sent: on to the last step, which shows what comes back.
+      setCampaign(await api.get<Campaign>(`/campaigns/${id}`));
+      navigate(`/sign/${id}?step=5`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Le lancement a échoué.");
     } finally {
@@ -120,19 +132,52 @@ export default function SignRequestPage() {
 
       <div className="page-title-row">
         <h1 className="page-title">{campaign.name}</h1>
-        <span className="badge badge--draft">En préparation</span>
+        <span className={`badge badge--${sent ? campaign.status.toLowerCase() : "draft"}`}>
+          {sent ? (campaign.status === "SCHEDULED" ? "Programmée" : "Envoyée") : "En préparation"}
+        </span>
       </div>
 
       <ol className="wizard-steps" data-testid="wizard-steps">
         {STEPS.map((label, i) => (
           <li key={label} className={step === i + 1 ? "is-current" : step > i + 1 ? "is-done" : ""}>
-            <button type="button" onClick={() => goTo(i + 1)} aria-current={step === i + 1 ? "step" : undefined}>
+            <button
+              type="button"
+              onClick={() => goTo(i + 1)}
+              aria-current={step === i + 1 ? "step" : undefined}
+              // Once sent, what was prepared no longer changes; before sending, nothing is signed yet.
+              disabled={sent ? i < 4 : i === 4}
+            >
               <span className="wizard-steps__n">{step > i + 1 ? <Check size={13} aria-hidden="true" /> : i + 1}</span>
               {label}
             </button>
           </li>
         ))}
       </ol>
+
+      {step === 5 && (
+        <>
+          <div className="card" data-testid="signed-step">
+            <div className="card-title">Documents signés</div>
+            <p className="muted small">
+              {campaign.status === "SCHEDULED"
+                ? "Cette demande démarre à la date prévue : rien n'est encore signé."
+                : "Les documents signés arrivent ici au fur et à mesure, avec leur preuve. Les relances, les ajouts de personnes ou de documents se font dans Suivi."}
+            </p>
+            <div className="row-actions">
+              <button type="button" className="button button--secondary" onClick={() => setRefresh(refresh + 1)}>
+                <RefreshCw size={14} aria-hidden="true" /> Actualiser
+              </button>
+              <Link className="button button--ghost" to={`/campaigns/${campaign.id}`}>
+                Ouvrir le suivi complet
+              </Link>
+              <Link className="button button--ghost" to="/sign">
+                Nouvelle demande
+              </Link>
+            </div>
+          </div>
+          <SignedDocuments campaignIds={[campaign.id]} refreshKey={refresh} />
+        </>
+      )}
 
       {step === 1 && (
         <>

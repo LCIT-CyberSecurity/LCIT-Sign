@@ -4,6 +4,7 @@ import { ArrowLeft, Bell, StopCircle, FileBarChart, Download } from "lucide-reac
 import { api, ApiError } from "../api/client";
 import CampaignDocuments from "../components/CampaignDocuments";
 import ConfirmButton from "../components/ConfirmButton";
+import SignedDocuments from "../components/SignedDocuments";
 import { describePolicies } from "../components/Schedule";
 import RecipientPicker, { NO_RECIPIENTS, type Recipients } from "../components/RecipientPicker";
 import type {
@@ -415,6 +416,11 @@ export default function OperatorCampaignDetailPage() {
           )}
         </div>
       )}
+
+      <section data-testid="campaign-signed">
+        <h2 className="card-title">Documents signés</h2>
+        <SignedDocuments campaignIds={[campaign.id]} refreshKey={assignments?.length ?? 0} />
+      </section>
 
       {(
         <div className="card">
