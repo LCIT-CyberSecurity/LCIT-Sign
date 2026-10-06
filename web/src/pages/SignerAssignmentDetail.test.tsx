@@ -17,6 +17,7 @@ vi.mock("../api/client", async () => {
 
 const assignment = {
   id: "a1",
+  campaign_id: "c1",
   document_version_id: "v1",
   document_title: "Charte informatique",
   version_label: "2.1",
@@ -84,7 +85,11 @@ describe("signing: preview, consent, then one deliberate click", () => {
     await user.click(screen.getByRole("checkbox"));
     expect(sign).toBeEnabled();
     await user.click(sign);
-    expect(api.post).toHaveBeenCalledWith("/documents/versions/v1/sign", { consent: true, values: {} });
+    expect(api.post).toHaveBeenCalledWith("/documents/versions/v1/sign", {
+      consent: true,
+      campaign_id: "c1",
+      values: {},
+    });
     expect(api.post).toHaveBeenCalledTimes(1);
   });
 });
@@ -131,6 +136,7 @@ describe("signing a document with elements to fill in", () => {
     await user.click(sign);
     expect(api.post).toHaveBeenCalledWith("/documents/versions/v1/sign", {
       consent: true,
+      campaign_id: "c1",
       values: { t1: "LCIT", t2: "LCIT", t3: "" },
     });
   });

@@ -102,6 +102,8 @@ export default function SignerAssignmentDetailPage() {
         `/documents/versions/${assignment.document_version_id}/sign`,
         {
           consent: true,
+          // The request being signed: the same document may be asked by several campaigns.
+          campaign_id: assignment.campaign_id,
           values: Object.fromEntries(
             inputGroups.flatMap((g) => g.ids.map((fieldId) => [fieldId, (typed[g.key] ?? "").trim()])),
           ),

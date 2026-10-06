@@ -61,6 +61,8 @@ _sign = get_current_user
 
 class SignRequest(BaseModel):
     consent: bool
+    # Which campaign's request is being signed, when the person is asked by several at once.
+    campaign_id: uuid.UUID | None = None
     # Free-text elements the signer filled in, by element id.
     values: dict[str, str] = {}
 
@@ -259,6 +261,14 @@ def perform_signature(
     if only_campaign and not pending_assignments:
         # Never fall through to a campaign-less signature when a campaign was asked for.
         raise HTTPException(409, "Rien à signer pour cette campagne")
+    if len({a.campaign_id for a in pending_assignments}) > 1:
+        # The same version is asked of this person by several campaigns and nothing says which one
+        # is being signed: a signature answers one campaign only, so never guess.
+        raise HTTPException(
+            409,
+            "Ce document vous est demandé par plusieurs campagnes : ouvrez-le depuis la "
+            "demande de signature voulue pour préciser laquelle vous signez.",
+        )
     if not pending_assignments and Role.SIGNER not in user_roles(db, user):
         # Signing of one's own accord (nobody asked) stays a role; being asked needs none.
         raise HTTPException(403, "Insufficient role")
@@ -466,7 +476,9 @@ def sign_document_version(
 ) -> dict[str, Any]:
     if not body.consent:
         raise HTTPException(400, "Explicit consent is required to sign")
-    signature = perform_signature(request, db, user, version_id, body.values)
+    signature = perform_signature(
+        request, db, user, version_id, body.values, only_campaign=body.campaign_id
+    )
     assert signature is not None  # noqa: S101 - only a dry run returns None
     db.commit()
     return _signature_payload(signature)
