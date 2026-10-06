@@ -12,6 +12,7 @@ import ScheduleFields, {
   EMPTY_SCHEDULE,
   describeSchedule,
   scheduleBody,
+  scheduleFromPlan,
   scheduleProblem,
   type Schedule,
 } from "../components/Schedule";
@@ -58,6 +59,37 @@ export default function SignRequestPage() {
     if (!id) return;
     api.get<Campaign>(`/campaigns/${id}`).then(setCampaign);
   };
+
+  // What was chosen so far (recipients, planning) is kept on the request: found again on a reload
+  // or the next day, like the signers, the documents and the elements.
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => {
+    if (!campaign || hydrated) return;
+    const plan = campaign.plan;
+    if (plan) {
+      setAllUsers(Boolean(plan.all_users));
+      setSelectedGroupIds(plan.group_ids ?? []);
+      setSelectedUserIds(plan.user_ids ?? []);
+      setSchedule(scheduleFromPlan(plan));
+    }
+    setHydrated(true);
+  }, [campaign, hydrated]);
+  useEffect(() => {
+    if (!hydrated || !id || campaign?.status !== "DRAFT") return;
+    // A short pause, so typing is not one request per key.
+    const timer = setTimeout(() => {
+      api
+        .put(`/campaigns/${id}/plan`, {
+          ...scheduleBody(schedule),
+          all_users: allUsers,
+          group_ids: allUsers ? [] : selectedGroupIds,
+          user_ids: allUsers ? [] : selectedUserIds,
+        })
+        .catch(() => undefined);
+    }, 500);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated, allUsers, selectedGroupIds, selectedUserIds, schedule]);
 
   useEffect(() => {
     load();

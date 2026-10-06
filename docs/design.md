@@ -609,6 +609,7 @@ Where each kind of test runs (spec §95):
 |---|---|---|
 | Lint, types, unit and API tests | dev machine or CI | `ruff`, `mypy`, `pytest` (SQLite + a real mock OIDC + scripted SMTP servers), `vitest` |
 | Integration, smoke, CrashTests | the Integrations VM, in Docker | `tests/UAT/CrashTests-Sign/run-all.sh`: smoke (real PostgreSQL, nginx, SSO, Postfix), SMTP scenarios, seed, Playwright in a real browser, restore test |
+| End-to-end in a browser | the Integrations VM, on a **throwaway copy** of the stack | `scripts/e2e.sh` (via `scripts/integration-run.sh`): its own containers, ports and volumes (prefix `lcit-e2e`, see `docker/e2e.env`), the CrashTests dataset, the mock SSO, Playwright; everything is removed at the end, the real stack and its data are never touched |
 | Destructive reset | the Integrations VM only | `scripts/integration-reset.sh --yes --seed` |
 
 `scripts/integration-run.sh` runs a repository script on the VM over SSH (host

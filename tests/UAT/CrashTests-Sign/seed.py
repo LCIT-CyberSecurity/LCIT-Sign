@@ -15,11 +15,12 @@ def run() -> int:
     signers = [login(sub) for sub in SIGNERS]
 
     expect(admin.post("/api/admin/directory/sync"), 200)
-    groups = {g["name"]: g["id"] for g in operator.get("/api/admin/directory/groups").json()}
 
+    # Roles first: reading the groups is for operators, who have none on a fresh stack.
     for client, role in [(operator, "OPERATOR"), *[(s, "SIGNER") for s in signers]]:
         expect(admin.post(f"/api/admin/users/{me(client)['id']}/roles", json={"role": role}),
                200, 201, 409)
+    groups = {g["name"]: g["id"] for g in operator.get("/api/admin/directory/groups").json()}
 
     versions = []
     for title, size in (("Charte informatique 2026", 200), ("Politique BYOD", 300)):

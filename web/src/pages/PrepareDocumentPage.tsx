@@ -397,6 +397,7 @@ export function DocumentEditor({
                       className={`prep-role${activeRole === role ? " prep-role--active" : ""}`}
                       style={{ ["--role" as string]: roleColor(role) }}
                       aria-pressed={activeRole === role}
+                      data-testid={`role-${role}`}
                       onClick={() => setActiveRole(role)}
                     >
                       <span className="prep-role__dot" />

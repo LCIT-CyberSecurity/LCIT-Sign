@@ -362,3 +362,27 @@ def test_an_entra_guest_is_recognised_by_their_real_address(monkeypatch, tmp_pat
         "preferred_username": "bob_gmail.com#EXT#@eunoia.onmicrosoft.com", "name": "Bob Guest"})
     back = client.get("/callback/entra", params={"code": "c", "state": state})
     assert exchange(code_from(back)[0])["email"] == "bob@gmail.com"
+
+
+def test_a_refused_code_says_what_to_fix_on_the_entra_side(monkeypatch, tmp_path):
+    """`invalid_client` with AADSTS700025 is the app being declared a public client."""
+    configure(monkeypatch, tmp_path, {"entra": ENTRA})
+    go = client.get("/login/entra", params=authorize_params())
+    state = parse_qs(urlparse(go.headers["location"]).query)["state"][0]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(401, json={
+            "error": "invalid_client",
+            "error_description": "AADSTS700025: Client is public so neither 'client_assertion' "
+            "nor 'client_secret' should be presented. Trace ID: abc secret=s3cret~value",
+        })
+
+    monkeypatch.setattr(providers, "http_client",
+                        lambda: httpx.Client(transport=httpx.MockTransport(handler)))
+    failed = client.get("/callback/entra", params={"code": "c", "state": state})
+    assert failed.status_code == 400
+    assert "invalid_client, AADSTS700025" in failed.text
+    assert "client public" in failed.text and "Plateforme" not in failed.text
+    assert "plateforme « Web »" in failed.text
+    # Never what Microsoft echoed back.
+    assert "s3cret" not in failed.text and "Trace ID" not in failed.text

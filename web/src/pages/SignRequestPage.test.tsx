@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import SignRequestPage from "./SignRequestPage";
 import { api } from "../api/client";
@@ -31,6 +31,7 @@ const prepared = { version_id: "v1", title: "PSSI", version_label: "1.0", status
 const everyone = { role: 1, label: "", mode: "EACH", user_id: null, user_display_name: null };
 
 const campaign = (documents: unknown[] = [prepared], roles: unknown[] = [everyone]) => ({
+  plan: null as unknown,
   id: "c1", name: "PSSI 2026", description: "", status: "DRAFT", target_mode: "", created_at: "",
   launch_at: null, deadline: null, closed_at: null, document_version_ids: [], roles_required: 1,
   roles, documents, assignment_counts: {}, policies: {}, renewal_of_campaign_id: null,
@@ -40,9 +41,9 @@ const campaign = (documents: unknown[] = [prepared], roles: unknown[] = [everyon
 const server = { status: "DRAFT" };
 const NOTHING_SIGNED = { campaigns: [], signed: [], outstanding: [], totals: { signed: 0, outstanding: 0, waiting: 0 } };
 
-function open(step = 1, documents?: unknown[]) {
+function open(step = 1, documents?: unknown[], plan: unknown = null) {
   vi.mocked(api.get).mockImplementation(async (path: string) => {
-    if (path === "/campaigns/c1") return { ...campaign(documents), status: server.status };
+    if (path === "/campaigns/c1") return { ...campaign(documents), status: server.status, plan };
     if (path.startsWith("/signed/documents")) return NOTHING_SIGNED;
     return [];
   });
@@ -198,5 +199,44 @@ describe("SignRequestPage", () => {
     vi.mocked(api.post).mockResolvedValue({ population_count: 0 });
     open(4);
     expect(await screen.findByTestId("launch-blocker")).toHaveTextContent("Choisissez les personnes");
+  });
+
+  it("finds again what was chosen, and keeps what is chosen as it goes", async () => {
+    // Saved earlier (a reload, or back the next day): the recipients and the planning are there.
+    const deadline = new Date("2099-01-31T12:00:00").toISOString();
+    open(1, undefined, {
+      user_ids: ["u7"],
+      deadline,
+      reminder_first_days: 7,
+      reminder_interval_days: 7,
+      renewal_every: 12,
+      renewal_unit: "MONTHS",
+    });
+    // The screen is there before the saved choices are put back: wait for them.
+    await screen.findByLabelText(/Date d.échéance/);
+    await waitFor(() => expect(screen.getByLabelText(/Date d.échéance/)).toHaveValue("2099-01-31"));
+    expect(screen.getByLabelText(/Relance en cas de non-réponse/)).toHaveValue("7");
+    expect(screen.getByLabelText(/^Renouvellement/)).toHaveValue("12");
+
+    // A change is saved by itself, shortly after.
+    fireEvent.change(screen.getByLabelText(/Date d.échéance/), { target: { value: "2099-03-15" } });
+    await waitFor(
+      () => {
+        const saved = vi.mocked(api.put).mock.calls.filter((c) => c[0] === "/campaigns/c1/plan");
+        expect(saved.length).toBeGreaterThan(0);
+        const last = saved[saved.length - 1][1] as { user_ids: string[]; deadline: string };
+        expect(last.user_ids).toEqual(["u7"]);
+        expect(last.deadline.startsWith("2099-03-1")).toBe(true);
+      },
+      { timeout: 3000 },
+    );
+  });
+
+  it("does not write anything for a request that was already sent", async () => {
+    server.status = "ACTIVE";
+    open(5);
+    await screen.findByTestId("signed-step");
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    expect(vi.mocked(api.put).mock.calls.some((c) => c[0] === "/campaigns/c1/plan")).toBe(false);
   });
 });

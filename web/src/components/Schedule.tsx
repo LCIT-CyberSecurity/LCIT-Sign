@@ -1,4 +1,4 @@
-import type { CampaignPolicies } from "../api/types";
+import type { CampaignPlan, CampaignPolicies } from "../api/types";
 
 /** When a request starts and ends, how often to remind those who have not answered, and
  *  how often it is asked again — four settings, in everyday terms. */
@@ -47,6 +47,23 @@ export function scheduleBody(s: Schedule): CampaignPolicies & {
     renewal_unit: months === null ? null : "MONTHS",
     start_at: s.startDate && s.startDate > today() ? new Date(`${s.startDate}T08:00:00`).toISOString() : null,
     deadline: s.deadline ? new Date(`${s.deadline}T23:59:59`).toISOString() : null,
+  };
+}
+
+const two = (n: number) => String(n).padStart(2, "0");
+const localDate = (iso: string) => {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}`;
+};
+
+/** The form as it was when saved: the reverse of `scheduleBody`. */
+export function scheduleFromPlan(plan: CampaignPlan): Schedule {
+  return {
+    startDate: plan.start_at ? localDate(plan.start_at) : "",
+    deadline: plan.deadline ? localDate(plan.deadline) : "",
+    reminderDays: plan.reminder_first_days ? String(plan.reminder_first_days) : "",
+    renewalMonths:
+      plan.renewal_every && plan.renewal_unit === "MONTHS" ? String(plan.renewal_every) : "",
   };
 }
 

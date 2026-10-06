@@ -376,6 +376,8 @@ def _campaign_payload(campaign: Campaign, db: DbSession) -> dict[str, Any]:
         ),
         "document_version_ids": [str(d.document_version_id) for d in campaign.documents],
         "documents": _documents_payload(db, campaign),
+        # The work in progress on a draft (recipients, planning); nothing once sent.
+        "plan": campaign.launch_request if campaign.status == CampaignStatus.DRAFT else None,
         "roles_required": roles_required(db, campaign),
         "roles": _roles_payload(db, campaign),
         "assignment_counts": {
@@ -482,6 +484,28 @@ def remove_campaign_document(
     )
     db.commit()
     db.refresh(campaign)
+    return _campaign_payload(campaign, db)
+
+
+class PlanIn(LaunchRequest):
+    """The recipients and the planning of a draft, saved as the operator fills them (the signers
+    have their own endpoint)."""
+
+    roles: list[RoleIn] = Field(default=[], max_length=0)
+
+
+@router.put("/{campaign_id}/plan")
+def put_plan(
+    campaign_id: uuid.UUID,
+    body: PlanIn,
+    user: User = Depends(_manage),
+    db: DbSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Keep what the operator has chosen so far (who is asked, when, how often to remind), so
+    that nothing is lost on a reload. Nothing is checked beyond the shape: the launch does."""
+    campaign = _get_draft_campaign(db, campaign_id)
+    campaign.launch_request = body.model_dump(mode="json", exclude={"roles"})
+    db.commit()
     return _campaign_payload(campaign, db)
 
 

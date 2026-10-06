@@ -149,6 +149,43 @@ class ProviderError(Exception):
     """The provider refused, or answered something unusable; the message is for the person."""
 
 
+# What to fix for the refusals Microsoft gives most often when the code is traded for a token.
+_ENTRA_HINTS = {
+    "700025": "L'application est déclarée comme « client public » : dans Entra → Authentification "
+    "→ Paramètres, « Autoriser les flux de clients publics » doit être sur Non, et l'adresse de "
+    "retour doit être sous la plateforme « Web ».",
+    "7000218": "Microsoft n'accepte pas le secret pour cette application : elle est déclarée comme "
+    "« client public ». Entra → Authentification → Paramètres : « Autoriser les flux de clients "
+    "publics » sur Non ; l'adresse de retour doit être sous la plateforme « Web ».",
+    "7000215": "Le secret client est refusé : saisissez la VALEUR du secret (pas son identifiant).",
+    "7000222": "Le secret client a expiré : créez-en un nouveau dans Entra → Certificats et "
+    "secrets.",
+    "50011": "L'adresse de retour ne correspond pas à celle déclarée dans Entra → Authentification "
+    "(plateforme Web).",
+    "9002327": "L'adresse de retour est déclarée comme « application monopage » : elle doit être "
+    "sous la plateforme « Web ».",
+    "700016": "Application introuvable dans ce tenant : vérifiez l'ID de l'application (client).",
+}
+
+
+def _refusal(provider: str, response: httpx.Response) -> str:
+    """Why the provider refused, in words that say what to fix. Only the error name and the
+    AADSTS number are shown: never the body, which may echo what was sent."""
+    try:
+        data = response.json()
+    except ValueError:
+        return "Le fournisseur a refusé la connexion."
+    name = str(data.get("error", "erreur"))[:40]
+    description = str(data.get("error_description", ""))
+    code = ""
+    if "AADSTS" in description:
+        digits = description.split("AADSTS", 1)[1]
+        code = "".join(ch for ch in digits[:8] if ch.isdigit())
+    hint = _ENTRA_HINTS.get(code) if provider == "entra" else None
+    detail = f"{name}{', AADSTS' + code if code else ''}"
+    return f"Le fournisseur a refusé la connexion ({detail})." + (f" {hint}" if hint else "")
+
+
 def _real_address(name: str) -> str:
     """The address a guest really has. Entra writes an invited person's sign-in name as
     `bob_gmail.com#EXT#@tenant.onmicrosoft.com`; that is not an address anyone can be matched on."""
@@ -210,14 +247,7 @@ def finish(
     except httpx.HTTPError as exc:
         raise ProviderError("Impossible de joindre le fournisseur d'identité.") from exc
     if response.status_code != 200:
-        raise ProviderError(
-            "Le fournisseur a refusé la connexion"
-            + (
-                f" ({response.json().get('error', 'erreur')})."
-                if response.headers.get("content-type", "").startswith("application/json")
-                else "."
-            )
-        )
+        raise ProviderError(_refusal(provider, response))
     claims = _claims_of(str(response.json().get("id_token", "")))
     if claims.get("aud") != config["client_id"] or claims.get("nonce") != pending["nonce"]:
         raise ProviderError("Réponse du fournisseur incohérente : connexion refusée.")

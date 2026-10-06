@@ -98,32 +98,36 @@ test("an operator sees the dashboard and can filter a campaign's follow-up", asy
   await expect(table.getByText("PENDING")).toHaveCount(0);
 });
 
+/** A draft request, ready to be worked on in the browser. */
+async function newRequest(page: Page, name: string) {
+  const campaign = await (await page.context().request.post("/api/campaigns", { data: { name } })).json();
+  return campaign as { id: string };
+}
+
+async function userIdOf(page: Page, email: string) {
+  const users = (await (await page.context().request.get("/api/campaigns/_meta/users")).json()) as {
+    id: string;
+    email: string;
+  }[];
+  const found = users.find((u) => u.email === email);
+  expect(found, `${email} must exist (seed)`).toBeTruthy();
+  return found!.id;
+}
+
 test("an operator targets a whole directory group in one click", async ({ page }) => {
   await loginAs(page, "Diane");
-  const api = page.context().request;
-  const title = `Ciblage ${Date.now()}`;
-  const created = await api.post("/api/documents", {
-    multipart: {
-      title,
-      version_label: "1.0",
-      file: { name: "g.pdf", mimeType: "application/pdf", buffer: MINIMAL_PDF },
-    },
-  });
-  const versionId = (await created.json()).versions[0].id as string;
-  await api.post(`/api/documents/versions/${versionId}/publish`);
-  const campaign = await (await api.post("/api/campaigns", { data: { name: title } })).json();
-  await api.post(`/api/campaigns/${campaign.id}/documents`, { data: { document_version_id: versionId } });
+  const request = await newRequest(page, `Ciblage ${Date.now()}`);
 
-  await page.goto(`/campaigns/${campaign.id}`);
-  await expect(page.getByText(`${title} — v1.0`).first()).toBeVisible(); // a title, not a raw id
-
+  await page.goto(`/sign/${request.id}?step=1`);
   await page.getByLabel("Rechercher un groupe").fill("IT");
   await page.getByRole("button", { name: /^IT/ }).click();
   // The IT group of the CrashTests directory has four members.
   await expect(page.getByTestId("recipient-count")).toContainText("4 destinataire(s)");
 });
 
-test("the campaign document picker is alphabetical and explains drafts", async ({ page }) => {
+test("the documents already in the library are offered alphabetically, drafts included", async ({
+  page,
+}) => {
   await loginAs(page, "Diane");
   const api = page.context().request;
   const stamp = Date.now();
@@ -141,17 +145,18 @@ test("the campaign document picker is alphabetical and explains drafts", async (
   await upload(`Zzz ordre ${stamp}`, true);
   await upload(`Aaa ordre ${stamp}`, true);
   await upload(`Mmm brouillon ${stamp}`, false);
-  const campaign = await (await api.post("/api/campaigns", { data: { name: `Ordre ${stamp}` } })).json();
+  const request = await newRequest(page, `Ordre ${stamp}`);
 
-  await page.goto(`/campaigns/${campaign.id}`);
-  // The documents load asynchronously: wait for them before reading the list.
-  await expect(page.locator("select option", { hasText: `Zzz ordre ${stamp}` })).toHaveCount(1);
-  const options = await page.locator("select option:not([disabled])").allTextContents();
-  const ours = options.filter((o) => o.includes(`ordre ${stamp}`));
-  expect(ours).toEqual([`Aaa ordre ${stamp} — v1.0`, `Zzz ordre ${stamp} — v1.0`]); // A before Z
-  // The draft is not silently missing: it is listed, disabled, with the reason.
-  await expect(page.locator("select option[disabled]", { hasText: `Mmm brouillon ${stamp}` })).toHaveCount(1);
-  await expect(page.getByTestId("draft-hint")).toContainText("brouillon");
+  await page.goto(`/sign/${request.id}?step=2`);
+  const picker = page.getByLabel("Document existant");
+  await expect(picker.locator("option", { hasText: `Zzz ordre ${stamp}` })).toHaveCount(1);
+  const ours = (await picker.locator("option").allTextContents()).filter((o) => o.includes(`${stamp}`));
+  // A before M before Z; a draft is offered like the others (it is prepared in the flow).
+  expect(ours).toEqual([
+    `Aaa ordre ${stamp} — v1.0`,
+    `Mmm brouillon ${stamp} — v1.0`,
+    `Zzz ordre ${stamp} — v1.0`,
+  ]);
 });
 
 test("an operator deletes an unused document but not a signed one", async ({ page }) => {
@@ -186,74 +191,118 @@ test("an operator deletes an unused document but not a signed one", async ({ pag
   await expect(signed.getByRole("button", { name: /Supprimer/ })).toHaveCount(0);
 });
 
-test("an operator prepares a document by drag and drop, with elements for two people", async ({
+test("an operator sends a request through the screens; the RSSI signs first, then the recipient", async ({
   page,
+  browser,
 }) => {
   // Tall enough to drop onto the page without scrolling mid-drag.
   await page.setViewportSize({ width: 1500, height: 1100 });
   await loginAs(page, "Diane");
-  const api = page.context().request;
-  const title = `Préparation ${Date.now()}`;
-  const created = await api.post("/api/documents", {
-    multipart: {
-      title,
-      version_label: "1.0",
-      file: { name: "p.pdf", mimeType: "application/pdf", buffer: MINIMAL_PDF },
-    },
-  });
-  const versionId = (await created.json()).versions[0].id as string;
+  const title = `Politique ${Date.now()}`;
 
-  await page.goto(`/documents/versions/${versionId}/prepare`);
+  // The way in: a name, then the first screen.
+  await page.goto("/sign");
+  await page.getByLabel("Nom de la demande").fill(title);
+  await page.getByRole("button", { name: "Commencer" }).click();
+
+  // 1. Who signs, in order: Erwan (the RSSI) first, then every recipient; the recipients are Bob.
+  await expect(page.getByTestId("signers-card")).toBeVisible();
+  await page.getByRole("button", { name: /^Ajouter une personne$/ }).click();
+  const first = page.getByLabel("Qui signe en position 1 ?");
+  const erwanOption = first.locator("option", { hasText: "Erwan Petit" });
+  await first.selectOption((await erwanOption.getAttribute("value")) as string);
+  await expect(page.getByTestId("signers-status")).toContainText("Enregistré");
+  await page.getByRole("button", { name: "Bob Dupont" }).click();
+  await expect(page.getByTestId("recipient-count")).toContainText("1 destinataire(s)");
+  await page.getByRole("button", { name: /Suivant : les documents/ }).click();
+
+  // 2. The document: dropped here, then straight on to preparing it.
+  await page.getByTestId("dropzone-input").setInputFiles({
+    name: `${title}.pdf`,
+    mimeType: "application/pdf",
+    buffer: MINIMAL_PDF,
+  });
+  await expect(page.getByTestId("pending-files")).toContainText(title);
+  await page.getByRole("button", { name: "Ajouter le document" }).click();
+
+  // 3. Preparing: the editor is in the flow, with the signers of step 1 to give elements to.
   const overlay = page.getByTestId("overlay-1");
   await expect(overlay).toBeVisible();
-
-  // Drag a signature and a date onto the page (the first recipient)...
+  await expect(page.getByRole("tab", { name: new RegExp(title.slice(0, 10)) })).toBeVisible();
   await page.getByTestId("tool-SIGNATURE").dragTo(overlay, { targetPosition: { x: 200, y: 500 } });
   await page.getByTestId("tool-DATE").dragTo(overlay, { targetPosition: { x: 520, y: 500 } });
-  // ... then add a second recipient and give them a free-text element.
-  await page.getByRole("button", { name: "Ajouter un destinataire" }).click();
-  await page.getByTestId("tool-TEXT").dragTo(overlay, { targetPosition: { x: 200, y: 300 } });
-
-  await expect(page.getByTestId("field-SIGNATURE")).toHaveAttribute("data-role", "1");
-  await expect(page.getByTestId("field-DATE")).toHaveAttribute("data-role", "1");
-  await expect(page.getByTestId("field-TEXT")).toHaveAttribute("data-role", "2");
+  await expect(page.getByTestId("role-1")).toContainText("Erwan Petit");
+  await page.getByTestId("role-2").click();
+  await expect(page.getByTestId("role-2")).toHaveAttribute("aria-pressed", "true");
+  await page.getByTestId("tool-SIGNATURE").dragTo(overlay, { targetPosition: { x: 200, y: 300 } });
+  const signatures = page.getByTestId("field-SIGNATURE");
+  await expect(signatures).toHaveCount(2);
+  await expect(signatures.nth(0)).toHaveAttribute("data-role", "1");
+  await expect(signatures.nth(1)).toHaveAttribute("data-role", "2");
   await expect(page.getByTestId("prep-status")).toContainText("non enregistrées");
 
-  // Move the signature with the mouse.
-  const signature = page.getByTestId("field-SIGNATURE");
-  const before = await signature.boundingBox();
+  // Move the first signature with the mouse, then save.
+  const before = await signatures.nth(0).boundingBox();
   await page.mouse.move(before!.x + before!.width / 2, before!.y + before!.height / 2);
   await page.mouse.down();
   await page.mouse.move(before!.x + before!.width / 2 + 60, before!.y + before!.height / 2 - 40, { steps: 6 });
   await page.mouse.up();
-  const after = await signature.boundingBox();
+  const after = await signatures.nth(0).boundingBox();
   expect(after!.x).toBeGreaterThan(before!.x + 40);
-  expect(after!.y).toBeLessThan(before!.y - 25);
-
-  // Label the text element, then save.
-  await page.getByTestId("field-TEXT").click();
-  await page.getByLabel("Libellé").fill("Fonction");
   await page.getByRole("button", { name: "Enregistrer" }).click();
   await expect(page.getByTestId("prep-status")).toContainText("Enregistré — 3 élément(s)");
 
-  // It persists, with its recipients.
+  // It persists across a reload, and the keyboard deletes.
   await page.reload();
-  await expect(page.getByTestId("field-SIGNATURE")).toBeVisible();
-  await expect(page.getByTestId("field-TEXT")).toHaveAttribute("data-role", "2");
-  await expect(page.getByTestId("field-TEXT")).toContainText("Fonction");
-
-  // Delete with the keyboard, then publish: the elements are frozen.
+  await expect(page.getByTestId("field-SIGNATURE")).toHaveCount(2);
   await page.getByTestId("field-DATE").click();
   await page.keyboard.press("Delete");
   await expect(page.getByTestId("field-DATE")).toHaveCount(0);
-  await page.getByRole("button", { name: "Publier", exact: true }).click();
-  await page.getByRole("button", { name: /Publier — les éléments seront figés/ }).click();
-  await expect(page).toHaveURL(/\/documents$/);
+  await page.getByRole("button", { name: /Terminer : vérifier et envoyer/ }).click();
 
-  await page.goto(`/documents/versions/${versionId}/prepare`);
-  await expect(page.getByText(/éléments sont figés/)).toBeVisible();
-  await expect(page.getByTestId("tool-DATE")).toHaveCount(0);
-  await expect(page.getByTestId("field-SIGNATURE")).toBeVisible();
+  // 4. Review, then a confirmation: the first click only asks.
+  const recap = page.getByTestId("recap-card");
+  await expect(recap).toContainText("Erwan Petit");
+  await expect(recap).toContainText("Chaque destinataire");
+  await expect(recap).toContainText("2 élément(s) placé(s)");
+  await page.getByRole("button", { name: "Envoyer pour signature" }).click();
+  await expect(page.getByTestId("recap-card")).toBeVisible();
+  await page.getByRole("button", { name: "Oui, envoyer maintenant" }).click();
+
+  // 5. Sent: the signed documents come back here; nothing is signed yet.
+  await expect(page.getByTestId("signed-step")).toBeVisible();
+  await expect(page.getByTestId("outstanding-table")).toContainText("Erwan Petit");
+  await expect(page.getByTestId("total-signed")).toHaveText("0");
+
+  // Bob is not asked before Erwan has signed ("À venir"); Erwan, the RSSI, signs first.
+  const bob = await browser.newContext();
+  const bobPage = await bob.newPage();
+  await loginAs(bobPage, "Bob");
+  await expect(bobPage.getByTestId("upcoming")).toContainText(title);
+  const erwan = await browser.newContext();
+  const erwanPage = await erwan.newPage();
+  await loginAs(erwanPage, "Erwan");
+  await erwanPage.getByRole("link", { name: new RegExp(title) }).click();
+  await erwanPage.getByRole("checkbox").check();
+  await erwanPage.getByRole("button", { name: "Signer", exact: true }).click();
+  await expect(erwanPage.getByTestId("signature-id")).toHaveText(/^SIG-[0-9A-F]{12}$/);
+
+  // Now it is Bob's turn, with Erwan's signature already on his copy.
+  await bobPage.reload();
+  await bobPage.getByRole("link", { name: new RegExp(title) }).click();
+  await bobPage.getByRole("checkbox").check();
+  await bobPage.getByRole("button", { name: "Signer", exact: true }).click();
+  await expect(bobPage.getByTestId("signature-id")).toHaveText(/^SIG-[0-9A-F]{12}$/);
+  await bob.close();
+  await erwan.close();
+
+  // The operator sees both signed documents in the last step, with the proof and the export.
+  await page.getByRole("button", { name: "Actualiser" }).click();
+  await expect(page.getByTestId("total-signed")).toHaveText("2");
+  await expect(page.getByTestId("signed-table")).toContainText("Erwan Petit");
+  await expect(page.getByTestId("signed-table")).toContainText("Bob Dupont");
+  await expect(page.getByRole("link", { name: /ZIP/ })).toHaveAttribute("href", /export\.zip\?campaign_ids=/);
+  await expect(page.getByTestId("outstanding-table")).toContainText("Personne n'a de document en attente");
 });
 
 test("a signer fills the text the operator asked for, and it is stamped on the signed PDF", async ({
@@ -387,7 +436,7 @@ test("directory settings explain themselves with a bubble and an example", async
   const hint = page.getByRole("button", { name: "Aide : ID du tenant" });
   await hint.hover();
   await expect(page.getByRole("tooltip").filter({ hasText: "ID de locataire" })).toBeVisible();
-  await expect(page.getByRole("tooltip").filter({ hasText: "1b2c3d4e-5f60" })).toBeVisible();
+  await expect(page.getByRole("tooltip").filter({ hasText: "73405479-f042" })).toBeVisible();
 });
 
 test("an operator drops several PDFs on the documents page", async ({ page }) => {
@@ -404,12 +453,146 @@ test("an operator drops several PDFs on the documents page", async ({ page }) =>
   await page.getByRole("button", { name: "Importer 3 documents" }).click();
   const results = page.getByTestId("upload-results");
   await expect(results).toContainText(`contrat_alpha-${stamp}.pdf`);
-  await expect(results.locator("li").nth(0)).toContainText("ajouté en brouillon");
-  await expect(results.locator("li").nth(1)).toContainText("ajouté en brouillon");
+  await expect(results.locator("li").nth(0)).toContainText("ajouté à la bibliothèque");
+  await expect(results.locator("li").nth(1)).toContainText("ajouté à la bibliothèque");
   await expect(results.locator("li").nth(2)).toContainText("Formats acceptés");
 
   // Each became its own draft document, titled from its file name.
   await page.getByLabel("Rechercher un document").fill(`${stamp}`);
   await expect(page.locator(".card", { hasText: `Contrat alpha ${stamp}` })).toHaveCount(1);
   await expect(page.locator(".card", { hasText: `Contrat beta ${stamp}` })).toHaveCount(1);
+});
+
+test("a signer asked for several documents of one campaign signs them all in one click", async ({
+  page,
+  browser,
+}) => {
+  const stamp = Date.now();
+  const context = await browser.newContext();
+  const op = await context.newPage();
+  await loginAs(op, "Diane");
+  const api = context.request;
+  const erwan = await userIdOf(op, "erwan.petit@lcit-test.local");
+  const campaign = await (await api.post("/api/campaigns", { data: { name: `Toutes ${stamp}` } })).json();
+  for (const name of ["Alpha", "Beta", "Gamma"]) {
+    const created = await api.post("/api/documents", {
+      multipart: {
+        title: `${name} ${stamp}`,
+        version_label: "1.0",
+        file: { name: "p.pdf", mimeType: "application/pdf", buffer: MINIMAL_PDF },
+      },
+    });
+    const versionId = (await created.json()).versions[0].id as string;
+    // The same question on every document: asked once.
+    await api.put(`/api/documents/versions/${versionId}/fields`, {
+      data: {
+        fields: [
+          { page: 1, x: 0.1, y: 0.7, width: 0.3, height: 0.06, kind: "SIGNATURE", role: 1 },
+          { page: 1, x: 0.1, y: 0.5, width: 0.4, height: 0.04, kind: "TEXT", role: 1, label: "Fonction", group_key: "fonction" },
+        ],
+      },
+    });
+    await api.post(`/api/campaigns/${campaign.id}/documents`, { data: { document_version_id: versionId } });
+  }
+  expect((await api.post(`/api/campaigns/${campaign.id}/launch`, { data: { user_ids: [erwan] } })).status()).toBe(200);
+  await context.close();
+
+  await loginAs(page, "Erwan");
+  await page.getByTestId("sign-all-link").filter({ hasText: `Toutes ${stamp}` }).click();
+  await expect(page.getByTestId("sign-all-documents")).toContainText("3 document(s) à signer");
+  // "Fonction" is on all three documents but asked once.
+  await expect(page.getByTestId("sign-all-inputs").locator("input")).toHaveCount(1);
+  const button = page.getByRole("button", { name: /Signer les 3 documents/ });
+  await page.getByRole("checkbox").check();
+  await expect(button).toBeDisabled(); // the required answer is missing
+  await page.getByLabel(/^Fonction/).fill("RSSI");
+  await button.click();
+  await expect(page.getByTestId("sign-all-done")).toContainText("3 document(s) signé(s)");
+});
+
+test("the signed documents are in Suivi, for one campaign or several, with the export", async ({ page }) => {
+  await loginAs(page, "Diane");
+  await page.goto("/campaigns?tab=signed");
+  await expect(page.getByRole("tab", { name: "Documents signés" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("signed-table")).toBeVisible();
+  const total = Number(await page.getByTestId("total-signed").textContent());
+  expect(total).toBeGreaterThan(0);
+  await expect(page.getByRole("link", { name: /ZIP/ })).toHaveAttribute("href", /export\.zip/);
+
+  // Narrowing to one campaign changes the list and the export with it.
+  await page.getByRole("button", { name: "Campagne sécurité 2026" }).click();
+  await expect(page.getByRole("link", { name: /ZIP/ })).toHaveAttribute("href", /campaign_ids=/);
+  await page.getByLabel("Rechercher").fill("zzz-personne-inconnue");
+  await expect(page.getByText("Aucun document signé pour cette sélection.")).toBeVisible();
+
+  // The old address still leads there, and the menu has no separate entry any more.
+  await page.goto("/signed");
+  await expect(page).toHaveURL(/\/campaigns\?tab=signed/);
+  await expect(page.getByRole("link", { name: "Documents signés" })).toHaveCount(0);
+});
+
+test("an administrator replaces the logo, and goes back to the LCIT one", async ({ page }) => {
+  await loginAs(page, "Alice");
+  const lcit = page.locator(".brand-logo");
+  await expect(lcit).toHaveAttribute("src", "/lcit-mark.png");
+
+  await page.goto("/admin/branding");
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAJklEQVR4nO3OMQEAAAgDoK1/aM3g4QcFmJTJ4XBYLBaLxWKxWCwWiwXx0AJ1AAGV1GJKAAAAAElFTkSuQmCC",
+    "base64",
+  );
+  await page.getByTestId("logo-input").setInputFiles({ name: "logo.png", mimeType: "image/png", buffer: png });
+  await expect(page.getByText(/dès maintenant en haut à gauche/)).toBeVisible();
+  // Top left, without a reload.
+  await expect(page.locator(".brand-logo")).toHaveAttribute("src", /\/api\/branding\/logo\?v=/);
+
+  // The sign-in page (before anyone is signed in) shows it too.
+  const visitor = await page.context().browser()!.newContext();
+  const login = await visitor.newPage();
+  await login.goto("/");
+  await expect(login.locator(".auth-company img")).toHaveAttribute("src", /\/api\/branding\/logo\?v=/);
+  await visitor.close();
+
+  await page.getByRole("button", { name: /Revenir au logo LCIT/ }).click();
+  await page.getByRole("button", { name: /Oui, revenir au logo LCIT/ }).click();
+  await expect(page.locator(".brand-logo")).toHaveAttribute("src", "/lcit-mark.png");
+});
+
+test("a person from outside the company is added by address and marked as such", async ({ page }) => {
+  await loginAs(page, "Diane");
+  const request = await newRequest(page, `Externe ${Date.now()}`);
+  await page.goto(`/sign/${request.id}?step=1`);
+  await page.getByRole("button", { name: /Ajouter une personne extérieure/ }).first().click();
+  const email = `jean.${Date.now()}@partenaire.test`;
+  await page.getByLabel("Prénom").fill("Jean");
+  await page.getByLabel("Nom", { exact: true }).fill("Client");
+  await page.getByLabel("Adresse e-mail").fill(email);
+  await page.getByRole("button", { name: "Ajouter", exact: true }).click();
+  // He joins the signers at once, marked as outside.
+  await expect(page.getByLabel("Qui signe en position 1 ?")).toContainText("Jean Client");
+  await expect(page.getByLabel("Qui signe en position 1 ?").locator("option:checked")).toContainText("(externe)");
+  await expect(page.getByTestId("signers-status")).toContainText("Enregistré");
+});
+
+test("the sign-in page offers Entra, Google and LDAP, and says which are not set up here", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("link", { name: /Se connecter avec le SSO/ }).click();
+  await expect(page.getByRole("link", { name: /Erwan/ })).toBeVisible(); // the test identities stay
+  await expect(page.getByText("Microsoft Entra ID — non configuré sur ce serveur")).toBeVisible();
+  await expect(page.getByText("Google — non configuré sur ce serveur")).toBeVisible();
+  await expect(page.getByText("LDAP / Active Directory — non configuré sur ce serveur")).toBeVisible();
+  await expect(page.locator('input[type="password"]')).toHaveCount(0);
+});
+
+test("a Word document is refused in words when the converter is not there", async ({ page }) => {
+  await loginAs(page, "Diane");
+  await page.goto("/documents");
+  await page.getByTestId("dropzone-input").setInputFiles({
+    name: `rapport-${Date.now()}.docx`,
+    mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    buffer: Buffer.from("PK\u0003\u0004 not really a document"),
+  });
+  await page.getByRole("button", { name: "Importer le document" }).click();
+  // Refused in words (here it is not even a real document); never a blank failure.
+  await expect(page.getByTestId("upload-results")).toContainText(/pas un document|pas activée/);
 });

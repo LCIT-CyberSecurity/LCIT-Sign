@@ -8,7 +8,7 @@ name: lcit-sign
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: lcit-sign-postgres
+    container_name: ${LCIT_SIGN_PREFIX:-lcit-sign}-postgres
     environment:
       POSTGRES_USER: lcit_sign
       POSTGRES_PASSWORD: ${LCIT_SIGN_DB_PASSWORD:-lcit_sign}
@@ -28,10 +28,15 @@ services:
     build:
       context: .
       dockerfile: docker/backend.Dockerfile
-    image: lcit-sign-api:latest
-    container_name: lcit-sign-api
+    image: ${LCIT_SIGN_PREFIX:-lcit-sign}-api:latest
+    container_name: ${LCIT_SIGN_PREFIX:-lcit-sign}-api
     # Also on the converter's private network (it has no route out, and nothing else is on it).
-    networks: [default, converter-net]
+    # And always reachable as "lcit-sign-api", the name the proxy is configured with, even when
+    # the container is named otherwise (the throwaway stack of the end-to-end tests).
+    networks:
+      default:
+        aliases: [lcit-sign-api]
+      converter-net:
     depends_on:
       postgres:
         condition: service_healthy
@@ -78,8 +83,8 @@ services:
     build:
       context: web
       dockerfile: Dockerfile
-    image: lcit-sign-webui:latest
-    container_name: lcit-sign-webui
+    image: ${LCIT_SIGN_PREFIX:-lcit-sign}-webui:latest
+    container_name: ${LCIT_SIGN_PREFIX:-lcit-sign}-webui
     depends_on:
       api:
         condition: service_healthy
@@ -90,7 +95,7 @@ services:
     ports:
       # Plain HTTP: development and integration only. Remove this line in
       # production and publish just the HTTPS port.
-      - "127.0.0.1:4180:80"
+      - "127.0.0.1:${LCIT_SIGN_HTTP_PORT:-4180}:80"
       - "${LCIT_SIGN_HTTPS_BIND:-127.0.0.1}:${LCIT_SIGN_HTTPS_PORT:-4443}:443"
     volumes:
       # tls.crt / tls.key managed by scripts/certificate-installer.sh.
@@ -110,8 +115,8 @@ services:
   converter:
     build:
       context: converter
-    image: lcit-sign-converter:latest
-    container_name: lcit-sign-converter
+    image: ${LCIT_SIGN_PREFIX:-lcit-sign}-converter:latest
+    container_name: ${LCIT_SIGN_PREFIX:-lcit-sign}-converter
     profiles: ["office"]
     networks: [converter-net]
     read_only: true
@@ -132,8 +137,8 @@ services:
   mock-oidc:
     build:
       context: mock_oidc
-    image: lcit-sign-mock-oidc:latest
-    container_name: lcit-sign-mock-oidc
+    image: ${LCIT_SIGN_PREFIX:-lcit-sign}-mock-oidc:latest
+    container_name: ${LCIT_SIGN_PREFIX:-lcit-sign}-mock-oidc
     profiles: ["dev-sso"]
     # The secrets folder is private to you (mode 700): to read its providers file the mock runs
     # as your user. Set MOCK_OIDC_UID=$(id -u) in .env when you use real accounts.
@@ -164,7 +169,9 @@ networks:
     internal: true
 
 volumes:
+  # The keys never change (so the real stack keeps its data); only the final name follows the
+  # prefix, which a throwaway stack (end-to-end tests) sets to keep apart.
   lcit-sign-postgres-data:
-    name: lcit-sign-postgres-data
+    name: ${LCIT_SIGN_PREFIX:-lcit-sign}-postgres-data
   lcit-sign-data:
-    name: lcit-sign-data
+    name: ${LCIT_SIGN_PREFIX:-lcit-sign}-data

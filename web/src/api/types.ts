@@ -107,6 +107,18 @@ export interface CampaignDocumentInfo {
   released: boolean;
 }
 
+export interface CampaignPlan {
+  all_users?: boolean;
+  group_ids?: string[];
+  user_ids?: string[];
+  start_at?: string | null;
+  deadline?: string | null;
+  reminder_first_days?: number | null;
+  reminder_interval_days?: number | null;
+  renewal_every?: number | null;
+  renewal_unit?: "DAYS" | "MONTHS" | null;
+}
+
 export type CampaignStatus = "DRAFT" | "SCHEDULED" | "ACTIVE" | "CLOSED" | "CANCELLED" | "ARCHIVED";
 
 export interface Campaign {
@@ -122,6 +134,8 @@ export interface Campaign {
   closed_at: string | null;
   delete_blockers: string[];
   document_version_ids: string[];
+  /** The work in progress of a draft (recipients, planning), kept as the operator goes. */
+  plan: CampaignPlan | null;
   roles_required: number;
   roles: CampaignRole[];
   documents: CampaignDocumentInfo[];

@@ -69,8 +69,9 @@ class Campaign(Base):
     created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     launch_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    # A start date in the future: the launch request is kept (as the operator filled it)
-    # and run by the worker when the date comes.
+    # The launch request as the operator filled it. On a draft it is the work in progress
+    # (recipients, planning), saved as they go so a reload or a return the next day finds it;
+    # once scheduled it is what the worker will run when the start date comes.
     scheduled_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     launch_request: Mapped[dict[str, object] | None] = mapped_column(JSON)
     deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
