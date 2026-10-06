@@ -149,6 +149,16 @@ class ProviderError(Exception):
     """The provider refused, or answered something unusable; the message is for the person."""
 
 
+def _real_address(name: str) -> str:
+    """The address a guest really has. Entra writes an invited person's sign-in name as
+    `bob_gmail.com#EXT#@tenant.onmicrosoft.com`; that is not an address anyone can be matched on."""
+    local, marker, _ = name.partition("#EXT#")
+    if marker and "_" in local:
+        user, _, domain = local.rpartition("_")
+        return f"{user}@{domain}"
+    return name
+
+
 def _claims_of(id_token: str) -> dict[str, Any]:
     # Received straight from the provider's token endpoint over TLS in exchange for our own
     # code: OpenID Connect lets the client rely on that without checking the signature.
@@ -221,7 +231,7 @@ def finish(
         subject = f"google:{claims.get('sub', '')}"
     else:
         # Entra gives the sign-in name (and the mail when the account has one).
-        email = str(claims.get("email") or claims.get("preferred_username") or "")
+        email = _real_address(str(claims.get("email") or claims.get("preferred_username") or ""))
         subject = f"entra:{claims.get('oid') or claims.get('sub', '')}"
     if "@" not in email:
         raise ProviderError("Ce compte n'a pas d'adresse e-mail : connexion impossible.")

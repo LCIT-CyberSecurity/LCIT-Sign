@@ -119,6 +119,16 @@ taken over.
 - Once published, a version cannot change. A correction is a new version,
   which requires new signatures.
 
+### Word and LibreOffice as input
+
+A `.docx`, `.odt` or `.doc` can be dropped like a PDF. It is checked before anything else (real
+type, a zip that would explode, macros → refused), then converted by an **isolated converter**
+(`converter/`, profile `office`): its own container, no network, no database, no access to
+LCIT Sign's files, read-only, one file at a time under a fixed name, LibreOffice with macros and
+external links off. What comes back is checked again like any upload. What is signed is the PDF; the
+source is kept (`sources` bucket) with its hash (`document_versions.source_sha256`). Without
+`LCIT_SIGN_CONVERTER_URL`, only PDFs are accepted, and the message says so.
+
 ### Storage
 
 `StorageService` writes to `LCIT_SIGN_STORAGE_ROOT` (a persistent volume,
@@ -231,9 +241,39 @@ Verification checks that those signatures still exist with the same hash.
 A renewal keeps the same roles and fixed people. Documents with a single
 signer launch exactly as before (role 1 = everyone targeted).
 
-Not covered yet: signers outside the company (they must exist as users), one
-click to sign every document of a campaign, several fixed people sharing one
-role.
+### The flow, the follow-up and changes after sending
+
+**Faire signer** is five screens: signers and planning, documents, *Préparer* (the editor itself,
+inside the flow, one tab per document), review and send (with a confirmation), and the signed
+documents, live. **Suivi** is the reporting: campaigns, the signed documents of one or several
+campaigns (PDFs, proof, ZIP export — `GET /api/signed/export.zip`, one folder per campaign plus
+CSV indexes), manual reminders by person, cancel / archive / delete.
+
+A campaign already sent can still **get more people or more documents**, and stop asking someone;
+what was signed is never touched (`services/campaign_changes.py`). A document added later is
+prepared, then sent on its own. Fixed signers are not changed after the launch.
+
+A **start date** in the future schedules the campaign: the request is checked now and kept, and the
+worker starts it on its date (status `SCHEDULED`); one that can no longer start goes back to draft
+with the reason in the audit trail.
+
+### Signing everything at once
+
+`GET/POST /api/sign-all/{campaign}`: a signer asked for several documents of one campaign (the
+RSSI with twenty policies) signs them with one consent. An answer asked on several documents is
+typed once (it shares a group key). Everything is checked first — one missing answer refuses the
+whole batch — then each document gets its own signature and proof.
+
+### People from outside the company
+
+An operator adds someone by e-mail address (`POST /api/campaigns/_meta/externals`), in the flow
+(as a signer, or among the recipients). No account is created anywhere and no password exists:
+they sign in with their own account (an Entra guest, a Google account) and are recognised by that
+address on first sign-in, like any person added by hand. They are marked `external`, are signers
+only, are never touched by a directory sync, and the e-mail they receive says they have nothing to
+create. The identity provider must accept them (an Entra guest invitation is a tenant-side step this
+application never performs). Not offered by default to unknown accounts: only addresses added this
+way, or imported from the directory, match.
 
 ## 8. Reports (procès-verbal)
 

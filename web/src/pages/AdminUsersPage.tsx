@@ -174,6 +174,11 @@ export default function AdminUsersPage() {
               <tr key={u.id} data-testid={`user-${u.email}`}>
                 <td>
                   <strong>{u.display_name}</strong>
+                  {u.external && (
+                    <span className="badge badge--viewed" style={{ marginLeft: 8 }}>
+                      Externe
+                    </span>
+                  )}
                   <div className="muted small">{u.email}</div>
                 </td>
                 <td>{sourceLabel(u.source)}</td>

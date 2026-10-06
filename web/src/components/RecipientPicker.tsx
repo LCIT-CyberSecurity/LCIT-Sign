@@ -1,4 +1,6 @@
 import { useMemo, useState } from "react";
+import { UserPlus } from "lucide-react";
+import ExternalPersonForm, { type ExternalPerson } from "./ExternalPersonForm";
 import type { DirectoryGroup } from "../api/types";
 
 export interface Recipients {
@@ -12,6 +14,7 @@ export const NO_RECIPIENTS: Recipients = { allUsers: false, groupIds: [], userId
 interface PickableUser {
   id: string;
   display_name: string;
+  external?: boolean;
 }
 
 /** Choose people: everyone, directory groups (a team, a department…), and single users.
@@ -22,14 +25,18 @@ export default function RecipientPicker({
   groups,
   users,
   count,
+  onAddExternal,
 }: {
   value: Recipients;
   onChange: (next: Recipients) => void;
   groups: DirectoryGroup[] | null;
   users: PickableUser[] | null;
   count?: number | null;
+  /** When given, a person from outside the company can be added from here; the page is told. */
+  onAddExternal?: (person: ExternalPerson) => void;
 }) {
   const [query, setQuery] = useState("");
+  const [adding, setAdding] = useState(false);
   const visibleGroups = useMemo(() => {
     const q = query.trim().toLowerCase();
     return (groups ?? [])
@@ -91,9 +98,31 @@ export default function RecipientPicker({
                 onClick={() => onChange({ ...value, userIds: toggle(value.userIds, u.id) })}
               >
                 {u.display_name}
+                {u.external ? <span className="muted small"> · externe</span> : null}
               </button>
             ))}
           </div>
+          {onAddExternal && (
+            <>
+              <button
+                type="button"
+                className="button button--ghost button--sm"
+                onClick={() => setAdding(!adding)}
+              >
+                <UserPlus size={13} aria-hidden="true" /> Ajouter une personne extérieure
+              </button>
+              {adding && (
+                <ExternalPersonForm
+                  onCancel={() => setAdding(false)}
+                  onCreated={(person) => {
+                    onAddExternal(person);
+                    onChange({ ...value, userIds: [...new Set([...value.userIds, person.id])] });
+                    setAdding(false);
+                  }}
+                />
+              )}
+            </>
+          )}
         </>
       )}
 

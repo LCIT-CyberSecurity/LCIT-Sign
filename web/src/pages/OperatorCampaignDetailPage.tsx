@@ -25,7 +25,9 @@ export default function OperatorCampaignDetailPage() {
   const [groups, setGroups] = useState<DirectoryGroup[] | null>(null);
   const [reports, setReports] = useState<ReportSummary[] | null>(null);
   const [library, setLibrary] = useState<DocumentDetail[] | null>(null);
-  const [users, setUsers] = useState<{ id: string; email: string; display_name: string }[] | null>(null);
+  const [users, setUsers] = useState<
+    { id: string; email: string; display_name: string; external?: boolean }[] | null
+  >(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [adding, setAdding] = useState<Recipients>(NO_RECIPIENTS);
   const [notice, setNotice] = useState<string | null>(null);
@@ -67,7 +69,9 @@ export default function OperatorCampaignDetailPage() {
     load();
     api.get<DirectoryGroup[]>("/admin/directory/groups").then(setGroups).catch(() => setGroups([]));
     api.get<DocumentDetail[]>("/documents").then(setLibrary);
-    api.get<{ id: string; email: string; display_name: string }[]>("/campaigns/_meta/users").then(setUsers);
+    api.get<{ id: string; email: string; display_name: string; external?: boolean }[]>(
+      "/campaigns/_meta/users",
+    ).then(setUsers);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
@@ -204,7 +208,13 @@ export default function OperatorCampaignDetailPage() {
           {asked && (
             <>
               <div className="field-label">Ajouter des personnes</div>
-              <RecipientPicker value={adding} onChange={setAdding} groups={groups} users={users} />
+              <RecipientPicker
+                value={adding}
+                onChange={setAdding}
+                groups={groups}
+                users={users}
+                onAddExternal={(person) => setUsers((all) => [...(all ?? []), person])}
+              />
               <div className="row-actions">
                 <button
                   type="button"

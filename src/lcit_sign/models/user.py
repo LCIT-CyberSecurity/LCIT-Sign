@@ -43,6 +43,9 @@ class User(Base):
     display_name: Mapped[str] = mapped_column(String(255), default="")
 
     active: Mapped[bool] = mapped_column(default=True)
+    # Someone from outside the company, added by e-mail address to sign: they sign in with their
+    # own account (an Entra guest, a Google account…), and are never touched by a directory sync.
+    external: Mapped[bool] = mapped_column(default=False, server_default="0")
     # An administrator switched this person off: a directory sync must not
     # switch them back on just because the directory still lists them.
     manually_disabled: Mapped[bool] = mapped_column(default=False)

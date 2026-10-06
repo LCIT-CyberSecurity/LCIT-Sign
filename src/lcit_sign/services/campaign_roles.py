@@ -25,6 +25,7 @@ from lcit_sign.models.document import DocumentField
 from lcit_sign.models.mail import NotificationType
 from lcit_sign.models.user import User
 from lcit_sign.services.notification_queue import enqueue_notification
+from lcit_sign.services.signing_mail import to_sign_message
 
 Mode = Literal["FIXED", "EACH"]
 
@@ -222,19 +223,20 @@ def release_next_role(
         person = users.get(assignment.user_id)
         if person is None:
             continue
+        subject, body = to_sign_message(
+            person,
+            title=document_title,
+            campaign_name=campaign_name,
+            public_base_url=public_base_url,
+            signed_by=signed_by,
+        )
         enqueue_notification(
             db,
             notification_type=NotificationType.DOCUMENT_TO_SIGN,
             recipient_email=person.email,
             recipient_user_id=person.id,
-            subject=f"Document à signer : {document_title}",
-            body_text=(
-                f"Bonjour {person.display_name},\n\n"
-                f'{signed_by} a signé le document "{document_title}" ({campaign_name}) : '
-                f"c'est maintenant à votre tour.\n"
-                f"Connectez-vous à LCIT Sign pour le consulter et le signer : "
-                f"{public_base_url}\n"
-            ),
+            subject=subject,
+            body_text=body,
         )
     return len(waiting)
 

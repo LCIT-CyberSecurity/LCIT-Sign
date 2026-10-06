@@ -21,6 +21,7 @@ interface TargetUserOption {
   id: string;
   email: string;
   display_name: string;
+  external?: boolean;
 }
 
 const STEPS = [
@@ -181,7 +182,12 @@ export default function SignRequestPage() {
 
       {step === 1 && (
         <>
-          <CampaignSigners campaign={campaign} users={users} onSaved={load} />
+          <CampaignSigners
+            campaign={campaign}
+            users={users}
+            onSaved={load}
+            onUserAdded={(person) => setUsers((all) => [...(all ?? []), person])}
+          />
           <div className="card">
             <div className="card-title">{hasList ? "Pour quelles personnes ? (publipostage)" : "Personnes sollicitées"}</div>
             {!hasList && (
@@ -200,6 +206,7 @@ export default function SignRequestPage() {
                 groups={groups}
                 users={users}
                 count={recipientCount}
+                onAddExternal={(person) => setUsers((all) => [...(all ?? []), person])}
               />
             )}
           </div>

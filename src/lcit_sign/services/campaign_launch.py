@@ -12,6 +12,7 @@ from lcit_sign.models.mail import NotificationType
 from lcit_sign.models.user import User
 from lcit_sign.services.campaign_roles import RoleSpec, roles_by_version
 from lcit_sign.services.notification_queue import enqueue_notification
+from lcit_sign.services.signing_mail import to_sign_message
 
 
 def create_assignments(
@@ -66,17 +67,17 @@ def create_assignments(
                 )
                 target_user = users_by_id.get(target_user_id)
                 if my_turn and target_user is not None:
+                    subject, body = to_sign_message(
+                        target_user,
+                        title=document_title,
+                        campaign_name=campaign.name,
+                        public_base_url=public_base_url,
+                    )
                     enqueue_notification(
                         db,
                         notification_type=NotificationType.DOCUMENT_TO_SIGN,
                         recipient_email=target_user.email,
                         recipient_user_id=target_user.id,
-                        subject=f"Document à signer : {document_title}",
-                        body_text=(
-                            f"Bonjour {target_user.display_name},\n\n"
-                            f'Un document "{document_title}" ({campaign.name}) '
-                            f"attend votre signature.\n"
-                            f"Connectez-vous à LCIT Sign pour le consulter et le signer : "
-                            f"{public_base_url}\n"
-                        ),
+                        subject=subject,
+                        body_text=body,
                     )

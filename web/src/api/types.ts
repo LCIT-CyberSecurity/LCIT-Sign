@@ -161,6 +161,8 @@ export interface AdminUser {
   display_name: string;
   active: boolean;
   manually_disabled: boolean;
+  /** From outside the company: added by e-mail address, signs in with their own account. */
+  external?: boolean;
   source: string;
   last_login_at: string | null;
   roles: Role[];

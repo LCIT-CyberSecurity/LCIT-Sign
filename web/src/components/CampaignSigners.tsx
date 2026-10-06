@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { ArrowDown, ArrowUp, Plus, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Plus, UserPlus, X } from "lucide-react";
+import ExternalPersonForm from "./ExternalPersonForm";
 import { api, ApiError } from "../api/client";
 import type { Campaign } from "../api/types";
 
@@ -7,6 +8,7 @@ export interface SignerOption {
   id: string;
   email: string;
   display_name: string;
+  external?: boolean;
 }
 
 interface Row {
@@ -24,11 +26,15 @@ export default function CampaignSigners({
   campaign,
   users,
   onSaved,
+  onUserAdded,
 }: {
   campaign: Campaign;
   users: SignerOption[] | null;
   onSaved: () => void;
+  /** A person from outside was just added: the page's list of people must know them. */
+  onUserAdded?: (person: SignerOption) => void;
 }) {
+  const [adding, setAdding] = useState(false);
   const [rows, setRows] = useState<Row[]>(() =>
     campaign.roles.map((r) => ({ key: nextKey++, mode: r.mode ?? "FIXED", userId: r.user_id ?? "" })),
   );
@@ -135,6 +141,7 @@ export default function CampaignSigners({
               {users?.map((u) => (
                 <option key={u.id} value={u.id} disabled={taken.has(u.id) && u.id !== row.userId}>
                   {u.display_name} — {u.email}
+                  {u.external ? " (externe)" : ""}
                 </option>
               ))}
             </select>
@@ -181,6 +188,24 @@ export default function CampaignSigners({
           {error ? "" : !complete ? "Choisissez la personne pour enregistrer." : rows.length > 0 && saved ? "Enregistré." : ""}
         </span>
       </div>
+      <div className="row-actions">
+        <button type="button" className="button button--ghost button--sm" onClick={() => setAdding(!adding)}>
+          <UserPlus size={13} aria-hidden="true" /> Ajouter une personne extérieure
+        </button>
+      </div>
+      {adding && (
+        <ExternalPersonForm
+          onCancel={() => setAdding(false)}
+          onCreated={(person) => {
+            onUserAdded?.(person);
+            setAdding(false);
+            // Right away among the signers, before the list of recipients if there is one.
+            const row: Row = { key: nextKey++, mode: "FIXED", userId: person.id };
+            const next = lastIsEach ? [...rows.slice(0, -1), row, rows[rows.length - 1]] : [...rows, row];
+            void persist(next);
+          }}
+        />
+      )}
       {error && <p className="error-text">{error}</p>}
     </div>
   );

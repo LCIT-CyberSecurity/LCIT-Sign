@@ -101,6 +101,7 @@ def _user_payload(
         "display_name": u.display_name,
         "active": u.active,
         "manually_disabled": u.manually_disabled,
+        "external": u.external,
         "source": user_source(u),
         "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None,
         "roles": sorted(role.value for role in user_roles(db, u)),

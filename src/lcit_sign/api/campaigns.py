@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
@@ -32,7 +33,7 @@ from lcit_sign.models.document import (
 from lcit_sign.models.mail import Notification, NotificationType
 from lcit_sign.models.report import Report
 from lcit_sign.models.signature import Signature
-from lcit_sign.models.user import Role, User
+from lcit_sign.models.user import Role, User, UserRole
 from lcit_sign.services.audit import append_audit_event
 from lcit_sign.services.campaign_changes import (
     ChangeError,
@@ -70,7 +71,72 @@ def list_targetable_users(
     (spec §33) — deliberately thinner than /admin/users (no roles/active
     detail), which stays ADMIN-only for actual user administration."""
     rows = db.execute(select(User).where(User.active.is_(True)).order_by(User.email)).scalars()
-    return [{"id": str(u.id), "email": u.email, "display_name": u.display_name} for u in rows]
+    return [
+        {
+            "id": str(u.id),
+            "email": u.email,
+            "display_name": u.display_name,
+            "external": u.external,
+        }
+        for u in rows
+    ]
+
+
+class ExternalSignerIn(BaseModel):
+    email: str = Field(max_length=320)
+    given_name: str = Field(default="", max_length=120)
+    family_name: str = Field(default="", max_length=120)
+
+
+_EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+@router.post("/_meta/externals", status_code=201)
+def add_external_signer(
+    body: ExternalSignerIn,
+    user: User = Depends(_manage),
+    db: DbSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Add someone from outside the company, by e-mail address, so they can be asked to sign. No
+    account is created anywhere: they sign in with their own (an Entra guest, a Google
+    account…) and are recognised by this address. An address already known is reused, never
+    duplicated or changed."""
+    email = body.email.strip().lower()
+    if not _EMAIL.match(email):
+        raise HTTPException(422, "Adresse e-mail invalide")
+    existing = db.execute(select(User).where(func.lower(User.email) == email)).scalar_one_or_none()
+    if existing is not None:
+        if not existing.active:
+            raise HTTPException(
+                409, "Cette personne est désactivée : un administrateur doit la réactiver."
+            )
+        return {
+            "id": str(existing.id), "email": existing.email,
+            "display_name": existing.display_name, "external": existing.external, "existing": True,
+        }
+    given, family = body.given_name.strip(), body.family_name.strip()
+    created = User(
+        issuer="directory:manual",
+        subject=f"manual:{uuid.uuid4()}",
+        email=email,
+        given_name=given,
+        family_name=family,
+        display_name=f"{given} {family}".strip() or email.split("@")[0],
+        active=True,
+        external=True,
+    )
+    db.add(created)
+    db.flush()
+    db.add(UserRole(user_id=created.id, role=Role.SIGNER))
+    append_audit_event(
+        db, action="USER_CREATED", actor_id=user.id, target_type="user",
+        target_id=str(created.id), metadata={"email": email, "source": "external-signer"},
+    )
+    db.commit()
+    return {
+        "id": str(created.id), "email": email, "display_name": created.display_name,
+        "external": True, "existing": False,
+    }
 
 
 @router.get("/_meta/dashboard")

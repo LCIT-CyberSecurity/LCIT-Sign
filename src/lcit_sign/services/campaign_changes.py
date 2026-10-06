@@ -18,6 +18,7 @@ from lcit_sign.models.mail import NotificationType
 from lcit_sign.models.user import User
 from lcit_sign.services.campaign_roles import load_roles, roles_by_version
 from lcit_sign.services.notification_queue import enqueue_notification
+from lcit_sign.services.signing_mail import to_sign_message
 
 OUTSTANDING = (AssignmentStatus.WAITING, AssignmentStatus.PENDING, AssignmentStatus.VIEWED)
 
@@ -64,17 +65,16 @@ def _their_turn(db: DbSession, campaign: Campaign, version_id: uuid.UUID, role: 
 def _notify(
     db: DbSession, campaign: Campaign, person: User, title: str, public_base_url: str
 ) -> None:
+    subject, body = to_sign_message(
+        person, title=title, campaign_name=campaign.name, public_base_url=public_base_url
+    )
     enqueue_notification(
         db,
         notification_type=NotificationType.DOCUMENT_TO_SIGN,
         recipient_email=person.email,
         recipient_user_id=person.id,
-        subject=f"Document à signer : {title}",
-        body_text=(
-            f"Bonjour {person.display_name},\n\n"
-            f'Un document "{title}" ({campaign.name}) attend votre signature.\n'
-            f"Connectez-vous à LCIT Sign pour le consulter et le signer : {public_base_url}\n"
-        ),
+        subject=subject,
+        body_text=body,
     )
 
 

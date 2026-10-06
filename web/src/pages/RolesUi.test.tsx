@@ -39,7 +39,7 @@ describe("choosing who signs, among the users", () => {
     );
 
     // A named person goes before the list of recipients, which always signs last.
-    fireEvent.click(screen.getByRole("button", { name: /Ajouter une personne/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Ajouter une personne$/ }));
     expect(api.put).toHaveBeenCalledTimes(1); // a row with nobody chosen is not saved
     fireEvent.change(screen.getByLabelText("Qui signe en position 1 ?"), { target: { value: "u1" } });
     await waitFor(() =>
@@ -53,7 +53,7 @@ describe("choosing who signs, among the users", () => {
     // The list of recipients cannot be added a second time.
     expect(screen.queryByRole("button", { name: /Ajouter « Chaque destinataire »/ })).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: /Ajouter une personne/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Ajouter une personne$/ }));
     fireEvent.change(screen.getByLabelText("Qui signe en position 2 ?"), { target: { value: "u2" } });
     await waitFor(() =>
       expect(api.put).toHaveBeenLastCalledWith("/campaigns/c1/signers", {

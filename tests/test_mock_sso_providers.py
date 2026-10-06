@@ -350,3 +350,15 @@ def test_ldap_attempts_are_limited(monkeypatch, tmp_path, ldap_directory):
 def test_ldap_codes_only_go_to_the_app(monkeypatch, tmp_path, ldap_directory):
     configure(monkeypatch, tmp_path, {"ldap": LDAP})
     assert ldap_post("ann", "ann-pw", redirect="https://evil.test/x").status_code == 400
+
+
+def test_an_entra_guest_is_recognised_by_their_real_address(monkeypatch, tmp_path):
+    """An invited person's sign-in name is `bob_gmail.com#EXT#@tenant…`: matched on the address."""
+    configure(monkeypatch, tmp_path, {"entra": ENTRA})
+    go = client.get("/login/entra", params=authorize_params())
+    state = parse_qs(urlparse(go.headers["location"]).query)["state"][0]
+    fake_provider(monkeypatch, {
+        "aud": ENTRA["client_id"], "nonce": nonce_of(state), "oid": "guest-1",
+        "preferred_username": "bob_gmail.com#EXT#@eunoia.onmicrosoft.com", "name": "Bob Guest"})
+    back = client.get("/callback/entra", params={"code": "c", "state": state})
+    assert exchange(code_from(back)[0])["email"] == "bob@gmail.com"
