@@ -340,3 +340,29 @@ def test_the_campaign_says_which_signers_have_a_signature_placed(tmp_path, mock_
     assert document["elements"] == 4
     assert document["element_roles"] == [1, 2]
     assert document["signature_roles"] == [2]  # position 1 has no signature
+
+
+def test_a_person_asked_to_sign_needs_no_role_to_do_it(tmp_path, mock_oidc_base_url):
+    """By default everyone can sign what they are asked to sign: no role has to be granted."""
+    _, admin, operator, signer1, _ = setup_campaign_fixture(tmp_path, mock_oidc_base_url)
+    person = get_user_id(signer1)
+    assert admin.delete(f"/api/admin/users/{person}/roles/SIGNER").status_code == 200
+    assert signer1.get("/api/auth/me").json()["roles"] == []
+
+    version_id = upload(operator, title="Charte", pages=1)
+    operator.put(
+        f"/api/documents/versions/{version_id}/fields",
+        json={"fields": [element("SIGNATURE", role=1, y=0.7)]},
+    )
+    operator.post(f"/api/documents/versions/{version_id}/publish")
+    campaign = new_campaign(operator, version_id)
+    launched = operator.post(f"/api/campaigns/{campaign['id']}/launch", json={"user_ids": [person]})
+    assert launched.status_code == 200, launched.text
+
+    signed = signer1.post(f"/api/documents/versions/{version_id}/sign", json={"consent": True})
+    assert signed.status_code == 201, signed.text
+    # Nobody asked for this one: that still takes the signer role.
+    other = upload(operator, title="Autre", pages=1)
+    operator.post(f"/api/documents/versions/{other}/publish")
+    unasked = signer1.post(f"/api/documents/versions/{other}/sign", json={"consent": True})
+    assert unasked.status_code == 403

@@ -286,6 +286,8 @@ export interface ConnectorSpec {
   description: string;
   fields: ConnectorField[];
   secret: ConnectorField;
+  /** Steps to prepare on the provider's side, when there are some. */
+  guide?: string[];
 }
 
 export interface DirectorySource {

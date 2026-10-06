@@ -99,6 +99,27 @@ describe("DirectoryConnectorForm — credentials are write-only", () => {
   });
 });
 
+describe("DirectoryConnectorForm — preparation steps", () => {
+  it("lists the steps to prepare on the provider's side when there are some, open until configured", () => {
+    const withGuide = { ...entra, spec: { ...entra.spec!, guide: ["Créez le compte de service.", "Autorisez-le."] } };
+    const { unmount } = render(<DirectoryConnectorForm source={withGuide} onChanged={vi.fn()} />);
+    expect(screen.getByText("Comment préparer Microsoft Entra ID, pas à pas")).toBeInTheDocument();
+    expect(screen.getAllByRole("listitem").map((li) => li.textContent)).toEqual([
+      "Créez le compte de service.",
+      "Autorisez-le.",
+    ]);
+    expect(document.querySelector("details")).toHaveAttribute("open");
+    unmount();
+    render(<DirectoryConnectorForm source={{ ...withGuide, configured: true }} onChanged={vi.fn()} />);
+    expect(document.querySelector("details")).not.toHaveAttribute("open");
+  });
+
+  it("shows no guide for a connector that has none", () => {
+    render(<DirectoryConnectorForm source={entra} onChanged={vi.fn()} />);
+    expect(document.querySelector("details")).toBeNull();
+  });
+});
+
 describe("DirectoryConnectorForm — every setting explains itself", () => {
   it("offers a bubble with a description and an example for each field", () => {
     render(<DirectoryConnectorForm source={entra} onChanged={vi.fn()} />);

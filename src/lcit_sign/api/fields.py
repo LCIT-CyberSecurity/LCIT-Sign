@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session as DbSession
 
-from lcit_sign.deps import get_db, require_roles
+from lcit_sign.deps import get_current_user, get_db, require_roles
 from lcit_sign.models.campaign import AssignmentStatus, SignatureAssignment
 from lcit_sign.models.document import (
     INPUT_KINDS,
@@ -201,7 +201,7 @@ def put_fields(
 @router.get("/documents/versions/{version_id}/signing-form")
 def get_signing_form(
     version_id: uuid.UUID,
-    user: User = Depends(require_roles(Role.SIGNER)),
+    user: User = Depends(get_current_user),
     db: DbSession = Depends(get_db),
 ) -> dict[str, Any]:
     """What the signer is asked to provide for this version: the free-text

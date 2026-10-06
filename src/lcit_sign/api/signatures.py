@@ -16,7 +16,7 @@ from lcit_sign import __version__
 from lcit_sign.api.documents import DOCUMENTS_BUCKET, PDF_SUFFIX
 from lcit_sign.api.fields import load_fields, to_prepared
 from lcit_sign.config import Settings
-from lcit_sign.deps import get_current_user, get_db, require_roles, user_roles
+from lcit_sign.deps import get_current_user, get_db, user_roles
 from lcit_sign.models.campaign import AssignmentStatus, Campaign, SignatureAssignment
 from lcit_sign.models.document import Document, DocumentVersion, DocumentVersionStatus
 from lcit_sign.models.mail import NotificationType
@@ -54,7 +54,9 @@ CERTIFICATES_BUCKET = "certificates"
 EVIDENCE_SUFFIX = ".json"
 IDENTITY_PROVIDER = "oidc"  # only a generic OIDC provider exists today
 
-_sign = require_roles(Role.SIGNER)
+# Anyone signed in may sign what they were asked to sign: no role is needed, the request is
+# addressed to the person (checked in perform_signature). Signing unasked still needs SIGNER.
+_sign = get_current_user
 
 
 class SignRequest(BaseModel):
@@ -257,6 +259,9 @@ def perform_signature(
     if only_campaign and not pending_assignments:
         # Never fall through to a campaign-less signature when a campaign was asked for.
         raise HTTPException(409, "Rien à signer pour cette campagne")
+    if not pending_assignments and Role.SIGNER not in user_roles(db, user):
+        # Signing of one's own accord (nobody asked) stays a role; being asked needs none.
+        raise HTTPException(403, "Insufficient role")
     campaign_id = pending_assignments[0].campaign_id if pending_assignments else None
     role = pending_assignments[0].role if pending_assignments else 1
     # With an outstanding assignment, only a signature for that same

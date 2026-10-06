@@ -1335,3 +1335,8 @@ a.attention:hover strong { color: var(--primary); }
 /* A request being prepared: the card to pick it up again, and its deletion beside it. */
 .draft-row { display: flex; align-items: center; gap: var(--space-3, 12px); }
 .draft-row .card--link { flex: 1; }
+
+/* Preparation steps on the provider's side, above a connector's form. */
+.connector-guide { background: var(--surface-muted, #f6f7f9); border-radius: 8px; padding: 10px 14px; }
+.connector-guide summary { cursor: pointer; font-weight: 600; }
+.connector-guide ol { margin: 8px 0 0; padding-left: 20px; display: grid; gap: 6px; font-size: 0.9em; overflow-wrap: anywhere; }

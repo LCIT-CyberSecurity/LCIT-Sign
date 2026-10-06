@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session as DbSession
 
 from lcit_sign.api.fields import field_payload, load_fields
 from lcit_sign.api.signatures import _signature_payload, perform_signature
-from lcit_sign.deps import get_db, require_roles
+from lcit_sign.deps import get_current_user, get_db
 from lcit_sign.models.campaign import (
     AssignmentStatus,
     Campaign,
@@ -23,12 +23,12 @@ from lcit_sign.models.campaign import (
     SignatureAssignment,
 )
 from lcit_sign.models.document import INPUT_KINDS, Document, DocumentVersion
-from lcit_sign.models.user import Role, User
+from lcit_sign.models.user import User
 from lcit_sign.services.audit import append_audit_event
 
 router = APIRouter(prefix="/sign-all", tags=["signatures"])
 
-_sign = require_roles(Role.SIGNER)
+_sign = get_current_user
 OPEN = (AssignmentStatus.PENDING, AssignmentStatus.VIEWED)
 
 

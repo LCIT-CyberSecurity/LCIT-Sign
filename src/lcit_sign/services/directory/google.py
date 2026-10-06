@@ -197,4 +197,28 @@ SPEC = ConnectorSpec(
     ),
     validate=validate,
     build=build,
+    guide=(
+        "Console Google Cloud (console.cloud.google.com) : choisissez ou créez un projet, puis "
+        "« APIs et services » → « Bibliothèque » → activez « Admin SDK API ».",
+        "« IAM et administration » → « Comptes de service » → « Créer un compte de service » "
+        "(par exemple lcit-sign-annuaire). Aucun rôle n'est à lui donner dans Google Cloud.",
+        "Ouvrez ce compte → onglet « Clés » → « Ajouter une clé » → « Créer une clé » → JSON. "
+        "Le fichier téléchargé : collez son contenu dans « Clé du compte de service » ci-dessous.",
+        "Notez l'« ID client » du compte de service (un long nombre, sur sa page de détails, "
+        "« Paramètres avancés » ou « Détails »).",
+        "Console d'administration (admin.google.com), avec un super-administrateur : « Sécurité » "
+        "→ « Contrôle des accès et des données » → « Contrôles des API » → « Gérer la délégation "
+        "à l'échelle du domaine » → « Ajouter ». Mettez l'ID client noté à l'étape 4 et, comme "
+        "champs d'application OAuth (séparés par des virgules) : "
+        "https://www.googleapis.com/auth/admin.directory.user.readonly,"
+        "https://www.googleapis.com/auth/admin.directory.group.readonly,"
+        "https://www.googleapis.com/auth/admin.directory.group.member.readonly",
+        "Ci-dessous, « E-mail d'un administrateur » : l'adresse d'un super-administrateur du "
+        "domaine (un compte dédié à la lecture de l'annuaire est préférable). Le compte de "
+        "service lit l'annuaire en son nom, en lecture seule ; rien n'est modifié.",
+        "Enregistrez, puis lancez une synchronisation. Si Google répond « unauthorized_client » : "
+        "l'étape 5 n'est pas encore prise en compte (quelques minutes) ou un champ "
+        "d'application est mal recopié. Si la création de clé est refusée à l'étape 3, une "
+        "politique de votre organisation l'interdit : demandez à son administrateur de l'autoriser.",  # noqa: E501
+    ),
 )

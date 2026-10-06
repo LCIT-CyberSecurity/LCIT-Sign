@@ -32,6 +32,23 @@ def test_every_connector_describes_its_settings_with_a_help_bubble_each(
         assert "team_selector" in {f["name"] for f in spec["fields"]}
 
 
+def test_google_explains_how_to_prepare_it_step_by_step(tmp_path, mock_oidc_base_url):
+    admin = _admin(_entra_app(tmp_path, mock_oidc_base_url), mock_oidc_base_url)
+    listed = {s["source"]: s.get("spec") for s in admin.get("/api/admin/directory/sources").json()}
+    steps = listed["google"]["guide"]
+    text = " ".join(steps)
+    assert len(steps) >= 6
+    # The three read-only scopes the delegation must carry, and the key the admin pastes.
+    for scope in (
+        "directory.user.readonly",
+        "directory.group.readonly",
+        "directory.group.member.readonly",
+    ):
+        assert scope in text
+    assert "Admin SDK API" in text and "unauthorized_client" in text
+    assert listed["entra"]["guide"] == []
+
+
 # --- Entra: teams from an attribute ---------------------------------------------------
 
 

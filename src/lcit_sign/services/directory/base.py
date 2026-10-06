@@ -157,6 +157,8 @@ class ConnectorSpec:
     # Raises ValueError(message in the admin's words) when what was typed cannot work.
     validate: Callable[[dict[str, str], str | None], None]
     build: Callable[[httpx.Client, dict[str, str], str], DirectoryConnector]
+    # Optional step-by-step preparation on the provider's side, shown above the form.
+    guide: tuple[str, ...] = ()
 
     def payload(self) -> dict[str, Any]:
         return {
@@ -164,6 +166,7 @@ class ConnectorSpec:
             "description": self.description,
             "fields": [f.payload() for f in self.fields],
             "secret": self.secret.payload(),
+            "guide": list(self.guide),
         }
 
     def with_defaults(self, values: dict[str, str]) -> dict[str, str]:

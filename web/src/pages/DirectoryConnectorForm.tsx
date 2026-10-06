@@ -72,6 +72,16 @@ export default function DirectoryConnectorForm({
       <div className="card-title">
         <KeyRound size={14} aria-hidden="true" /> {spec.label} {source.configured ? "(configuré)" : "(non configuré)"}
       </div>
+      {spec.guide && spec.guide.length > 0 && (
+        <details className="connector-guide" open={!source.configured}>
+          <summary>Comment préparer {spec.label}, pas à pas</summary>
+          <ol>
+            {spec.guide.map((step) => (
+              <li key={step}>{step}</li>
+            ))}
+          </ol>
+        </details>
+      )}
       {spec.fields
         .filter((f) => isShown(f, fields))
         .map((f) => (

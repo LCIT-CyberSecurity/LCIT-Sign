@@ -128,7 +128,7 @@ def test_cannot_sign_a_draft_version(tmp_path, mock_oidc_base_url):
     assert response.status_code == 409
 
 
-def test_user_without_signer_role_cannot_sign(tmp_path, mock_oidc_base_url):
+def test_user_without_signer_role_cannot_sign_unasked(tmp_path, mock_oidc_base_url):
     app, operator, _signer, _admin = setup_operator_and_signer(
         tmp_path, mock_oidc_base_url, master_key=TEST_MASTER_KEY
     )
