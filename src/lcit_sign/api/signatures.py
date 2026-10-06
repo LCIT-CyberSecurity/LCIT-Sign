@@ -96,17 +96,21 @@ def _authorize_signature_access(signature: Signature, user: User, db: DbSession)
     raise HTTPException(403, "Not authorized to access this signature")
 
 
-@router.post("/documents/versions/{version_id}/sign", status_code=201)
-def sign_document_version(
+def perform_signature(
     request: Request,
+    db: DbSession,
+    user: User,
     version_id: uuid.UUID,
-    body: SignRequest,
-    user: User = Depends(_sign),
-    db: DbSession = Depends(get_db),
-) -> dict[str, Any]:
-    if not body.consent:
-        raise HTTPException(400, "Explicit consent is required to sign")
-
+    values: dict[str, str],
+    *,
+    only_campaign: uuid.UUID | None = None,
+    dry_run: bool = False,
+) -> Signature | None:
+    """Sign one document version as `user`: stamp their elements, build the proof, store the
+    files, mark the assignment signed and ask the next signer. Does not commit. With
+    `dry_run` it stops after checking everything that can refuse (inputs included) and
+    returns None. `only_campaign` restricts which campaign's assignment is answered.
+    Raises HTTPException."""
     version = db.get(DocumentVersion, version_id)
     if version is None:
         raise HTTPException(404, "Document version not found")
@@ -123,6 +127,7 @@ def sign_document_version(
                 SignatureAssignment.document_version_id == version.id,
                 SignatureAssignment.user_id == user.id,
                 SignatureAssignment.status.in_([AssignmentStatus.PENDING, AssignmentStatus.VIEWED]),
+                *([SignatureAssignment.campaign_id == only_campaign] if only_campaign else []),
             )
             .order_by(SignatureAssignment.assigned_at)
         ).scalars()
@@ -155,6 +160,9 @@ def sign_document_version(
         ).first()
         if ended is not None:
             raise HTTPException(409, "Cette campagne n'est plus ouverte à la signature")
+    if only_campaign and not pending_assignments:
+        # Never fall through to a campaign-less signature when a campaign was asked for.
+        raise HTTPException(409, "Rien à signer pour cette campagne")
     campaign_id = pending_assignments[0].campaign_id if pending_assignments else None
     role = pending_assignments[0].role if pending_assignments else 1
     # With an outstanding assignment, only a signature for that same
@@ -225,7 +233,7 @@ def sign_document_version(
             signer_name=user.display_name,
             signer_email=user.email,
             signed_at=signed_at,
-            inputs=body.values,
+            inputs=values,
             logo_sha256=logo[1] if logo else None,
             signer_first_name=user.given_name or "",
             signer_last_name=user.family_name or "",
@@ -233,6 +241,8 @@ def sign_document_version(
         )
     except FieldError as exc:
         raise HTTPException(422, str(exc)) from exc
+    if dry_run:
+        return None
     resolved_fields = prior_values + own_fields
     stamped_pdf = stamp_fields(original_pdf, resolved_fields, logo[0] if logo else None)
 
@@ -368,6 +378,21 @@ def sign_document_version(
         target_type="signature", target_id=str(signature.id),
         document_id=document.id, signature_id=signature.id,
     )
+    return signature
+
+
+@router.post("/documents/versions/{version_id}/sign", status_code=201)
+def sign_document_version(
+    request: Request,
+    version_id: uuid.UUID,
+    body: SignRequest,
+    user: User = Depends(_sign),
+    db: DbSession = Depends(get_db),
+) -> dict[str, Any]:
+    if not body.consent:
+        raise HTTPException(400, "Explicit consent is required to sign")
+    signature = perform_signature(request, db, user, version_id, body.values)
+    assert signature is not None  # noqa: S101 - only a dry run returns None
     db.commit()
     return _signature_payload(signature)
 
