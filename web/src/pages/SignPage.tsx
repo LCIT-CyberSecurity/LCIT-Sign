@@ -1,7 +1,8 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { PenLine, Plus } from "lucide-react";
-import { api } from "../api/client";
+import { api, ApiError } from "../api/client";
+import ConfirmButton from "../components/ConfirmButton";
 import type { Campaign } from "../api/types";
 
 /** Where a request for signature starts: choose who signs, what, for whom — then send.
@@ -12,6 +13,7 @@ export default function SignPage() {
   const [campaigns, setCampaigns] = useState<Campaign[] | null>(null);
   const [name, setName] = useState("");
   const [creating, setCreating] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
 
   useEffect(() => {
     api.get<Campaign[]>("/campaigns").then(setCampaigns);
@@ -26,6 +28,16 @@ export default function SignPage() {
       navigate(`/sign/${created.id}`);
     } finally {
       setCreating(false);
+    }
+  };
+
+  const remove = async (id: string) => {
+    setProblem(null);
+    try {
+      await api.del(`/campaigns/${id}`);
+      setCampaigns((all) => (all ?? []).filter((c) => c.id !== id));
+    } catch (err) {
+      setProblem(err instanceof ApiError ? err.message : "La suppression a échoué.");
     }
   };
 
@@ -70,18 +82,27 @@ export default function SignPage() {
         ) : (
           <div className="card-list">
             {drafts.map((c) => (
-              <Link key={c.id} to={`/sign/${c.id}`} className="card card--link">
-                <div>
-                  <div className="card-title">{c.name}</div>
-                  <div className="muted small">
-                    {c.documents.length} document(s) — {c.roles.length} signataire(s) défini(s)
+              <div key={c.id} className="draft-row" data-testid={`draft-${c.id}`}>
+                <Link to={`/sign/${c.id}`} className="card card--link">
+                  <div>
+                    <div className="card-title">{c.name}</div>
+                    <div className="muted small">
+                      {c.documents.length} document(s) — {c.roles.length} signataire(s) défini(s)
+                    </div>
                   </div>
-                </div>
-                <div className="card-meta">Reprendre</div>
-              </Link>
+                  <div className="card-meta">Reprendre</div>
+                </Link>
+                <ConfirmButton
+                  confirmLabel="Oui, supprimer cette demande"
+                  onConfirm={() => remove(c.id)}
+                >
+                  Supprimer
+                </ConfirmButton>
+              </div>
             ))}
           </div>
         )}
+        {problem && <p className="error-text">{problem}</p>}
         <p className="muted small">
           Les demandes envoyées se suivent dans <Link to="/campaigns">Suivi</Link>.
         </p>

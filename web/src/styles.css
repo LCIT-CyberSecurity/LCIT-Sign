@@ -1331,3 +1331,7 @@ a.attention:hover strong { color: var(--primary); }
 .chain { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 8px; }
 .chain li { display: flex; gap: 10px; align-items: baseline; }
 .chain__me { font-weight: 500; }
+
+/* A request being prepared: the card to pick it up again, and its deletion beside it. */
+.draft-row { display: flex; align-items: center; gap: var(--space-3, 12px); }
+.draft-row .card--link { flex: 1; }
