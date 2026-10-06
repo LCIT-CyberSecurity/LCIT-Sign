@@ -30,6 +30,7 @@ from lcit_sign.services.campaign_roles import (
     role_label,
     waiting_on,
 )
+from lcit_sign.services.docusign_flow import uses_docusign
 from lcit_sign.services.evidence import canonical_evidence_fields, canonical_json
 from lcit_sign.services.field_stamping import (
     FieldError,
@@ -274,6 +275,11 @@ def perform_signature(
         # Signing of one's own accord (nobody asked) stays a role; being asked needs none.
         raise HTTPException(403, "Insufficient role")
     campaign_id = pending_assignments[0].campaign_id if pending_assignments else None
+    if campaign_id is not None and uses_docusign(db, campaign_id):
+        raise HTTPException(
+            409,
+            "Cette demande se signe avec DocuSign : ouvrez l'e-mail que DocuSign vous a envoyé.",
+        )
     role = pending_assignments[0].role if pending_assignments else 1
     # With an outstanding assignment, only a signature for that same
     # campaign counts as "already signed" (a renewal asks again). Without

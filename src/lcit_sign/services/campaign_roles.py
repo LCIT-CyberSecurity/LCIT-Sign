@@ -24,6 +24,7 @@ from lcit_sign.models.campaign import (
 from lcit_sign.models.document import DocumentField
 from lcit_sign.models.mail import NotificationType
 from lcit_sign.models.user import User
+from lcit_sign.services.docusign_flow import METHOD_DOCUSIGN, queue_envelope
 from lcit_sign.services.notification_queue import enqueue_notification
 from lcit_sign.services.signing_mail import to_sign_message
 
@@ -218,9 +219,15 @@ def release_next_role(
             select(User).where(User.id.in_([a.user_id for a in waiting]))
         ).scalars()
     }
+    campaign = db.get(Campaign, campaign_id)
+    through_docusign = campaign is not None and campaign.signature_method == METHOD_DOCUSIGN
     for assignment in waiting:
         assignment.status = AssignmentStatus.PENDING
         person = users.get(assignment.user_id)
+        if through_docusign:
+            # DocuSign mails the signer itself: the worker sends the envelope.
+            queue_envelope(db, assignment)
+            continue
         if person is None:
             continue
         subject, body = to_sign_message(

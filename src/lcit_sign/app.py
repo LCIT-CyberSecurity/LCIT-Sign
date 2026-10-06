@@ -22,6 +22,7 @@ from lcit_sign.api.campaigns import router as campaigns_router
 from lcit_sign.api.diagnostics import router as diagnostics_router
 from lcit_sign.api.directory import router as directory_router
 from lcit_sign.api.documents import router as documents_router
+from lcit_sign.api.docusign import router as docusign_router
 from lcit_sign.api.fields import router as fields_router
 from lcit_sign.api.health import router as health_router
 from lcit_sign.api.reports import campaign_reports_router
@@ -33,6 +34,7 @@ from lcit_sign.config import Settings, get_settings
 from lcit_sign.database import make_engine, make_session_factory
 from lcit_sign.logging_utils import configure_logging
 from lcit_sign.request_context import set_request_id, set_source_ip
+from lcit_sign.services.docusign_flow import process_docusign
 from lcit_sign.services.local_auth import LoginThrottle, ensure_builtin_admin
 from lcit_sign.services.notification_queue import process_pending_notifications
 from lcit_sign.services.rate_limit import SlidingWindowLimiter
@@ -84,6 +86,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     lambda: process_scheduled_starts(db, settings, app.state.storage),
                 ),
                 ("renewals", lambda: process_renewals(db, settings)),
+                (
+                    "docusign",
+                    lambda: process_docusign(db, settings, app.state.storage),
+                ),
                 ("directory sync", lambda: process_directory_syncs(db, settings, http_client)),
             ]
             for job_name, job in jobs:
@@ -246,6 +252,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(health_router, prefix="/api")
     app.include_router(auth_router, prefix="/api")
     app.include_router(admin_router, prefix="/api")
+    app.include_router(docusign_router, prefix="/api")
     app.include_router(documents_router, prefix="/api")
     app.include_router(fields_router, prefix="/api")
     app.include_router(signatures_router, prefix="/api")

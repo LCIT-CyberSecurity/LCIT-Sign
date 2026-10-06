@@ -23,6 +23,7 @@ from lcit_sign.models.document import (
     DocumentVersionStatus,
     FieldKind,
 )
+from lcit_sign.models.docusign import DocusignConfig, DocusignEnvelope
 from lcit_sign.models.mail import MailConnector, Notification, NotificationStatus, NotificationType
 from lcit_sign.models.report import Report
 from lcit_sign.models.session import Session
@@ -43,6 +44,8 @@ __all__ = [
     "CampaignTargetMode",
     "CampaignTargetUser",
     "DirectorySyncRun",
+    "DocusignConfig",
+    "DocusignEnvelope",
     "Document",
     "DocumentField",
     "DocumentVersion",

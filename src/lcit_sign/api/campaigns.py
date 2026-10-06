@@ -11,6 +11,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session as DbSession
 
 from lcit_sign.api.documents import check_publishable, publish_draft
+from lcit_sign.api.docusign import methods_payload
 from lcit_sign.config import Settings
 from lcit_sign.deps import get_current_user, get_db, require_roles
 from lcit_sign.models.campaign import (
@@ -55,6 +56,7 @@ from lcit_sign.services.campaign_roles import (
     validate_roles,
     waiting_on,
 )
+from lcit_sign.services.docusign_flow import follow_up, is_configured
 from lcit_sign.services.notification_queue import enqueue_notification
 from lcit_sign.services.storage import StorageService
 from lcit_sign.time_utils import ensure_utc
@@ -62,6 +64,13 @@ from lcit_sign.time_utils import ensure_utc
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])
 
 _manage = require_roles(Role.OPERATOR, Role.ADMIN)
+
+
+@router.get("/_meta/signature-methods")
+def signature_methods(
+    user: User = Depends(_manage), db: DbSession = Depends(get_db)
+) -> list[dict[str, Any]]:
+    return methods_payload(db)
 
 
 @router.get("/_meta/users")
@@ -241,6 +250,8 @@ class SignersIn(BaseModel):
 class LaunchRequest(TargetRequest):
     # Who is "Signataire N": a named person, or the list of recipients below.
     roles: list[RoleIn] = []
+    # How it is signed: LCIT Sign's own signature, or an eIDAS one through DocuSign.
+    signature_method: Literal["LOCAL", "DOCUSIGN"] = "LOCAL"
     # When it starts: nothing or a past date = now; a future date = scheduled.
     start_at: datetime | None = None
     deadline: datetime | None = None
@@ -372,6 +383,7 @@ def _campaign_payload(campaign: Campaign, db: DbSession) -> dict[str, Any]:
         "description": campaign.description,
         "status": campaign.status.value,
         "target_mode": campaign.target_mode,
+        "signature_method": campaign.signature_method,
         "created_at": campaign.created_at.isoformat(),
         "launch_at": campaign.launch_at.isoformat() if campaign.launch_at else None,
         "scheduled_start": (
@@ -566,6 +578,12 @@ def _check_launch(
     checked signers."""
     if not campaign.documents:
         raise HTTPException(400, "Campaign has no documents to sign")
+    if body.signature_method == "DOCUSIGN" and not is_configured(db):
+        raise HTTPException(
+            409,
+            "DocuSign n'est pas configuré : un administrateur doit d'abord saisir la connexion "
+            "(Administration → DocuSign), ou choisissez la signature LCIT.",
+        )
     for link in campaign.documents:
         draft = db.get(DocumentVersion, link.document_version_id)
         if draft is not None and draft.status == DocumentVersionStatus.DRAFT:
@@ -610,6 +628,7 @@ def execute_launch(
         # Every signer is a named person: nobody else is asked.
         population = []
 
+    campaign.signature_method = body.signature_method
     campaign.target_mode = _target_mode_label(
         all_users=body.all_users, group_ids=body.group_ids, user_ids=body.user_ids
     )
@@ -1120,8 +1139,9 @@ me_router = APIRouter(tags=["campaigns"])
 
 @me_router.get("/me/assignments")
 def list_my_assignments(
-    user: User = Depends(get_current_user), db: DbSession = Depends(get_db)
+    request: Request, user: User = Depends(get_current_user), db: DbSession = Depends(get_db)
 ) -> list[dict[str, Any]]:
+    settings: Settings = request.app.state.settings
     rows = db.execute(
         select(SignatureAssignment)
         .where(SignatureAssignment.user_id == user.id)
@@ -1171,6 +1191,10 @@ def list_my_assignments(
                 "deadline": a.deadline.isoformat() if a.deadline else None,
                 "signed_at": a.signed_at.isoformat() if a.signed_at else None,
                 "signature_id": str(a.signature_id) if a.signature_id else None,
+                "signature_method": campaign.signature_method if campaign else "LOCAL",
+                "docusign": follow_up(db, a, settings.public_base_url)
+                if a.status in (AssignmentStatus.PENDING, AssignmentStatus.VIEWED)
+                else None,
             }
         )
     return result
