@@ -285,11 +285,13 @@ def test_the_person_asked_to_sign_still_needs_no_role_and_a_stranger_still_canno
     tmp_path, mock_oidc_base_url
 ):
     w = build(tmp_path, mock_oidc_base_url)
-    assert w.bob.get("/api/auth/me").json()["roles"] == []
+    assert w.bob.get("/api/auth/me").json()["roles"] == ["SIGNER"]  # the default
     signature = sign(w.bob, w.hr_version, w.hr)
     assert w.bob.get(f"/api/signatures/{signature}/signed-pdf").status_code == 200  # their own
     # Someone not asked, with no SIGNER role, cannot sign a published document of their own accord.
     stranger = w.admin.post("/api/admin/users", json={"email": "z@corp.test"}).json()
-    assert stranger["roles"] == ["SIGNER"] or stranger["roles"] == []
+    assert stranger["roles"] == ["SIGNER"]  # signing is the default
+    legal_id = w.legal.get("/api/auth/me").json()["id"]
+    assert w.admin.delete(f"/api/admin/users/{legal_id}/roles/SIGNER").status_code == 200
     assert w.legal.post(f"/api/documents/versions/{w.hr_version}/sign",
                         json={"consent": True}).status_code == 403

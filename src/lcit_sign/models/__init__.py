@@ -24,7 +24,6 @@ from lcit_sign.models.document import (
     DocumentVersionStatus,
     FieldKind,
 )
-from lcit_sign.models.docusign import DocusignConfig, DocusignEnvelope
 from lcit_sign.models.login_provider import LoginProvider
 from lcit_sign.models.mail import MailConnector, Notification, NotificationStatus, NotificationType
 from lcit_sign.models.report import Report
@@ -48,8 +47,6 @@ __all__ = [
     "CampaignTargetMode",
     "CampaignTargetUser",
     "DirectorySyncRun",
-    "DocusignConfig",
-    "DocusignEnvelope",
     "Document",
     "DocumentField",
     "DocumentVersion",

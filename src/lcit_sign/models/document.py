@@ -75,7 +75,7 @@ class DocumentVersion(Base):
 
 
 class FieldKind(enum.StrEnum):
-    """What an element placed on a document is (DocuSign's "tabs")."""
+    """What an element placed on a document is (a signature, a date…)."""
 
     SIGNATURE = "SIGNATURE"   # the signer's name, handwritten-style — automatic
     DATE = "DATE"             # today's date, at signing — automatic

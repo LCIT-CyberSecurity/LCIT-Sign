@@ -11,7 +11,6 @@ from lcit_sign.models.document import Document, DocumentVersion
 from lcit_sign.models.mail import NotificationType
 from lcit_sign.models.user import User
 from lcit_sign.services.campaign_roles import RoleSpec, roles_by_version
-from lcit_sign.services.docusign_flow import METHOD_DOCUSIGN, queue_envelope
 from lcit_sign.services.notification_queue import enqueue_notification
 from lcit_sign.services.signing_mail import to_sign_message
 
@@ -66,11 +65,7 @@ def create_assignments(
                 )
                 db.add(assignment)
                 target_user = users_by_id.get(target_user_id)
-                if my_turn and campaign.signature_method == METHOD_DOCUSIGN:
-                    # DocuSign mails the signer itself: the worker sends the envelope.
-                    db.flush()
-                    queue_envelope(db, assignment)
-                elif my_turn and target_user is not None:
+                if my_turn and target_user is not None:
                     subject, body = to_sign_message(
                         target_user,
                         title=document_title,

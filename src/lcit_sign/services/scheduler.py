@@ -194,7 +194,6 @@ def process_renewals(db: DbSession, settings: Settings, now: datetime | None = N
             created_by=campaign.created_by,
             launch_at=now,
             renewal_of_campaign_id=campaign.id,
-            signature_method=campaign.signature_method,
             reminder_first_days=campaign.reminder_first_days,
             reminder_interval_days=campaign.reminder_interval_days,
             reminder_max_count=campaign.reminder_max_count,

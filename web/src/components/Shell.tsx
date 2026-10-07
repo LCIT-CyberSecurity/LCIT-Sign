@@ -2,7 +2,6 @@ import { useState, type ReactNode } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import {
   Activity,
-  BadgeCheck,
   ChevronRight,
   FileSignature,
   FileText,
@@ -61,7 +60,6 @@ const TITLES: [prefix: string, label: string][] = [
   ["/admin/login", "Connexion"],
   ["/admin/directory", "Annuaire"],
   ["/admin/mail", "E-mail"],
-  ["/admin/docusign", "DocuSign"],
   ["/admin/audit", "Audit"],
   ["/admin/signing-keys", "Clés de signature"],
   ["/admin/diagnostics", "Diagnostic"],
@@ -129,12 +127,6 @@ export default function Shell() {
               <NavItem to="/admin/login" icon={<KeyRound size={18} />} label="Connexion" onNavigate={close} />
               <NavItem to="/admin/directory" icon={<FolderCog size={18} />} label="Annuaire" onNavigate={close} />
               <NavItem to="/admin/mail" icon={<Mail size={18} />} label="Email" onNavigate={close} />
-              <NavItem
-                to="/admin/docusign"
-                icon={<BadgeCheck size={18} />}
-                label="DocuSign"
-                onNavigate={close}
-              />
               <NavItem to="/admin/audit" icon={<ScrollText size={18} />} label="Audit" onNavigate={close} />
               <NavItem
                 to="/admin/signing-keys"

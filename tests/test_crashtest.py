@@ -129,12 +129,12 @@ def test_roles_follow_the_dataset_and_seeding_twice_changes_nothing(tmp_path, mo
             return set(db.execute(select(UserRole.role).join(User, User.id == UserRole.user_id)
                                   .where(User.email == email)).scalars())
 
-    assert roles_of("alice.martin@lcit-test.local") == {Role.PREPARER}
-    assert roles_of("sophie.bernard@lcit-test.local") == {Role.PREPARER}
-    assert roles_of("claire.moreau@lcit-test.local") == {Role.PREPARER}
-    assert roles_of("paul.muller@lcit-test.local") == {Role.OPERATOR}
-    assert roles_of("admin.crash@lcit-test.local") == {Role.ADMIN}
-    assert roles_of("bob.dupont@lcit-test.local") == set()  # asked to sign: needs nothing
+    assert roles_of("alice.martin@lcit-test.local") == {Role.SIGNER, Role.PREPARER}
+    assert roles_of("sophie.bernard@lcit-test.local") == {Role.SIGNER, Role.PREPARER}
+    assert roles_of("claire.moreau@lcit-test.local") == {Role.SIGNER, Role.PREPARER}
+    assert roles_of("paul.muller@lcit-test.local") == {Role.SIGNER, Role.OPERATOR}
+    assert roles_of("admin.crash@lcit-test.local") == {Role.SIGNER, Role.ADMIN}
+    assert roles_of("bob.dupont@lcit-test.local") == {Role.SIGNER}  # everyone can sign
     with app.state.session_factory() as db:
         emails = [e for (e,) in db.execute(select(User.email)).all()]
     assert len(emails) == len(set(emails)) and len(first) == len(emails)
@@ -147,7 +147,8 @@ def test_the_same_person_through_the_mock_sso_is_the_same_account(tmp_path, mock
     sso = TestClient(app)
     login_as(sso, mock_oidc_base_url, sub="u-rh-2")  # Sophie Bernard
     me = sso.get("/api/auth/me").json()
-    assert me["email"] == "sophie.bernard@lcit-test.local" and me["roles"] == ["PREPARER"]
+    assert me["email"] == "sophie.bernard@lcit-test.local"
+    assert sorted(me["roles"]) == ["PREPARER", "SIGNER"]
     assert local_login(client, "sophie.bernard@lcit-test.local", "sophie").status_code == 204
 
 
@@ -162,7 +163,7 @@ def test_the_normal_compose_has_no_mock_sso_and_no_default_identity():
     assert "LCIT_SIGN_BOOTSTRAP_ADMIN: ${LCIT_SIGN_BOOTSTRAP_ADMIN:-}\n" in compose
     assert "alice" not in compose.lower().replace("alice@", "")  # no fictional person
     # The mock SSO only starts under an explicit profile.
-    for service in ("mock-oidc", "mock-docusign"):
+    for service in ("mock-oidc",):
         block = re.search(rf"\n  {service}:\n(.*?)(?=\n  [a-z-]+:\n|\nnetworks:)", compose, re.S)
         assert block and 'profiles: ["crashtest", "dev-sso"]' in block.group(1), service
 

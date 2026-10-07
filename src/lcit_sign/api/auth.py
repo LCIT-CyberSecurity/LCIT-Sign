@@ -169,6 +169,9 @@ async def callback(
             last_login_at=now,
         )
         db.add(user)
+        db.flush()
+        # Everyone can sign by default; an administrator may take the role away.
+        db.add(UserRole(user_id=user.id, role=Role.SIGNER))
     else:
         user.issuer = claims.issuer
         user.subject = claims.subject

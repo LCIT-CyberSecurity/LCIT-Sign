@@ -99,7 +99,6 @@ export default function SignerAssignmentsPage() {
                   <div className="card-title">{a.document_title}</div>
                   <div className="muted small">
                     Version {a.version_label} — {a.campaign_name}
-                    {a.signature_method === "DOCUSIGN" ? " — signature eIDAS (DocuSign)" : ""}
                   </div>
                 </div>
                 <div className="card-meta">

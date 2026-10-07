@@ -55,11 +55,6 @@ def _campaign(db: DbSession, campaign_id: uuid.UUID) -> Campaign:
         raise HTTPException(404, "Campaign not found")
     if campaign.status != CampaignStatus.ACTIVE:
         raise HTTPException(409, "Cette campagne n'est plus ouverte à la signature")
-    if campaign.signature_method == "DOCUSIGN":
-        raise HTTPException(
-            409,
-            "Cette demande se signe avec DocuSign : ouvrez l'e-mail que DocuSign vous a envoyé.",
-        )
     return campaign
 
 

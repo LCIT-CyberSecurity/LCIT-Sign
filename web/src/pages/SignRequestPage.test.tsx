@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import SignRequestPage from "./SignRequestPage";
 import { api } from "../api/client";
@@ -42,22 +42,12 @@ const campaign = (documents: unknown[] = [prepared], roles: unknown[] = [everyon
 
 // What the server says once the request was sent.
 const server = { status: "DRAFT" };
-// The ways to sign the server offers (empty: no choice, as before DocuSign existed).
-const methods: unknown[] = [];
-const BOTH = [
-  { method: "LOCAL", label: "Signature LCIT", description: "La signature de LCIT Sign.", available: true },
-  {
-    method: "DOCUSIGN", label: "Signature eIDAS (DocuSign)", description: "Chez DocuSign.", available: false,
-    unavailable_reason: "DocuSign n'est pas configuré (Administration → DocuSign).",
-  },
-];
 const NOTHING_SIGNED = { campaigns: [], signed: [], outstanding: [], totals: { signed: 0, outstanding: 0, waiting: 0 } };
 
 function open(step = 1, documents?: unknown[], plan: unknown = null) {
   vi.mocked(api.get).mockImplementation(async (path: string) => {
     if (path === "/campaigns/c1") return { ...campaign(documents), status: server.status, plan };
     if (path.startsWith("/signed/documents")) return NOTHING_SIGNED;
-    if (path === "/campaigns/_meta/signature-methods") return methods;
     return [];
   });
   render(
@@ -71,14 +61,12 @@ function open(step = 1, documents?: unknown[], plan: unknown = null) {
   );
 }
 
-const unmountAll = () => cleanup();
 const stepButton = (name: RegExp) => screen.getByRole("button", { name });
 
 describe("SignRequestPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     server.status = "DRAFT";
-    methods.length = 0;
     vi.mocked(api.post).mockImplementation(async (path: string, body?: unknown) => {
       if (path.endsWith("/launch")) {
         server.status = (body as { start_at: string | null }).start_at ? "SCHEDULED" : "ACTIVE";
@@ -180,46 +168,6 @@ describe("SignRequestPage", () => {
       start_at: null,
     });
     expect((call[1] as { deadline: string }).deadline.startsWith("2099-01-3")).toBe(true);
-  });
-
-  it("offers the way to sign, says why DocuSign is not available yet, and sends the choice", async () => {
-    methods.push(...BOTH);
-    open(1);
-    const card = await screen.findByTestId("method-card");
-    expect(within(card).getByRole("radio", { name: /Signature LCIT/ })).toBeChecked();
-    const docusign = within(card).getByRole("radio", { name: /DocuSign/ });
-    expect(docusign).toBeDisabled();
-    expect(card).toHaveTextContent("DocuSign n'est pas configuré");
-
-    // Once it can be used, the choice is kept with the plan and sent with the launch.
-    methods[1] = { ...BOTH[1], available: true, unavailable_reason: null };
-    unmountAll();
-    open(1);
-    const ready = await screen.findByTestId("method-card");
-    fireEvent.click(within(ready).getByRole("radio", { name: /DocuSign/ }));
-    await waitFor(() =>
-      expect(
-        vi.mocked(api.put).mock.calls.some(
-          (c) => c[0] === "/campaigns/c1/plan" && (c[1] as { signature_method: string }).signature_method === "DOCUSIGN",
-        ),
-      ).toBe(true),
-    );
-    fireEvent.click(stepButton(/Vérifier et envoyer/));
-    await screen.findByTestId("recap-card");
-    expect(screen.getByTestId("docusign-note")).toHaveTextContent("signent chez DocuSign");
-    fireEvent.click(screen.getByRole("button", { name: /Envoyer pour signature/ }));
-    fireEvent.click(screen.getByRole("button", { name: /Oui, envoyer maintenant/ }));
-    await screen.findByTestId("signed-step");
-    const call = vi.mocked(api.post).mock.calls.find((c) => c[0] === "/campaigns/c1/launch")!;
-    expect(call[1]).toMatchObject({ signature_method: "DOCUSIGN" });
-  });
-
-  it("finds the chosen method again on a reload", async () => {
-    methods.push(...BOTH);
-    methods[1] = { ...BOTH[1], available: true };
-    open(1, undefined, { signature_method: "DOCUSIGN" });
-    const card = await screen.findByTestId("method-card");
-    await waitFor(() => expect(within(card).getByRole("radio", { name: /DocuSign/ })).toBeChecked());
   });
 
   it("schedules the sending when a start date in the future is given", async () => {

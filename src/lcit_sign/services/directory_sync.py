@@ -8,7 +8,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session as DbSession
 
 from lcit_sign.models.directory import DirectorySyncRun, Group, GroupMembership
-from lcit_sign.models.user import User
+from lcit_sign.models.user import Role, User, UserRole
 from lcit_sign.services.audit import append_audit_event
 from lcit_sign.services.directory.base import (
     DirectoryConnector,
@@ -169,6 +169,9 @@ def sync_directory(db: DbSession, connector: DirectoryConnector) -> DirectorySyn
                 active=entry_user.active,
             )
             db.add(user)
+            db.flush()
+            # Everyone can sign by default; an administrator may take the role away.
+            db.add(UserRole(user_id=user.id, role=Role.SIGNER))
             run.users_added += 1
         else:
             user.external_directory_id = entry_user.external_id

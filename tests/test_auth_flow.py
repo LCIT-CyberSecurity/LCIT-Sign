@@ -82,17 +82,17 @@ def test_full_login_flow_grants_bootstrap_admin(tmp_path, mock_oidc_base_url):
         assert me_response.status_code == 200
         body = me_response.json()
         assert body["email"] == BOOTSTRAP_ADMIN_EMAIL
-        assert body["roles"] == ["ADMIN"]
+        assert body["roles"] == ["ADMIN", "SIGNER"]
 
 
-def test_non_bootstrap_user_gets_no_roles_and_cannot_reach_admin_api(tmp_path, mock_oidc_base_url):
+def test_non_bootstrap_user_signs_by_default_and_not_admin(tmp_path, mock_oidc_base_url):
     app = make_app(tmp_path, mock_oidc_base_url)
     with TestClient(app) as client:
         Base.metadata.create_all(app.state.engine)
 
         login_as(client, mock_oidc_base_url, sub="u-rh-1")
         me_response = client.get("/api/auth/me")
-        assert me_response.json()["roles"] == []
+        assert me_response.json()["roles"] == ["SIGNER"]  # everyone can sign by default
 
         admin_response = client.get("/api/admin/audit")
         assert admin_response.status_code == 403

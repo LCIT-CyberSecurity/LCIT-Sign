@@ -45,7 +45,7 @@ EXTRA_PEOPLE = [
     ("admin.crash", "Admin", "Crash", "Direction"),
 ]
 
-# Everyone not listed here is an ordinary person: no role at all (being asked to sign is enough).
+# Everyone can sign by default (SIGNER); these come on top.
 ROLES: dict[str, list[Role]] = {
     "admin.crash": [Role.ADMIN],
     "paul.muller": [Role.OPERATOR],  # business administrator: sees every campaign, not its content
@@ -108,7 +108,8 @@ def seed_accounts(db: Session) -> list[tuple[str, str, str, list[str]]]:
         password = password_of(person.given_name)
         person.password_hash = hash_password(password)
         person.must_change_password = False
-        wanted = ROLES.get(person.email.split("@")[0], [])
+        # Everyone can sign (the default); the roles above come on top.
+        wanted = [Role.SIGNER, *ROLES.get(person.email.split("@")[0], [])]
         have = set(db.execute(select(UserRole.role).where(UserRole.user_id == person.id)).scalars())
         for role in wanted:
             if role not in have:
