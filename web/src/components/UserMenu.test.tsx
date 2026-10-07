@@ -26,6 +26,23 @@ describe("<UserMenu />", () => {
     expect(screen.getByText("Signataire")).toBeInTheDocument();
   });
 
+  it("offers to change the password to a local account (the system one or a created one), not to an SSO one", () => {
+    const change = vi.fn();
+    const { unmount } = render(<UserMenu user={{ ...user, source: "local" }} onSignOut={vi.fn()} onChangePassword={change} />);
+    expect(screen.getByRole("button", { name: /Changer le mot de passe/ })).toBeInTheDocument();
+    unmount();
+    const builtin = render(<UserMenu user={{ ...user, source: "builtin" }} onSignOut={vi.fn()} onChangePassword={change} />);
+    expect(screen.getByRole("button", { name: /Changer le mot de passe/ })).toBeInTheDocument();
+    builtin.unmount();
+    render(<UserMenu user={{ ...user, source: "sso" }} onSignOut={vi.fn()} onChangePassword={change} />);
+    expect(screen.queryByRole("button", { name: /Changer le mot de passe/ })).toBeNull();
+  });
+
+  it("names the Préparateur profile", () => {
+    render(<UserMenu user={{ ...user, roles: ["PREPARER"] }} onSignOut={vi.fn()} />);
+    expect(screen.getAllByText("Préparateur").length).toBeGreaterThan(0);
+  });
+
   it("switches to night mode and remembers it", async () => {
     const u = userEvent.setup();
     render(<UserMenu user={user} onSignOut={vi.fn()} />);

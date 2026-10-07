@@ -103,7 +103,9 @@ def test_each_fictional_person_signs_in_with_their_first_name_in_lowercase(
         assert password == name.split(" ")[0].lower(), name
     me = TestClient(app)
     local_login(me, "bob.dupont@lcit-test.local", "bob")
-    assert me.get("/api/auth/me").json()["must_change_password"] is False
+    shown = me.get("/api/auth/me").json()
+    assert shown["must_change_password"] is False and shown["source"] == "local"
+
 
 
 def test_only_the_hash_is_in_the_database(tmp_path, mock_oidc_base_url):

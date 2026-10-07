@@ -17,6 +17,7 @@ import type { Me } from "../api/types";
 
 const ROLE_LABELS: Record<string, string> = {
   SIGNER: "Signataire",
+  PREPARER: "Préparateur",
   OPERATOR: "Opérateur",
   ADMIN: "Administrateur",
 };
@@ -152,7 +153,7 @@ export default function UserMenu({
         </div>
 
         <div className="user-menu-foot">
-          {user.source === "builtin" && onChangePassword && (
+          {(user.source === "builtin" || user.source === "local") && onChangePassword && (
             <button
               type="button"
               onClick={() => {

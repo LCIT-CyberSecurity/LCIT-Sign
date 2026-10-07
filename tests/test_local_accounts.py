@@ -110,6 +110,7 @@ def test_wrong_password_and_disabled_account_are_refused(tmp_path, mock_oidc_bas
 
 def test_an_sso_account_cannot_sign_in_locally(tmp_path, mock_oidc_base_url):
     app, admin, _operator, signer, _ = setup_campaign_fixture(tmp_path, mock_oidc_base_url)
+    assert signer.get("/api/auth/me").json()["source"] == "sso"  # no password here: nothing to change
     sso_email = signer.get("/api/auth/me").json()["email"]
     assert local_login(app, email=sso_email, password="anything-at-all")[1].status_code == 401
     manual = admin.post("/api/admin/users", json={"email": "manual@corp.test"}).json()

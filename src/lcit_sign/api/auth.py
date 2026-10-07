@@ -391,11 +391,13 @@ async def me(
         # True only for the built-in account while it still has its initial password:
         # the interface reminds its owner, at every sign-in, until it is changed.
         "must_change_password": user.must_change_password,
+        # How they sign in: the built-in account, a local account (it has a password here, which
+        # they may change), or the SSO alone.
         "source": (
             "builtin"
             if user.issuer.startswith("builtin:")
             else "local"
-            if user.issuer == LOCAL_ISSUER
+            if user.password_hash
             else "sso"
         ),
     }
