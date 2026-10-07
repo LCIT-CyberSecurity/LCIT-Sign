@@ -103,12 +103,85 @@ def reset_admin_password() -> int:
     return 0
 
 
+def export_connections() -> int:
+    """The sign-in providers and directory connectors as stored: client ids and the secrets still
+    ENCRYPTED under the master key (useless without it). Meant for a private file outside the
+    repository, to restore the same settings later instead of typing them again."""
+    from lcit_sign.models.directory import DirectoryConnectorConfig
+    from lcit_sign.models.login_provider import LoginProvider
+
+    settings = get_settings()
+    with make_session_factory(make_engine(settings.database_url))() as db:
+        out = {
+            "version": 1,
+            "login_providers": [
+                {"provider": r.provider, "client_id": r.client_id, "tenant_id": r.tenant_id,
+                 "encrypted_secret": r.encrypted_secret}
+                for r in db.execute(select(LoginProvider)).scalars()
+            ],
+            "directory_connectors": [
+                {"source": r.source, "settings_json": r.settings_json,
+                 "encrypted_secret": r.encrypted_secret,
+                 "sync_interval_minutes": r.sync_interval_minutes}
+                for r in db.execute(select(DirectoryConnectorConfig)).scalars()
+                if r.source != "local"
+            ],
+        }
+    print(json.dumps(out, indent=2))  # noqa: T201
+    return 0
+
+
+def import_connections() -> int:
+    """Put back what `export-connections` wrote (JSON on stdin). Refuses secrets that this
+    installation's master key cannot read."""
+    from lcit_sign.models.directory import DirectoryConnectorConfig
+    from lcit_sign.models.login_provider import LoginProvider
+    from lcit_sign.services.crypto import decrypt_secret
+
+    settings = get_settings()
+    data = json.load(sys.stdin)
+    rows = [*data.get("login_providers", []), *data.get("directory_connectors", [])]
+    for row in rows:
+        if row.get("encrypted_secret"):
+            try:
+                decrypt_secret(settings.master_key, row["encrypted_secret"])
+            except Exception:  # noqa: BLE001 - wrong key or damaged file
+                name = row.get("provider") or row.get("source")
+                print(f"« {name} » : le secret ne se déchiffre pas avec la clé maître de cette "  # noqa: T201
+                      "installation (ce n'est pas la même que celle de l'export).")
+                return 1
+    with make_session_factory(make_engine(settings.database_url))() as db:
+        for r in data.get("login_providers", []):
+            row = db.get(LoginProvider, r["provider"]) or LoginProvider(provider=r["provider"])
+            row.client_id, row.tenant_id = r["client_id"], r.get("tenant_id")
+            row.encrypted_secret = r["encrypted_secret"]
+            db.add(row)
+        for r in data.get("directory_connectors", []):
+            cfg = db.get(DirectoryConnectorConfig, r["source"]) or DirectoryConnectorConfig(
+                source=r["source"]
+            )
+            cfg.settings_json = r["settings_json"]
+            cfg.encrypted_secret = r.get("encrypted_secret")
+            cfg.sync_interval_minutes = r.get("sync_interval_minutes")
+            db.add(cfg)
+        db.commit()
+    print(f"{len(rows)} connexion(s) restaurée(s).")  # noqa: T201
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="lcit_sign.cli")
-    parser.add_argument("command", choices=["verify-all", "reset-admin-password"])
+    parser.add_argument(
+        "command",
+        choices=["verify-all", "reset-admin-password", "export-connections", "import-connections"],
+    )
     args = parser.parse_args(argv)
     if args.command == "reset-admin-password":
         return reset_admin_password()
+    if args.command == "export-connections":
+        return export_connections()
+    if args.command == "import-connections":
+        return import_connections()
     result = verify_all()
     print(json.dumps(result, indent=2))  # noqa: T201
     return 0 if result["ok"] else 1

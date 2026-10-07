@@ -32,7 +32,7 @@ describe("<LoginPage />", () => {
     options = { sso: true, provider, local: true };
     render(<LoginPage />);
     const sso = await screen.findByRole("link", { name: new RegExp(label) });
-    expect(sso).toHaveAttribute("href", "/api/auth/login");
+    expect(sso).toHaveAttribute("href", "/api/auth/login?provider=sso");
     expect(sso.querySelector("svg")).not.toBeNull();
     const local = screen.getByTestId("local-login");
     expect(local.tagName).toBe("DETAILS");
@@ -52,11 +52,21 @@ describe("<LoginPage />", () => {
     expect(screen.queryByTestId("crashtest-note")).toBeNull();
   });
 
-  it("offers the CrashTest mock SSO next to the real one", async () => {
-    options = { sso: true, provider: "entra", local: true, crashtest: true, test_sso: true };
+  it("offers one button per provider, Microsoft and Google first, then the test SSO", async () => {
+    options = {
+      sso: true, provider: "entra", local: true, crashtest: true,
+      providers: [
+        { id: "entra", kind: "entra" },
+        { id: "google", kind: "google" },
+        { id: "test", kind: "generic" },
+      ],
+    };
     render(<LoginPage />);
-    expect(await screen.findByTestId("sso-button")).toHaveTextContent("Continuer avec Microsoft");
-    expect(screen.getByTestId("test-sso-button")).toHaveAttribute("href", "/api/auth/login?test_sso=true");
+    const first = await screen.findByTestId("sso-button");
+    expect(first).toHaveTextContent("Continuer avec Microsoft");
+    expect(first).toHaveAttribute("href", "/api/auth/login?provider=entra");
+    expect(screen.getByTestId("sso-button-google")).toHaveTextContent("Continuer avec Google");
+    expect(screen.getByTestId("sso-button-test")).toHaveAttribute("href", "/api/auth/login?provider=test");
   });
 
   it("shows only the local form when no SSO is configured", async () => {

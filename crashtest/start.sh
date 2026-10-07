@@ -31,6 +31,13 @@ echo "== CrashTest « $LCIT_SIGN_PREFIX » : démarrage de la pile"
 echo "== Jeu de données (comptes fictifs, campagnes)"
 "${COMPOSE[@]}" exec -T api python /crashtest/seed.py
 
+# Your own settings (Microsoft, Google, Entra directory), kept in a private file outside the
+# repository by scripts/connections.sh export --crashtest: put back if there is one.
+if [ -f "${LCIT_SIGN_PRIVATE_DIR:-$HOME/.config/lcit-sign}/connections.json" ]; then
+    echo "== Restauration de vos réglages de connexion"
+    ./scripts/connections.sh import --crashtest
+fi
+
 echo
 echo "LCIT Sign CrashTest est prêt : $LCIT_SIGN_PUBLIC_BASE_URL"
 echo "  (réinitialiser : ./crashtest/reset.sh — ne touche qu'au projet « $LCIT_SIGN_PREFIX »)"

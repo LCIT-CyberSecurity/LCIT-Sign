@@ -12,11 +12,12 @@ import { GoogleLogo, MicrosoftLogo } from "../components/ProviderLogos";
 interface Options {
   sso: boolean;
   provider: "entra" | "google" | "generic" | null;
+  /** One button per provider: Microsoft and Google set up by an administrator, then the
+   *  environment's own (the mock SSO on CrashTest). */
+  providers?: { id: string; kind: "entra" | "google" | "generic" }[];
   local: boolean;
   /** The CrashTest stack: fictional accounts, say so. */
   crashtest?: boolean;
-  /** CrashTest with a real SSO in front: the mock SSO (fictional people) as a second button. */
-  test_sso?: boolean;
 }
 
 const SSO_BUTTONS: Record<string, { label: string; logo: ReactNode }> = {
@@ -79,7 +80,14 @@ export default function LoginPage() {
       .then(setOptions)
       .catch(() => setOptions({ sso: false, provider: null, local: true }));
   }, []);
-  const button = options?.sso ? (SSO_BUTTONS[options.provider ?? "generic"] ?? SSO_BUTTONS.generic) : null;
+  // Older servers only said which single provider there was.
+  const buttons = !options?.sso
+    ? []
+    : (options.providers ?? [{ id: "sso", kind: options.provider ?? "generic" }]).map((p) => ({
+        id: p.id,
+        ...(SSO_BUTTONS[p.kind] ?? SSO_BUTTONS.generic),
+      }));
+  const button = buttons.length > 0;
 
   return (
     <div className="login-page">
@@ -132,26 +140,17 @@ export default function LoginPage() {
                   mot de passe = prénom en minuscules (Bob Dupont : bob.dupont@lcit-test.local / bob).
                 </p>
               )}
-              {button && (
+              {buttons.map((b, index) => (
                 <a
-                  className="button button--primary button--block button--provider"
-                  href="/api/auth/login"
-                  data-testid="sso-button"
+                  key={b.id}
+                  className={`button ${index === 0 ? "button--primary " : ""}button--block button--provider`}
+                  href={`/api/auth/login?provider=${encodeURIComponent(b.id)}`}
+                  data-testid={index === 0 ? "sso-button" : `sso-button-${b.id}`}
                 >
-                  {button.logo}
-                  {button.label}
+                  {b.logo}
+                  {b.label}
                 </a>
-              )}
-              {options?.test_sso && (
-                <a
-                  className="button button--block button--provider"
-                  href="/api/auth/login?test_sso=true"
-                  data-testid="test-sso-button"
-                >
-                  <LogIn size={18} aria-hidden="true" />
-                  SSO de test CrashTest (personnes fictives)
-                </a>
-              )}
+              ))}
               {options?.local && button && (
                 <details className="auth-local" data-testid="local-login">
                   <summary>Connexion locale</summary>

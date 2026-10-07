@@ -35,7 +35,7 @@ from lcit_sign.services.local_auth import (
     change_password,
     check_credentials,
 )
-from lcit_sign.services.sso import SsoConfig, has_test_sso_alongside, resolve_sso
+from lcit_sign.services.sso import SsoConfig, available_sso, resolve_sso
 
 router = APIRouter(tags=["auth"])
 
@@ -46,9 +46,9 @@ def _redirect_uri(request: Request) -> str:
 
 
 def _require_oidc_configured(
-    db: DbSession, request: Request, *, test_sso: bool = False
+    db: DbSession, request: Request, provider: str | None = None
 ) -> SsoConfig:
-    sso = resolve_sso(db, request.app.state.settings, test_sso=test_sso)
+    sso = resolve_sso(db, request.app.state.settings, provider)
     if sso is None:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "SSO is not configured")
     return sso
@@ -56,9 +56,9 @@ def _require_oidc_configured(
 
 @router.get("/auth/login")
 async def login(
-    request: Request, db: DbSession = Depends(get_db), test_sso: bool = False
+    request: Request, db: DbSession = Depends(get_db), provider: str | None = None
 ) -> Response:
-    sso = _require_oidc_configured(db, request, test_sso=test_sso)
+    sso = _require_oidc_configured(db, request, provider)
     settings: Settings = request.app.state.settings
 
     try:
@@ -78,7 +78,7 @@ async def login(
             "state": auth_request.state,
             "nonce": auth_request.nonce,
             "code_verifier": auth_request.code_verifier,
-            "test_sso": test_sso,
+            "provider": sso.key,
             "issued_at": time.time(),
         },
         settings.session_secret,
@@ -107,7 +107,7 @@ async def callback(
         if raw_flow_cookie
         else None
     )
-    sso = _require_oidc_configured(db, request, test_sso=bool(flow and flow.get("test_sso")))
+    sso = _require_oidc_configured(db, request, flow.get("provider") if flow else None)
 
     if flow is None or flow.get("state") != state:
         append_audit_event(
@@ -239,19 +239,19 @@ def login_options(request: Request) -> dict[str, Any]:
     settings: Settings = request.app.state.settings
     factory = getattr(request.app.state, "session_factory", None)
     if factory is None:  # no database (some tests): the environment only
-        sso, test_sso = resolve_sso(None, settings), False
+        choices = available_sso(None, settings)
     else:
         with factory() as db:
-            sso, test_sso = resolve_sso(db, settings), has_test_sso_alongside(db, settings)
-    provider = sso.provider if sso else None
+            choices = available_sso(db, settings)
     return {
-        "sso": provider is not None,
-        "provider": provider,
+        "sso": bool(choices),
+        "provider": choices[0].provider if choices else None,
+        # One button per provider the administrator set up (Microsoft, Google), then the
+        # environment's own (the mock SSO on CrashTest).
+        "providers": [{"id": c.key, "kind": c.provider} for c in choices],
         "local": settings.local_auth_enabled,
         # The CrashTest stack (fictional accounts): the sign-in page says so.
         "crashtest": settings.crashtest,
-        # CrashTest with a real SSO: the mock one stays available as a second button.
-        "test_sso": test_sso,
     }
 
 

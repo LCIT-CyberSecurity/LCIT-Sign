@@ -13,6 +13,7 @@ import SignRequestPage from "./pages/SignRequestPage";
 import OperatorCampaignDetailPage from "./pages/OperatorCampaignDetailPage";
 import AdminUsersPage from "./pages/AdminUsersPage";
 import AdminDirectoryPage from "./pages/AdminDirectoryPage";
+import AdminLoginPage from "./pages/AdminLoginPage";
 import AdminMailPage from "./pages/AdminMailPage";
 import AdminDocusignPage from "./pages/AdminDocusignPage";
 import AdminAuditPage from "./pages/AdminAuditPage";
@@ -116,6 +117,14 @@ export default function App() {
           element={
             <RoleRoute allowed={isAdmin}>
               <AdminUsersPage />
+            </RoleRoute>
+          }
+        />
+        <Route
+          path="/admin/login"
+          element={
+            <RoleRoute allowed={isAdmin}>
+              <AdminLoginPage />
             </RoleRoute>
           }
         />

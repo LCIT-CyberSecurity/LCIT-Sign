@@ -25,6 +25,7 @@ from lcit_sign.models.document import (
     FieldKind,
 )
 from lcit_sign.models.docusign import DocusignConfig, DocusignEnvelope
+from lcit_sign.models.login_provider import LoginProvider
 from lcit_sign.models.mail import MailConnector, Notification, NotificationStatus, NotificationType
 from lcit_sign.models.report import Report
 from lcit_sign.models.session import Session
@@ -33,6 +34,7 @@ from lcit_sign.models.signing_key import SigningKey, SigningKeyStatus
 from lcit_sign.models.user import Role, User, UserRole
 
 __all__ = [
+    "LoginProvider",
     "AssignmentStatus",
     "AuditChainState",
     "AuditEvent",

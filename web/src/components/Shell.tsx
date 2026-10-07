@@ -58,6 +58,7 @@ const TITLES: [prefix: string, label: string][] = [
   ["/campaigns", "Suivi"],
   ["/admin/users", "Utilisateurs"],
   ["/admin/branding", "Logo"],
+  ["/admin/login", "Connexion"],
   ["/admin/directory", "Annuaire"],
   ["/admin/mail", "E-mail"],
   ["/admin/docusign", "DocuSign"],
@@ -125,6 +126,7 @@ export default function Shell() {
               <div className="nav-heading">Administration</div>
               <NavItem to="/admin/users" icon={<Users size={18} />} label="Utilisateurs" onNavigate={close} />
               <NavItem to="/admin/branding" icon={<ImageIcon size={18} />} label="Logo" onNavigate={close} />
+              <NavItem to="/admin/login" icon={<KeyRound size={18} />} label="Connexion" onNavigate={close} />
               <NavItem to="/admin/directory" icon={<FolderCog size={18} />} label="Annuaire" onNavigate={close} />
               <NavItem to="/admin/mail" icon={<Mail size={18} />} label="Email" onNavigate={close} />
               <NavItem
