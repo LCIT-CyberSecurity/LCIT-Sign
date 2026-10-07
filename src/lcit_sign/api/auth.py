@@ -249,7 +249,13 @@ def login_options(request: Request) -> dict[str, Any]:
     form (the built-in administrator and the accounts an administrator gave a password to)."""
     settings: Settings = request.app.state.settings
     provider = sso_provider(settings)
-    return {"sso": provider is not None, "provider": provider, "local": settings.local_auth_enabled}
+    return {
+        "sso": provider is not None,
+        "provider": provider,
+        "local": settings.local_auth_enabled,
+        # The CrashTest stack (fictional accounts): the sign-in page says so.
+        "crashtest": settings.crashtest,
+    }
 
 
 @router.post("/auth/local-login")

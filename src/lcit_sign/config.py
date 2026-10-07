@@ -33,6 +33,9 @@ class Settings(BaseSettings):
 
     # Generic OIDC Authorization Code + PKCE provider. Left empty, auth
     # endpoints return a clear configuration error rather than failing open.
+    # True only on the throwaway CrashTest stack (crashtest/): the fictional dataset may be loaded
+    # and the sign-in page says so. Never set on a real installation.
+    crashtest: bool = False
     # Only the look of the sign-in button (logo and wording): the engine is always generic OIDC.
     # Left empty, it is read from the issuer address (Microsoft, Google) and is "generic" otherwise.
     oidc_provider: Literal["", "entra", "google", "generic"] = ""
