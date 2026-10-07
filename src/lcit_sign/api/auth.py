@@ -28,7 +28,7 @@ from lcit_sign.deps import get_current_user, get_db
 from lcit_sign.models.session import Session as SessionRecord
 from lcit_sign.models.user import Role, User, UserRole
 from lcit_sign.services.audit import actor_snapshot, append_audit_event
-from lcit_sign.services.sso import SsoConfig, resolve_sso
+from lcit_sign.services.sso import SsoConfig, has_test_sso_alongside, resolve_sso
 from lcit_sign.services.local_auth import (
     LOCAL_ISSUER,
     LoginThrottle,
@@ -45,16 +45,20 @@ def _redirect_uri(request: Request) -> str:
     return settings.public_base_url.rstrip("/") + "/api/auth/callback"
 
 
-def _require_oidc_configured(db: DbSession, request: Request) -> SsoConfig:
-    sso = resolve_sso(db, request.app.state.settings)
+def _require_oidc_configured(
+    db: DbSession, request: Request, *, test_sso: bool = False
+) -> SsoConfig:
+    sso = resolve_sso(db, request.app.state.settings, test_sso=test_sso)
     if sso is None:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "SSO is not configured")
     return sso
 
 
 @router.get("/auth/login")
-async def login(request: Request, db: DbSession = Depends(get_db)) -> Response:
-    sso = _require_oidc_configured(db, request)
+async def login(
+    request: Request, db: DbSession = Depends(get_db), test_sso: bool = False
+) -> Response:
+    sso = _require_oidc_configured(db, request, test_sso=test_sso)
     settings: Settings = request.app.state.settings
 
     try:
@@ -74,6 +78,7 @@ async def login(request: Request, db: DbSession = Depends(get_db)) -> Response:
             "state": auth_request.state,
             "nonce": auth_request.nonce,
             "code_verifier": auth_request.code_verifier,
+            "test_sso": test_sso,
             "issued_at": time.time(),
         },
         settings.session_secret,
@@ -94,7 +99,6 @@ async def login(request: Request, db: DbSession = Depends(get_db)) -> Response:
 async def callback(
     request: Request, code: str, state: str, db: DbSession = Depends(get_db)
 ) -> Response:
-    sso = _require_oidc_configured(db, request)
     settings: Settings = request.app.state.settings
 
     raw_flow_cookie = request.cookies.get(LOGIN_FLOW_COOKIE)
@@ -103,6 +107,7 @@ async def callback(
         if raw_flow_cookie
         else None
     )
+    sso = _require_oidc_configured(db, request, test_sso=bool(flow and flow.get("test_sso")))
 
     if flow is None or flow.get("state") != state:
         append_audit_event(
@@ -234,10 +239,10 @@ def login_options(request: Request) -> dict[str, Any]:
     settings: Settings = request.app.state.settings
     factory = getattr(request.app.state, "session_factory", None)
     if factory is None:  # no database (some tests): the environment only
-        sso = resolve_sso(None, settings)
+        sso, test_sso = resolve_sso(None, settings), False
     else:
         with factory() as db:
-            sso = resolve_sso(db, settings)
+            sso, test_sso = resolve_sso(db, settings), has_test_sso_alongside(db, settings)
     provider = sso.provider if sso else None
     return {
         "sso": provider is not None,
@@ -245,6 +250,8 @@ def login_options(request: Request) -> dict[str, Any]:
         "local": settings.local_auth_enabled,
         # The CrashTest stack (fictional accounts): the sign-in page says so.
         "crashtest": settings.crashtest,
+        # CrashTest with a real SSO: the mock one stays available as a second button.
+        "test_sso": test_sso,
     }
 
 

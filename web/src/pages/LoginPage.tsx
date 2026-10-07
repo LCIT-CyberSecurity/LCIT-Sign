@@ -15,6 +15,8 @@ interface Options {
   local: boolean;
   /** The CrashTest stack: fictional accounts, say so. */
   crashtest?: boolean;
+  /** CrashTest with a real SSO in front: the mock SSO (fictional people) as a second button. */
+  test_sso?: boolean;
 }
 
 const SSO_BUTTONS: Record<string, { label: string; logo: ReactNode }> = {
@@ -138,6 +140,16 @@ export default function LoginPage() {
                 >
                   {button.logo}
                   {button.label}
+                </a>
+              )}
+              {options?.test_sso && (
+                <a
+                  className="button button--block button--provider"
+                  href="/api/auth/login?test_sso=true"
+                  data-testid="test-sso-button"
+                >
+                  <LogIn size={18} aria-hidden="true" />
+                  SSO de test CrashTest (personnes fictives)
                 </a>
               )}
               {options?.local && button && (

@@ -36,11 +36,13 @@ def make_app(
     return app
 
 
-def login_as(client: TestClient, mock_oidc_base_url: str, *, sub: str) -> httpx.Response:
+def login_as(
+    client: TestClient, mock_oidc_base_url: str, *, sub: str, path: str = "/api/auth/login"
+) -> httpx.Response:
     """Drive the full Authorization Code + PKCE dance against the real
     (locally running) mock OIDC provider, then hit our callback.
     """
-    login_response = client.get("/api/auth/login", follow_redirects=False)
+    login_response = client.get(path, follow_redirects=False)
     assert login_response.status_code == 302
     authorize_url = login_response.headers["location"]
     assert authorize_url.startswith(mock_oidc_base_url + "/authorize")

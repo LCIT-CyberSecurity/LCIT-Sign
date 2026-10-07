@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from urllib.parse import urlparse
 
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from lcit_sign.config import Settings
@@ -41,9 +42,12 @@ def _provider_of(settings: Settings, issuer: str) -> str:
 def _from_directory(db: Session, settings: Settings) -> SsoConfig | None:
     if not settings.master_key:
         return None
-    row = db.execute(
-        select(DirectoryConnectorConfig).where(DirectoryConnectorConfig.source == "entra")
-    ).scalar_one_or_none()
+    try:
+        row = db.execute(
+            select(DirectoryConnectorConfig).where(DirectoryConnectorConfig.source == "entra")
+        ).scalar_one_or_none()
+    except SQLAlchemyError:  # no table yet (first start): the environment only
+        return None
     if row is None or not row.encrypted_secret:
         return None
     try:
@@ -59,13 +63,30 @@ def _from_directory(db: Session, settings: Settings) -> SsoConfig | None:
     )
 
 
-def resolve_sso(db: Session | None, settings: Settings) -> SsoConfig | None:
-    env = None
+def _from_environment(settings: Settings) -> SsoConfig | None:
     if settings.oidc_issuer and settings.oidc_client_id and settings.oidc_client_secret:
-        env = SsoConfig(
+        return SsoConfig(
             settings.oidc_issuer, settings.oidc_client_id, settings.oidc_client_secret,
             _provider_of(settings, settings.oidc_issuer),
         )
+    return None
+
+
+def resolve_sso(
+    db: Session | None, settings: Settings, *, test_sso: bool = False
+) -> SsoConfig | None:
+    """`test_sso`: the CrashTest stack's own (mock) SSO, offered next to the real one."""
+    env = _from_environment(settings)
+    if test_sso:
+        return env if settings.crashtest else None
     if env is None or settings.crashtest:
         return (_from_directory(db, settings) if db is not None else None) or env
     return env
+
+
+def has_test_sso_alongside(db: Session | None, settings: Settings) -> bool:
+    """CrashTest with a real SSO in front: the mock one is offered as a second button."""
+    if not settings.crashtest or db is None:
+        return False
+    env = _from_environment(settings)
+    return env is not None and resolve_sso(db, settings) != env

@@ -52,6 +52,13 @@ describe("<LoginPage />", () => {
     expect(screen.queryByTestId("crashtest-note")).toBeNull();
   });
 
+  it("offers the CrashTest mock SSO next to the real one", async () => {
+    options = { sso: true, provider: "entra", local: true, crashtest: true, test_sso: true };
+    render(<LoginPage />);
+    expect(await screen.findByTestId("sso-button")).toHaveTextContent("Continuer avec Microsoft");
+    expect(screen.getByTestId("test-sso-button")).toHaveAttribute("href", "/api/auth/login?test_sso=true");
+  });
+
   it("shows only the local form when no SSO is configured", async () => {
     options = { sso: false, provider: null, local: true };
     render(<LoginPage />);

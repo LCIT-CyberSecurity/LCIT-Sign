@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 from fastapi.testclient import TestClient
-from test_auth_flow import make_app
+from test_auth_flow import login_as, make_app
 
 from lcit_sign import models  # noqa: F401 - registers tables
 from lcit_sign.database import Base
@@ -49,3 +49,27 @@ def test_the_directory_application_is_used_on_crashtest_and_when_no_variables(
             assert sso and sso.provider == "entra" and sso.client_id == "app-1"
             assert sso.issuer == f"https://login.microsoftonline.com/{TENANT}/v2.0"
         assert client.get("/api/auth/options").json()["sso"] is True
+
+
+def test_crashtest_keeps_the_mock_sso_as_a_second_button_next_to_the_real_one(
+    tmp_path, mock_oidc_base_url
+):
+    app = make_app(
+        tmp_path, mock_oidc_base_url, master_key="test-master-key-0123456789abcdef", crashtest=True
+    )
+    with TestClient(app) as client:
+        assert client.get("/api/auth/options").json()["test_sso"] is False  # nothing real yet
+        store_entra(app)
+        options = client.get("/api/auth/options").json()
+        assert options["provider"] == "entra" and options["test_sso"] is True
+        # The mock one signs people in, whatever the real one is.
+        login_as(client, mock_oidc_base_url, sub="u-rh-2", path="/api/auth/login?test_sso=true")
+        assert client.get("/api/auth/me").json()["email"] == "sophie.bernard@lcit-test.local"
+
+
+def test_no_second_button_outside_crashtest(tmp_path, mock_oidc_base_url):
+    app = make_app(tmp_path, mock_oidc_base_url, master_key="test-master-key-0123456789abcdef")
+    with TestClient(app) as client:
+        store_entra(app)
+        assert client.get("/api/auth/options").json()["test_sso"] is False
+        assert client.get("/api/auth/login?test_sso=true").status_code == 503
