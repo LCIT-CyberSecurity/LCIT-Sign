@@ -20,6 +20,7 @@ from lcit_sign.models.document import (
 )
 from lcit_sign.models.user import Role, User
 from lcit_sign.services import branding
+from lcit_sign.services.access import can_read_document
 from lcit_sign.services.audit import append_audit_event
 from lcit_sign.services.field_stamping import (
     FieldError,
@@ -32,7 +33,8 @@ from lcit_sign.services.storage import StorageService
 
 router = APIRouter(tags=["document-fields"])
 
-_manage = require_roles(Role.OPERATOR, Role.ADMIN)
+# Anyone who may prepare; which document they may open is decided per document.
+_manage = require_roles(Role.PREPARER, Role.OPERATOR, Role.ADMIN)
 _DOCUMENTS = "documents"
 
 
@@ -103,6 +105,14 @@ def _version_or_404(db: DbSession, version_id: uuid.UUID) -> DocumentVersion:
     return version
 
 
+def _readable_version(db: DbSession, user: User, version_id: uuid.UUID) -> DocumentVersion:
+    """The version, if this person may open its document (see services/access.py)."""
+    version = _version_or_404(db, version_id)
+    if not can_read_document(db, user, db.get(Document, version.document_id)):  # type: ignore[arg-type]
+        raise HTTPException(403, "Ce document est confidentiel : il n'est pas dans vos campagnes.")
+    return version
+
+
 @router.get("/documents/versions/{version_id}/pages")
 def get_pages(
     request: Request,
@@ -111,7 +121,7 @@ def get_pages(
     db: DbSession = Depends(get_db),
 ) -> list[dict[str, Any]]:
     """Page sizes as a viewer shows them, so the editor draws proportions right."""
-    version = _version_or_404(db, version_id)
+    version = _readable_version(db, user, version_id)
     storage: StorageService = request.app.state.storage
     pdf = storage.read(_DOCUMENTS, version.id, ".pdf")
     return [
@@ -124,7 +134,7 @@ def get_pages(
 def get_fields(
     version_id: uuid.UUID, user: User = Depends(_manage), db: DbSession = Depends(get_db)
 ) -> dict[str, Any]:
-    version = _version_or_404(db, version_id)
+    version = _readable_version(db, user, version_id)
     document = db.get(Document, version.document_id)
     return {
         "editable": version.status == DocumentVersionStatus.DRAFT,
@@ -146,7 +156,7 @@ def put_fields(
 ) -> dict[str, Any]:
     """Replace the prepared elements of a draft. Once a version is published the
     set is frozen with the file: people have signed (or will sign) exactly it."""
-    version = _version_or_404(db, version_id)
+    version = _readable_version(db, user, version_id)
     if version.status != DocumentVersionStatus.DRAFT:
         raise HTTPException(409, "Les éléments d'une version publiée ne peuvent plus être modifiés")
 

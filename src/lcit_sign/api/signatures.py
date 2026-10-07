@@ -23,6 +23,7 @@ from lcit_sign.models.mail import NotificationType
 from lcit_sign.models.signature import Signature
 from lcit_sign.models.user import Role, User
 from lcit_sign.services import branding
+from lcit_sign.services.access import can_read_campaign_content, roles_of
 from lcit_sign.services.audit import append_audit_event
 from lcit_sign.services.campaign_roles import (
     load_roles,
@@ -99,10 +100,22 @@ def _described(signature: Signature, db: DbSession) -> dict[str, Any]:
     }
 
 
-def _authorize_signature_access(signature: Signature, user: User, db: DbSession) -> None:
+def _authorize_signature_access(
+    signature: Signature, user: User, db: DbSession, *, content: bool = True
+) -> None:
+    """The signer, always. Then, for what is confidential (the signed PDF, the certificate, the
+    proof file): an administrator, the owner or a preparer of its campaign. For what only says
+    who signed and when (the details, the chain, the check): also an operator, who supervises
+    every campaign without reading its content."""
     if signature.user_id == user.id:
         return
-    if user_roles(db, user) & {Role.OPERATOR, Role.ADMIN}:
+    roles = roles_of(db, user)
+    if Role.ADMIN in roles:
+        return
+    campaign = db.get(Campaign, signature.campaign_id) if signature.campaign_id else None
+    if campaign is not None and can_read_campaign_content(db, user, campaign):
+        return
+    if not content and Role.OPERATOR in roles:
         return
     raise HTTPException(403, "Not authorized to access this signature")
 
@@ -518,8 +531,11 @@ def signature_chain(
     signature = db.get(Signature, signature_id)
     if signature is None:
         raise HTTPException(404, "Signature not found")
-    _authorize_signature_access(signature, user, db)
-    staff = bool(user_roles(db, user) & {Role.OPERATOR, Role.ADMIN})
+    _authorize_signature_access(signature, user, db, content=False)
+    campaign_row = db.get(Campaign, signature.campaign_id) if signature.campaign_id else None
+    staff = bool(user_roles(db, user) & {Role.OPERATOR, Role.ADMIN}) or (
+        campaign_row is not None and can_read_campaign_content(db, user, campaign_row)
+    )
 
     if signature.campaign_id is None:
         return {
@@ -601,7 +617,7 @@ def get_signature(
     signature = db.get(Signature, signature_id)
     if signature is None:
         raise HTTPException(404, "Signature not found")
-    _authorize_signature_access(signature, user, db)
+    _authorize_signature_access(signature, user, db, content=False)
     return _described(signature, db)
 
 
@@ -677,7 +693,7 @@ def verify_signature(
     signature = db.get(Signature, signature_id)
     if signature is None:
         raise HTTPException(404, "Signature not found")
-    _authorize_signature_access(signature, user, db)
+    _authorize_signature_access(signature, user, db, content=False)
 
     storage: StorageService = request.app.state.storage
     checks = verify_signature_record(db, storage, signature)
