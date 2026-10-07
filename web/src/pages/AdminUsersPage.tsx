@@ -5,9 +5,10 @@ import { api, ApiError } from "../api/client";
 import ConfirmButton from "../components/ConfirmButton";
 import type { AdminUser, Role } from "../api/types";
 
-const ALL_ROLES: Role[] = ["SIGNER", "OPERATOR", "ADMIN"];
+const ALL_ROLES: Role[] = ["SIGNER", "PREPARER", "OPERATOR", "ADMIN"];
 const ROLE_LABELS: Record<Role, string> = {
   SIGNER: "Signataire",
+  PREPARER: "Préparateur",
   OPERATOR: "Opérateur",
   ADMIN: "Admin",
 };
@@ -15,6 +16,7 @@ const SOURCE_LABELS: Record<string, string> = {
   sso: "Connexion SSO",
   manual: "Ajouté à la main",
   builtin: "Compte système",
+  password: "Compte local",
   local: "Démonstration",
   entra: "Entra ID",
   google: "Google Workspace",
@@ -33,6 +35,9 @@ export default function AdminUsersPage() {
   const [email, setEmail] = useState("");
   const [given, setGiven] = useState("");
   const [family, setFamily] = useState("");
+  const [method, setMethod] = useState<"sso" | "local">("sso");
+  const [password, setPassword] = useState("");
+  const [newRoles, setNewRoles] = useState<Role[]>(["SIGNER"]);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -63,12 +68,24 @@ export default function AdminUsersPage() {
   const add = async (e: FormEvent) => {
     e.preventDefault();
     await run(
-      () => api.post("/admin/users", { email, given_name: given, family_name: family }),
-      `${email} a été ajouté. Cette personne se connectera avec son SSO habituel.`,
+      () =>
+        api.post("/admin/users", {
+          email,
+          given_name: given,
+          family_name: family,
+          roles: newRoles,
+          auth_method: method,
+          password: method === "local" ? password : undefined,
+        }),
+      method === "local"
+        ? `${email} a été ajouté avec un compte local : cette personne changera son mot de passe à sa première connexion.`
+        : `${email} a été ajouté. Cette personne se connectera avec son SSO habituel.`,
     );
     setEmail("");
     setGiven("");
     setFamily("");
+    // The password never stays in the page once it has been sent.
+    setPassword("");
   };
 
   const sources = useMemo(() => [...new Set((users ?? []).map((u) => u.source))].sort(), [users]);
@@ -89,8 +106,8 @@ export default function AdminUsersPage() {
             <span className="count-badge">{users?.length ?? 0}</span>
           </h1>
           <p className="page-subtitle" style={{ margin: "6px 0 0" }}>
-            Les personnes se connectent par SSO : aucun mot de passe n&apos;est géré ici. Importez-les depuis votre annuaire
-            ou ajoutez-les par e-mail.
+            Les personnes se connectent par SSO (aucun mot de passe n&apos;est alors géré ici), ou avec un compte local si
+            vous leur en créez un. Importez-les depuis votre annuaire ou ajoutez-les par e-mail.
           </p>
         </div>
         <Link className="button button--secondary" to="/admin/directory">
@@ -119,6 +136,44 @@ export default function AdminUsersPage() {
             Ajouter
           </button>
         </div>
+        <fieldset className="form-row" style={{ border: 0, padding: 0 }}>
+          <legend className="muted small">Méthode d&apos;authentification</legend>
+          <label>
+            <input type="radio" name="auth-method" checked={method === "sso"} onChange={() => setMethod("sso")} /> SSO
+          </label>
+          <label>
+            <input type="radio" name="auth-method" checked={method === "local"} onChange={() => setMethod("local")} /> Compte
+            local
+          </label>
+          {method === "local" && (
+            <label>
+              Mot de passe initial
+              <input
+                type="password"
+                value={password}
+                autoComplete="new-password"
+                minLength={8}
+                required
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </label>
+          )}
+        </fieldset>
+        <fieldset className="form-row" style={{ border: 0, padding: 0 }}>
+          <legend className="muted small">Rôles</legend>
+          {ALL_ROLES.map((role) => (
+            <label key={role}>
+              <input
+                type="checkbox"
+                checked={newRoles.includes(role)}
+                onChange={() =>
+                  setNewRoles((all) => (all.includes(role) ? all.filter((r) => r !== role) : [...all, role]))
+                }
+              />{" "}
+              {ROLE_LABELS[role]}
+            </label>
+          ))}
+        </fieldset>
       </form>
 
       {error && <p className="error-text" role="alert">{error}</p>}

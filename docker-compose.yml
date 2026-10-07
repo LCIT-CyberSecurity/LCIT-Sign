@@ -53,24 +53,29 @@ services:
       # http only for now (TLS/cert installer lands in a later phase).
       LCIT_SIGN_COOKIE_SECURE: ${LCIT_SIGN_COOKIE_SECURE:-false}
       LCIT_SIGN_PUBLIC_BASE_URL: ${LCIT_SIGN_PUBLIC_BASE_URL:-http://localhost:4180}
-      # Points at the mock-oidc service (enable with --profile dev-sso).
-      # Override with a real provider's values for anything but local dev.
-      LCIT_SIGN_OIDC_ISSUER: ${LCIT_SIGN_OIDC_ISSUER:-http://mock-oidc:8080}
-      LCIT_SIGN_OIDC_CLIENT_ID: ${LCIT_SIGN_OIDC_CLIENT_ID:-lcit-sign-dev}
+      # The real SSO (Microsoft Entra ID, Google, any OpenID Connect provider): all three set, or
+      # none (then only the local sign-in exists). There is NO mock provider here: the mock SSO
+      # belongs to the CrashTest stack (crashtest/), which sets these itself.
+      LCIT_SIGN_OIDC_ISSUER: ${LCIT_SIGN_OIDC_ISSUER:-}
+      LCIT_SIGN_OIDC_CLIENT_ID: ${LCIT_SIGN_OIDC_CLIENT_ID:-}
+      # Only the look of the sign-in button: entra, google or generic (empty: read from the issuer).
+      LCIT_SIGN_OIDC_PROVIDER: ${LCIT_SIGN_OIDC_PROVIDER:-}
       # Signing keys are derived from this (never persisted) — replace for
       # anything but local dev, and never commit a real value.
       LCIT_SIGN_MASTER_KEY: ${LCIT_SIGN_MASTER_KEY:-dev-only-insecure-master-key-change-me}
-      LCIT_SIGN_OIDC_CLIENT_SECRET: ${LCIT_SIGN_OIDC_CLIENT_SECRET:-dev-secret-not-for-prod}
+      LCIT_SIGN_OIDC_CLIENT_SECRET: ${LCIT_SIGN_OIDC_CLIENT_SECRET:-}
       # Secrets read from files in ./secrets (mounted below, read-only): they win over the
       # plain variables above, and never have to sit in .env. Create the folder yourself
       # first:  mkdir -p -m 700 secrets   (otherwise Docker creates it as root).
       LCIT_SIGN_OIDC_CLIENT_SECRET_FILE: ${LCIT_SIGN_OIDC_CLIENT_SECRET_FILE:-}
       LCIT_SIGN_MASTER_KEY_FILE: ${LCIT_SIGN_MASTER_KEY_FILE:-}
       LCIT_SIGN_SESSION_SECRET_FILE: ${LCIT_SIGN_SESSION_SECRET_FILE:-}
-      LCIT_SIGN_BOOTSTRAP_ADMIN: ${LCIT_SIGN_BOOTSTRAP_ADMIN:-alice.martin@lcit-test.local}
-      # Word / LibreOffice files as input: the isolated converter (profile "office"). Empty =
-      # only PDFs are accepted. Example: LCIT_SIGN_CONVERTER_URL=http://converter:8090
-      LCIT_SIGN_CONVERTER_URL: ${LCIT_SIGN_CONVERTER_URL:-}
+      # Email granted ADMIN at its SSO sign-in (empty: nobody). A clean installation starts with
+      # the built-in local administrator only.
+      LCIT_SIGN_BOOTSTRAP_ADMIN: ${LCIT_SIGN_BOOTSTRAP_ADMIN:-}
+      # Word / LibreOffice files as input (.docx, .doc, .odt): the isolated converter below, started
+      # with every stack. Set this to empty to accept PDFs only.
+      LCIT_SIGN_CONVERTER_URL: ${LCIT_SIGN_CONVERTER_URL-http://converter:8090}
     volumes:
       - lcit-sign-data:/var/lib/lcit-sign
       - ${LCIT_SIGN_SECRETS_DIR:-./secrets}:/run/secrets/lcit-sign:ro
@@ -115,14 +120,13 @@ services:
     restart: unless-stopped
 
   # Converts Word / LibreOffice documents to PDF, in a container of its own: no network, no
-  # database, no access to LCIT Sign's files, read-only, little memory and time. Started with
-  # the "office" profile:  docker compose --profile office up -d
+  # database, no access to LCIT Sign's files, read-only, little memory and time. Part of every
+  # stack (Word and LibreOffice files are accepted as input).
   converter:
     build:
       context: converter
     image: ${LCIT_SIGN_PREFIX:-lcit-sign}-converter:latest
     container_name: ${LCIT_SIGN_PREFIX:-lcit-sign}-converter
-    profiles: ["office"]
     networks: [converter-net]
     read_only: true
     tmpfs:
@@ -137,14 +141,15 @@ services:
       - "8090"
     restart: unless-stopped
 
-  # Dev-only fake OpenID Connect provider — never started unless the
-  # dev-sso profile is requested: docker compose --profile dev-sso up
+  # Fake OpenID Connect provider for the CrashTest stack and the tests — never started unless that
+  # profile is asked for (crashtest/start.sh does): docker compose --profile crashtest up.
+  # "dev-sso" is the former name of the same profile.
   mock-oidc:
     build:
       context: mock_oidc
     image: ${LCIT_SIGN_PREFIX:-lcit-sign}-mock-oidc:latest
     container_name: ${LCIT_SIGN_PREFIX:-lcit-sign}-mock-oidc
-    profiles: ["dev-sso"]
+    profiles: ["crashtest", "dev-sso"]
     # The secrets folder is private to you (mode 700): to read its providers file the mock runs
     # as your user. Set MOCK_OIDC_UID=$(id -u) in .env when you use real accounts.
     user: "${MOCK_OIDC_UID:-10001}"
@@ -175,7 +180,7 @@ services:
       context: mock_docusign
     image: ${LCIT_SIGN_PREFIX:-lcit-sign}-mock-docusign:latest
     container_name: ${LCIT_SIGN_PREFIX:-lcit-sign}-mock-docusign
-    profiles: ["dev-sso"]
+    profiles: ["crashtest", "dev-sso"]
     environment:
       MOCK_DOCUSIGN_PUBLIC_BASE_URL: http://mock-docusign:8091
     volumes:

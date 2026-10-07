@@ -31,6 +31,7 @@ from lcit_sign.models.document import (
 from lcit_sign.models.signature import Signature
 from lcit_sign.models.user import Role, User
 from lcit_sign.services import branding
+from lcit_sign.services.access import can_read_document
 from lcit_sign.services.audit import append_audit_event
 from lcit_sign.services.document_validation import DocumentValidationError, validate_pdf_upload
 from lcit_sign.services.office_conversion import (
@@ -52,7 +53,27 @@ PDF_SUFFIX = ".pdf"
 # Viewing a version's content is wider: also anyone with a
 # SignatureAssignment for it (see get_version_content) — a signer must be
 # able to read what they are being asked to sign.
-_manage = require_roles(Role.OPERATOR, Role.ADMIN)
+# Anyone who may prepare; which documents they may open is decided per document.
+_manage = require_roles(Role.PREPARER, Role.OPERATOR, Role.ADMIN)
+
+
+def _readable_document(db: DbSession, user: User, document: Document | None) -> Document:
+    """The document, if this person may open it (its content): an administrator, whoever
+    uploaded it, a preparer of a campaign that uses it. Anyone else is refused."""
+    if document is None:
+        raise HTTPException(404, "Document not found")
+    if not can_read_document(db, user, document):
+        raise HTTPException(403, "Ce document est confidentiel : il n'est pas dans vos campagnes.")
+    return document
+
+
+def _readable_version(
+    db: DbSession, user: User, version: DocumentVersion | None
+) -> DocumentVersion:
+    if version is None:
+        raise HTTPException(404, "Document version not found")
+    _readable_document(db, user, db.get(Document, version.document_id))
+    return version
 
 
 def delete_blockers(db: DbSession, version_ids: list[uuid.UUID]) -> dict[uuid.UUID, list[str]]:
@@ -242,9 +263,7 @@ async def create_document_version(
     db: DbSession = Depends(get_db),
     converter: httpx.Client = Depends(get_converter_client),
 ) -> dict[str, Any]:
-    document = db.get(Document, document_id)
-    if document is None:
-        raise HTTPException(404, "Document not found")
+    document = _readable_document(db, user, db.get(Document, document_id))
 
     upload = await _validated_upload(request, file, converter)
     storage: StorageService = request.app.state.storage
@@ -323,9 +342,7 @@ def publish_version(
     user: User = Depends(_manage),
     db: DbSession = Depends(get_db),
 ) -> dict[str, Any]:
-    version = db.get(DocumentVersion, version_id)
-    if version is None:
-        raise HTTPException(404, "Document version not found")
+    version = _readable_version(db, user, db.get(DocumentVersion, version_id))
     publish_draft(db, request.app.state.storage, user, version)
     db.commit()
     return _version_payload(version)
@@ -338,9 +355,7 @@ def archive_version(
     """Retire a version from use (spec §20 ARCHIVED). Signatures already made
     on it stay valid and verifiable; what is refused is archiving a version an
     active campaign is still asking people to sign."""
-    version = db.get(DocumentVersion, version_id)
-    if version is None:
-        raise HTTPException(404, "Document version not found")
+    version = _readable_version(db, user, db.get(DocumentVersion, version_id))
     if version.status == DocumentVersionStatus.ARCHIVED:
         raise HTTPException(409, "Version is already archived")
 
@@ -383,9 +398,7 @@ def delete_version(
     """Erase a version nobody has signed or used (draft, or a stray upload).
     Anything that is part of the evidence trail is refused with the reason and
     must be archived instead."""
-    version = db.get(DocumentVersion, version_id)
-    if version is None:
-        raise HTTPException(404, "Document version not found")
+    version = _readable_version(db, user, db.get(DocumentVersion, version_id))
     reasons = delete_blockers(db, [version.id])[version.id]
     if reasons:
         raise HTTPException(
@@ -430,9 +443,7 @@ def delete_document(
     db: DbSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Erase a whole document — only if none of its versions is signed or used."""
-    document = db.get(Document, document_id)
-    if document is None:
-        raise HTTPException(404, "Document not found")
+    document = _readable_document(db, user, db.get(Document, document_id))
     blockers = delete_blockers(db, [v.id for v in document.versions])
     problems = [
         f"v{v.version_label} : " + " ; ".join(blockers[v.id])
@@ -468,6 +479,9 @@ def list_documents(
     documents = list(
         db.execute(select(Document).order_by(Document.created_at.desc())).scalars()
     )
+    # An operator or administrator sees that every document exists; a preparer, only theirs.
+    if not (user_roles(db, user) & {Role.OPERATOR, Role.ADMIN}):
+        documents = [d for d in documents if can_read_document(db, user, d)]
     blockers = delete_blockers(db, [v.id for doc in documents for v in doc.versions])
     return [_document_payload(doc, blockers) for doc in documents]
 
@@ -477,7 +491,9 @@ def get_document(
     document_id: uuid.UUID, user: User = Depends(_manage), db: DbSession = Depends(get_db)
 ) -> dict[str, Any]:
     document = db.get(Document, document_id)
-    if document is None:
+    if document is None or not (
+        can_read_document(db, user, document) or user_roles(db, user) & {Role.OPERATOR}
+    ):
         raise HTTPException(404, "Document not found")
     return _document_payload(document, delete_blockers(db, [v.id for v in document.versions]))
 
@@ -500,7 +516,8 @@ def get_version_content(
             SignatureAssignment.user_id == user.id,
         )
     ).scalar_one_or_none()
-    if assignment is None and not (user_roles(db, user) & {Role.OPERATOR, Role.ADMIN}):
+    document = db.get(Document, version.document_id)
+    if assignment is None and not (document and can_read_document(db, user, document)):
         raise HTTPException(403, "Not authorized to view this document version")
 
     storage: StorageService = request.app.state.storage

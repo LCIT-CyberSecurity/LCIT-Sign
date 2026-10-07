@@ -18,5 +18,7 @@ data:
   LCIT_SIGN_MASTER_KEY_FILE: /run/secrets/lcit-sign/master_key
   LCIT_SIGN_SESSION_SECRET_FILE: /run/secrets/lcit-sign/session_secret
   LCIT_SIGN_OIDC_CLIENT_SECRET_FILE: /run/secrets/lcit-sign/oidc_client_secret
+  # Word / LibreOffice files as input: the isolated converter (converter.yaml). Empty = PDFs only.
+  LCIT_SIGN_CONVERTER_URL: http://lcit-sign-converter:8090
   # Remove once a real administrator has taken over (spec §13).
   LCIT_SIGN_BOOTSTRAP_ADMIN: first.admin@example.org

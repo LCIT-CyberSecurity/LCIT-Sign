@@ -24,12 +24,27 @@ from lcit_sign.models.campaign import (
 from lcit_sign.models.document import Document, DocumentVersion
 from lcit_sign.models.signature import Signature
 from lcit_sign.models.user import Role, User
+from lcit_sign.services.access import campaigns_with_content_access
 from lcit_sign.services.audit import append_audit_event
 from lcit_sign.services.storage import StorageService
 
 router = APIRouter(prefix="/signed", tags=["signed"])
 
-_manage = require_roles(Role.OPERATOR, Role.ADMIN)
+# The signed PDFs are the confidential content of their campaigns: only the campaigns this person
+# owns or prepares (an administrator: all) are listed or exported (services/access.py).
+_manage = require_roles(Role.PREPARER, Role.OPERATOR, Role.ADMIN)
+
+
+def _scope(
+    db: DbSession, user: User, requested: list[uuid.UUID]
+) -> tuple[list[uuid.UUID], bool]:
+    """The campaigns to look at (empty = every one, for an administrator) and whether there is
+    anything this person may see at all."""
+    allowed = campaigns_with_content_access(db, user)
+    if allowed is None:
+        return requested, True
+    chosen = [c for c in requested if c in allowed] if requested else sorted(allowed)
+    return chosen, bool(chosen)
 
 SIGNED_BUCKET = "signed"
 PDF_SUFFIX = ".pdf"
@@ -142,14 +157,16 @@ def signed_documents(
     user: User = Depends(_manage),
     db: DbSession = Depends(get_db),
 ) -> dict[str, Any]:
-    """What was signed and what is still to sign, for the campaigns chosen (all when none)."""
-    signed = _signed_rows(db, campaign_ids, q)
-    outstanding = _outstanding_rows(db, campaign_ids, q)
-    campaigns = db.execute(
-        select(Campaign)
-        .where(Campaign.status != CampaignStatus.DRAFT)
-        .order_by(Campaign.created_at.desc())
-    ).scalars()
+    """What was signed and what is still to sign, for the campaigns chosen (all when none) among
+    those this person may read."""
+    campaign_ids, anything = _scope(db, user, campaign_ids)
+    signed = _signed_rows(db, campaign_ids, q) if anything else []
+    outstanding = _outstanding_rows(db, campaign_ids, q) if anything else []
+    allowed = campaigns_with_content_access(db, user)
+    listing = select(Campaign).where(Campaign.status != CampaignStatus.DRAFT)
+    if allowed is not None:
+        listing = listing.where(Campaign.id.in_(allowed))
+    campaigns = db.execute(listing.order_by(Campaign.created_at.desc())).scalars()
     return {
         "campaigns": [
             {"id": str(c.id), "name": c.name, "status": c.status.value} for c in campaigns
@@ -174,7 +191,8 @@ def export_signed_documents(
 ) -> Response:
     """A ZIP of the signed PDFs (one folder per campaign) with an index of what was signed and
     what is still to sign."""
-    signed = _signed_rows(db, campaign_ids, q)
+    campaign_ids, anything = _scope(db, user, campaign_ids)
+    signed = _signed_rows(db, campaign_ids, q) if anything else []
     if not signed:
         raise HTTPException(404, "Aucun document signé pour cette sélection.")
     if len(signed) > MAX_ZIP_FILES:

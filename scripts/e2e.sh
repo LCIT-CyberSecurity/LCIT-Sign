@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# End-to-end tests in a real browser, on a throwaway copy of the stack: its own containers, ports
-# and volumes (prefix "lcit-e2e"), the CrashTests dataset, the mock SSO. The real stack (and its
-# data) is never touched, and everything is removed at the end.
+# End-to-end tests in a real browser, on a throwaway CrashTest stack (crashtest/): its own
+# containers, ports and volumes (prefix "lcit-e2e"), the CrashTest dataset, the mock SSO. A real
+# stack (and its data) is never touched, and everything is removed at the end.
 #
 #   scripts/e2e.sh                       # all tests
 #   scripts/e2e.sh -g "drag and drop"    # the ones matching, any Playwright argument
@@ -10,8 +10,16 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-COMPOSE=(docker compose -p lcit-e2e --env-file docker/e2e.env --profile dev-sso)
-BASE_URL="http://127.0.0.1:14180"
+# This run's own names and ports first (docker/e2e.env), then the CrashTest defaults for the rest.
+for file in docker/e2e.env crashtest/crashtest.env; do
+    while IFS='=' read -r key value; do
+        [[ "$key" =~ ^LCIT_SIGN_[A-Z_]+$ ]] || continue
+        [ -n "${!key+x}" ] || export "$key=$value"
+    done < "$file"
+done
+COMPOSE=(docker compose -p "$LCIT_SIGN_PREFIX" --env-file crashtest/crashtest.env
+         -f docker-compose.yml -f crashtest/docker-compose.crashtest.yml --profile crashtest)
+BASE_URL="http://127.0.0.1:${LCIT_SIGN_HTTP_PORT}"
 
 cleanup() { "${COMPOSE[@]}" down -v --remove-orphans >/dev/null 2>&1 || true; }
 trap cleanup EXIT
@@ -20,8 +28,8 @@ cleanup
 echo "== starting the throwaway stack"
 "${COMPOSE[@]}" up -d --build --wait
 
-echo "== loading the CrashTests dataset"
-LCIT_SIGN_BASE_URL="$BASE_URL" LCIT_SIGN_API_IMAGE="lcit-e2e-api:latest" scripts/integration-seed.sh
+echo "== loading the CrashTest dataset"
+"${COMPOSE[@]}" exec -T api python /crashtest/seed.py | tail -4
 
 echo "== running the browser tests"
 docker run --rm --network host -v "$PWD/web":/src:ro \

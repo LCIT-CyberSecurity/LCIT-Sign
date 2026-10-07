@@ -1,15 +1,31 @@
 import { useCompanyLogo } from "../lib/branding";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { FileSearch, FileSignature, Fingerprint, LockKeyhole, LogIn, PenLine } from "lucide-react";
 import { api, ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
+import { GoogleLogo, MicrosoftLogo } from "../components/ProviderLogos";
 
-/** Sign-in, laid out like EARE's: an introduction panel on the left, the
- *  sign-in card on the right. SSO is the only way in — there is no password. */
-/** The built-in system account form: only when the server says it is enabled. */
-function LocalLogin() {
+/** Sign-in, laid out like EARE's: an introduction panel on the left, the sign-in card on the
+ *  right. The SSO configured on the server is the main way in (its own provider's button); the
+ *  local form — the built-in administrator and the accounts an administrator made — stays
+ *  available, discreet. With no SSO, the local form is the sign-in. */
+interface Options {
+  sso: boolean;
+  provider: "entra" | "google" | "generic" | null;
+  local: boolean;
+  /** The CrashTest stack: fictional accounts, say so. */
+  crashtest?: boolean;
+}
+
+const SSO_BUTTONS: Record<string, { label: string; logo: ReactNode }> = {
+  entra: { label: "Continuer avec Microsoft", logo: <MicrosoftLogo /> },
+  google: { label: "Continuer avec Google", logo: <GoogleLogo /> },
+  generic: { label: "Continuer avec le SSO", logo: <LogIn size={18} aria-hidden="true" /> },
+};
+
+function LocalForm() {
   const { refresh } = useAuth();
-  const [username, setUsername] = useState("admin");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -29,41 +45,39 @@ function LocalLogin() {
   };
 
   return (
-    <details className="auth-local" data-testid="local-login">
-      <summary>Compte système (administrateur local)</summary>
-      <form onSubmit={submit}>
-        <label>
-          Identifiant
-          <input value={username} autoComplete="username" onChange={(e) => setUsername(e.target.value)} required />
-        </label>
-        <label>
-          Mot de passe
-          <input
-            type="password"
-            value={password}
-            autoComplete="current-password"
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
-        </label>
-        {error && <p className="form-error" role="alert">{error}</p>}
-        <button className="button button--secondary" type="submit" disabled={busy}>
-          {busy ? "Connexion…" : "Se connecter"}
-        </button>
-      </form>
-    </details>
+    <form onSubmit={submit} data-testid="local-form">
+      <label>
+        Identifiant ou e-mail
+        <input value={username} autoComplete="username" onChange={(e) => setUsername(e.target.value)} required />
+      </label>
+      <label>
+        Mot de passe
+        <input
+          type="password"
+          value={password}
+          autoComplete="current-password"
+          onChange={(e) => setPassword(e.target.value)}
+          required
+        />
+      </label>
+      {error && <p className="form-error" role="alert">{error}</p>}
+      <button className="button button--secondary" type="submit" disabled={busy}>
+        {busy ? "Connexion…" : "Se connecter"}
+      </button>
+    </form>
   );
 }
 
 export default function LoginPage() {
   const companyLogo = useCompanyLogo();
-  const [localEnabled, setLocalEnabled] = useState(false);
+  const [options, setOptions] = useState<Options | null>(null);
   useEffect(() => {
     api
-      .get<{ local: boolean }>("/auth/options")
-      .then((o) => setLocalEnabled(o.local))
-      .catch(() => setLocalEnabled(false));
+      .get<Options>("/auth/options")
+      .then(setOptions)
+      .catch(() => setOptions({ sso: false, provider: null, local: true }));
   }, []);
+  const button = options?.sso ? (SSO_BUTTONS[options.provider ?? "generic"] ?? SSO_BUTTONS.generic) : null;
 
   return (
     <div className="login-page">
@@ -107,14 +121,41 @@ export default function LoginPage() {
               <span className="auth-eyebrow">ACCÈS SÉCURISÉ</span>
               <h1>Connexion</h1>
               <p>
-                Connectez-vous avec votre compte d&apos;entreprise pour consulter et signer les
-                documents qui vous attendent.
+                Connectez-vous avec votre compte pour consulter et signer les documents qui vous
+                attendent.
               </p>
-              <a className="button button--primary button--block" href="/api/auth/login">
-                <LogIn size={18} aria-hidden="true" />
-                Se connecter avec le SSO
-              </a>
-              {localEnabled && <LocalLogin />}
+              {options?.crashtest && (
+                <p className="auth-crashtest" data-testid="crashtest-note">
+                  Environnement de test CrashTest : comptes fictifs. Identifiant = adresse e-mail,
+                  mot de passe = prénom en minuscules (Bob Dupont : bob.dupont@lcit-test.local / bob).
+                </p>
+              )}
+              {button && (
+                <a
+                  className="button button--primary button--block button--provider"
+                  href="/api/auth/login"
+                  data-testid="sso-button"
+                >
+                  {button.logo}
+                  {button.label}
+                </a>
+              )}
+              {options?.local && button && (
+                <details className="auth-local" data-testid="local-login">
+                  <summary>Connexion locale</summary>
+                  <LocalForm />
+                </details>
+              )}
+              {options?.local && !button && (
+                <div className="auth-local auth-local--main" data-testid="local-login">
+                  <LocalForm />
+                </div>
+              )}
+              {options && !options.local && !button && (
+                <p className="form-error" role="alert">
+                  Aucune méthode de connexion n&apos;est configurée : contactez un administrateur.
+                </p>
+              )}
               <p className="auth-steps" aria-hidden="true">
                 <FileSearch size={14} /> consulter <PenLine size={14} /> signer{" "}
                 <Fingerprint size={14} /> prouver
@@ -122,8 +163,8 @@ export default function LoginPage() {
             </section>
 
             <p className="auth-form-foot">
-              <LockKeyhole size={12} aria-hidden="true" /> Espace protégé — aucun mot de passe n&apos;est
-              saisi ici : l&apos;authentification est gérée par votre fournisseur d&apos;identité.
+              <LockKeyhole size={12} aria-hidden="true" /> Espace protégé — votre mot de passe n&apos;est
+              jamais saisi ici si vous passez par le SSO de votre entreprise.
             </p>
           </div>
         </main>

@@ -1,10 +1,11 @@
+import { readFileSync } from "node:fs";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 
 // Fictional CrashTest identities of the mock OIDC provider. The stack must
 // hold the CrashTests dataset (scripts/integration-seed.sh).
 async function loginAs(page: Page, name: string) {
   await page.goto("/");
-  await page.getByRole("link", { name: /Se connecter avec le SSO/ }).click();
+  await page.getByRole("link", { name: /Continuer avec le SSO/ }).click();
   await page.getByRole("link", { name: new RegExp(name) }).click();
   // The login page also says "LCIT Sign": wait for something only a session shows.
   await expect(page.getByLabel("Compte et réglages")).toBeVisible();
@@ -79,7 +80,7 @@ test("a signer reads a document, consents and signs", async ({ page, browser }) 
 });
 
 test("an administrator reaches the diagnostics page", async ({ page }) => {
-  await loginAs(page, "Alice");
+  await loginAs(page, "Admin");
   await page.getByRole("link", { name: "Diagnostic" }).click();
   await expect(page.getByRole("heading", { name: /Diagnostic/ })).toBeVisible();
   await expect(page.getByTestId("check-database")).toBeVisible();
@@ -377,8 +378,8 @@ test("the system account signs in with the default password and is reminded to c
   page,
 }) => {
   await page.goto("/");
-  await page.getByText("Compte système (administrateur local)").click();
-  await page.getByLabel("Identifiant").fill("admin");
+  await page.getByText("Connexion locale").click();
+  await page.getByLabel("Identifiant ou e-mail").fill("admin");
   await page.getByLabel("Mot de passe").fill("wrong-password");
   await page.getByRole("button", { name: "Se connecter", exact: true }).click();
   await expect(page.getByRole("alert")).toContainText("incorrect");
@@ -407,7 +408,7 @@ test("the system account signs in with the default password and is reminded to c
 });
 
 test("an administrator adds, disables and deletes a user from the interface", async ({ page }) => {
-  await loginAs(page, "Alice");
+  await loginAs(page, "Admin");
   const email = `e2e.${Date.now()}@lcit-test.local`;
   await page.goto("/admin/users");
   const form = page.getByRole("form", { name: "Ajouter un utilisateur" });
@@ -438,7 +439,7 @@ test("an administrator adds, disables and deletes a user from the interface", as
 });
 
 test("directory settings explain themselves with a bubble and an example", async ({ page }) => {
-  await loginAs(page, "Alice");
+  await loginAs(page, "Admin");
   await page.goto("/admin/directory");
   await page.getByTestId("source-entra").getByRole("button", { name: "Configurer" }).click();
   const hint = page.getByRole("button", { name: "Aide : ID du tenant" });
@@ -540,7 +541,7 @@ test("the signed documents are in Suivi, for one campaign or several, with the e
 });
 
 test("an administrator replaces the logo, and goes back to the LCIT one", async ({ page }) => {
-  await loginAs(page, "Alice");
+  await loginAs(page, "Admin");
   const lcit = page.locator(".brand-logo");
   await expect(lcit).toHaveAttribute("src", "/lcit-mark.png");
 
@@ -584,7 +585,7 @@ test("a person from outside the company is added by address and marked as such",
 
 test("the sign-in page offers Entra, Google and LDAP, and says which are not set up here", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("link", { name: /Se connecter avec le SSO/ }).click();
+  await page.getByRole("link", { name: /Continuer avec le SSO/ }).click();
   await expect(page.getByRole("link", { name: /Erwan/ })).toBeVisible(); // the test identities stay
   await expect(page.getByText("Microsoft Entra ID — non configuré sur ce serveur")).toBeVisible();
   await expect(page.getByText("Google — non configuré sur ce serveur")).toBeVisible();
@@ -592,7 +593,27 @@ test("the sign-in page offers Entra, Google and LDAP, and says which are not set
   await expect(page.locator('input[type="password"]')).toHaveCount(0);
 });
 
-test("a Word document is refused in words when the converter is not there", async ({ page }) => {
+test("Word, LibreOffice and PDF files are all accepted in the library", async ({ page }) => {
+  await loginAs(page, "Diane");
+  await page.goto("/documents");
+  const stamp = Date.now();
+  await page.getByTestId("dropzone-input").setInputFiles([
+    { name: `pdf-${stamp}.pdf`, mimeType: "application/pdf", buffer: MINIMAL_PDF },
+    { name: `docx-${stamp}.docx`, mimeType: "application/octet-stream", buffer: readFileSync("e2e/fixtures/charte.docx") },
+    { name: `doc-${stamp}.doc`, mimeType: "application/msword", buffer: readFileSync("e2e/fixtures/charte.doc") },
+    { name: `odt-${stamp}.odt`, mimeType: "application/octet-stream", buffer: readFileSync("e2e/fixtures/charte.odt") },
+  ]);
+  await page.getByRole("button", { name: /Importer 4 documents/ }).click();
+  const results = page.getByTestId("upload-results");
+  for (const name of [`pdf-${stamp}.pdf`, `docx-${stamp}.docx`, `doc-${stamp}.doc`, `odt-${stamp}.odt`]) {
+    await expect(results.locator("li", { hasText: name })).toContainText("ajouté à la bibliothèque", {
+      timeout: 60_000,
+    });
+  }
+  await expect(results).not.toContainText("✕");
+});
+
+test("a fake Word file is refused in words, never a blank failure", async ({ page }) => {
   await loginAs(page, "Diane");
   await page.goto("/documents");
   await page.getByTestId("dropzone-input").setInputFiles({
@@ -601,9 +622,60 @@ test("a Word document is refused in words when the converter is not there", asyn
     buffer: Buffer.from("PK\u0003\u0004 not really a document"),
   });
   await page.getByRole("button", { name: "Importer le document" }).click();
-  // Refused in words (here it is not even a real document); never a blank failure.
-  await expect(page.getByTestId("upload-results")).toContainText(/pas un document|pas activée/);
+  await expect(page.getByTestId("upload-results")).toContainText(/pas un document/);
 });
+
+for (const [ext, mime] of [
+  ["docx", "application/octet-stream"],
+  ["doc", "application/msword"],
+  ["odt", "application/octet-stream"],
+  ["pdf", "application/pdf"],
+] as const) {
+  test(`a ${ext} document is converted if need be, prepared and signed, and the signed PDF comes back`, async ({
+    browser,
+  }) => {
+    const title = `Format ${ext} ${Date.now()}`;
+    const context = await browser.newContext();
+    const op = await context.newPage();
+    await loginAs(op, "Diane");
+    const api = context.request;
+    const buffer = ext === "pdf" ? MINIMAL_PDF : readFileSync(`e2e/fixtures/charte.${ext}`);
+    const created = await api.post("/api/documents", {
+      multipart: { title, version_label: "1.0", file: { name: `charte.${ext}`, mimeType: mime, buffer } },
+      timeout: 120_000,
+    });
+    expect(created.status(), await created.text()).toBe(201);
+    const versionId = (await created.json()).versions[0].id as string;
+    // What is signed is a PDF, whatever came in.
+    const content = await api.get(`/api/documents/versions/${versionId}/content`);
+    expect((await content.body()).subarray(0, 4).toString()).toBe("%PDF");
+    expect(
+      (
+        await api.put(`/api/documents/versions/${versionId}/fields`, {
+          data: { fields: [{ page: 1, x: 0.1, y: 0.7, width: 0.3, height: 0.06, kind: "SIGNATURE", role: 1 }] },
+        })
+      ).status(),
+    ).toBe(200);
+    expect((await api.post(`/api/documents/versions/${versionId}/publish`)).status()).toBe(200);
+    const bob = await userIdOf(op, "bob.dupont@lcit-test.local");
+    const campaign = await (await api.post("/api/campaigns", { data: { name: title } })).json();
+    await api.post(`/api/campaigns/${campaign.id}/documents`, { data: { document_version_id: versionId } });
+    expect((await api.post(`/api/campaigns/${campaign.id}/launch`, { data: { user_ids: [bob] } })).status()).toBe(200);
+    await context.close();
+
+    const signer = await browser.newContext();
+    const page = await signer.newPage();
+    await loginAs(page, "Bob");
+    await page.getByRole("link", { name: new RegExp(title) }).click();
+    await page.getByRole("checkbox").check();
+    await page.getByRole("button", { name: /^Signer/ }).click();
+    await expect(page.getByText("Document signé")).toBeVisible();
+    const pdf = await signer.request.get((await page.getByRole("link", { name: /PDF signé/ }).getAttribute("href"))!);
+    expect(pdf.status()).toBe(200);
+    expect((await pdf.body()).subarray(0, 4).toString()).toBe("%PDF");
+    await signer.close();
+  });
+}
 
 test("a whole team is asked, everyone signs, and everyone gets their own signed document", async ({ browser }) => {
   const stamp = Date.now();
@@ -657,7 +729,7 @@ test("a request signed through DocuSign: chosen, sent, signed on the test DocuSi
   browser,
 }) => {
   // The administrator points LCIT Sign at the test DocuSign and checks the connection.
-  await loginAs(page, "Alice");
+  await loginAs(page, "Admin");
   await page.goto("/admin/docusign");
   await page.getByRole("button", { name: /Utiliser le DocuSign de test/ }).click();
   await expect(page.getByTestId("docusign-mock-note")).toBeVisible();
@@ -727,4 +799,78 @@ test("a request signed through DocuSign: chosen, sent, signed on the test DocuSi
   expect(pdf.status()).toBe(200);
   expect((await pdf.body()).subarray(0, 4).toString()).toBe("%PDF");
   await signer.close();
+});
+
+
+test("a person signs in locally with their first name as password, on the CrashTest stack", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByTestId("crashtest-note")).toContainText("prénom en minuscules");
+  await expect(page.getByRole("link", { name: /Continuer avec le SSO/ })).toBeVisible();
+  await page.getByText("Connexion locale").click();
+  await page.getByLabel("Identifiant ou e-mail").fill("bob.dupont@lcit-test.local");
+  await page.getByLabel("Mot de passe").fill("alice");
+  await page.getByRole("button", { name: "Se connecter", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText("incorrect");
+
+  await page.getByLabel("Mot de passe").fill("bob");
+  await page.getByRole("button", { name: "Se connecter", exact: true }).click();
+  await expect(page.getByLabel("Compte et réglages")).toBeVisible();
+  // An ordinary person: what was asked of them, and nothing to prepare.
+  await expect(page.getByRole("link", { name: "Mes signatures" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Faire signer" })).toHaveCount(0);
+  await expect(page.getByTestId("password-reminder")).toHaveCount(0);
+});
+
+test("preparers see their own campaigns, the operator all of them without their content", async ({
+  browser,
+}) => {
+  const open = async (who: string) => {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await loginAs(page, who);
+    return { context, page, api: context.request };
+  };
+  const rowOf = (page: Page, name: string) => page.getByRole("link", { name }).first();
+
+  // Alice (HR): her campaign, not the legal one.
+  const alice = await open("Alice");
+  await alice.page.goto("/campaigns");
+  await expect(rowOf(alice.page, "Entretiens RH 2027")).toBeVisible();
+  await expect(alice.page.getByText("NDA Juridique")).toHaveCount(0);
+  const all = (await (await alice.api.get("/api/campaigns")).json()) as { id: string; name: string }[];
+  const rh = all.find((c) => c.name === "Entretiens RH 2027")!;
+  await alice.page.goto(`/campaigns/${rh.id}`);
+  await expect(alice.page.getByTestId("owner")).toContainText("Alice Martin");
+  await expect(alice.page.getByTestId("preparers")).toContainText("Sophie Bernard");
+  await expect(alice.page.getByTestId("confidential-note")).toHaveCount(0);
+  await alice.context.close();
+
+  // Claire (legal): hers only. The HR campaign does not exist for her, even by its address.
+  const claire = await open("Claire");
+  await claire.page.goto("/campaigns");
+  await expect(rowOf(claire.page, "NDA Juridique")).toBeVisible();
+  await expect(claire.page.getByText("Entretiens RH 2027")).toHaveCount(0);
+  expect((await claire.api.get(`/api/campaigns/${rh.id}`)).status()).toBe(404);
+  expect((await claire.api.get(`/api/campaigns/${rh.id}/assignments`)).status()).toBe(404);
+  await claire.context.close();
+
+  // Paul (operator): everything's status and owner, nothing of the content…
+  const paul = await open("Paul");
+  await paul.page.goto("/campaigns");
+  await expect(rowOf(paul.page, "Entretiens RH 2027")).toBeVisible();
+  await expect(rowOf(paul.page, "NDA Juridique")).toBeVisible();
+  await paul.page.goto(`/campaigns/${rh.id}`);
+  await expect(paul.page.getByTestId("owner")).toContainText("Alice Martin");
+  await expect(paul.page.getByTestId("confidential-note")).toBeVisible();
+  await expect(paul.page.getByTestId("campaign-signed")).toHaveCount(0);
+  expect((await paul.api.get("/api/signed/documents")).status()).toBe(200);
+  expect(((await (await paul.api.get("/api/signed/documents")).json()) as { signed: unknown[] }).signed).toHaveLength(0);
+
+  // …until he is made a preparer of that campaign: it is explicit, and it shows.
+  await paul.page.getByLabel("Ajouter un préparateur").selectOption({ label: "Paul Muller" });
+  await paul.page.getByRole("button", { name: "Ajouter", exact: true }).click();
+  await expect(paul.page.getByTestId("preparers")).toContainText("Paul Muller");
+  await expect(paul.page.getByTestId("confidential-note")).toHaveCount(0);
+  await expect(paul.page.getByTestId("campaign-signed")).toBeVisible();
+  await paul.context.close();
 });

@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session as DbSession
 
+from lcit_sign.api.campaign_access import Level, guard_campaign
 from lcit_sign.api.documents import check_publishable, publish_draft
 from lcit_sign.api.docusign import methods_payload
 from lcit_sign.config import Settings
@@ -18,6 +19,7 @@ from lcit_sign.models.campaign import (
     AssignmentStatus,
     Campaign,
     CampaignDocument,
+    CampaignPreparer,
     CampaignStatus,
     CampaignTargetGroup,
     CampaignTargetMode,
@@ -36,6 +38,14 @@ from lcit_sign.models.mail import Notification, NotificationType
 from lcit_sign.models.report import Report
 from lcit_sign.models.signature import Signature
 from lcit_sign.models.user import Role, User, UserRole
+from lcit_sign.services.access import (
+    PREPARE_ROLES,
+    campaigns_visible_to,
+    can_manage_campaign,
+    can_operate_campaign,
+    is_member,
+    roles_of,
+)
 from lcit_sign.services.audit import append_audit_event
 from lcit_sign.services.campaign_changes import (
     ChangeError,
@@ -63,7 +73,8 @@ from lcit_sign.time_utils import ensure_utc
 
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])
 
-_manage = require_roles(Role.OPERATOR, Role.ADMIN)
+# Anyone who may prepare; what they may touch is decided per campaign (services/access.py).
+_manage = require_roles(Role.PREPARER, Role.OPERATOR, Role.ADMIN)
 
 
 @router.get("/_meta/signature-methods")
@@ -157,10 +168,15 @@ def operator_dashboard(
     outstanding assignments whose deadline has passed; `not_viewed` those
     nobody has opened yet."""
     now = datetime.now(UTC)
+    # A preparer's figures are those of their own campaigns; an operator or administrator sees all.
+    visible = campaigns_visible_to(db, user)
+    scope = [] if visible is None else [Campaign.id.in_(visible)]
     campaign_counts = dict(
-        db.execute(select(Campaign.status, func.count()).group_by(Campaign.status)).all()
+        db.execute(
+            select(Campaign.status, func.count()).where(*scope).group_by(Campaign.status)
+        ).all()
     )
-    active_ids = select(Campaign.id).where(Campaign.status == CampaignStatus.ACTIVE)
+    active_ids = select(Campaign.id).where(Campaign.status == CampaignStatus.ACTIVE, *scope)
     status_counts = dict(
         db.execute(
             select(SignatureAssignment.status, func.count())
@@ -369,7 +385,16 @@ def _roles_payload(db: DbSession, campaign: Campaign) -> list[dict[str, Any]]:
     return []
 
 
-def _campaign_payload(campaign: Campaign, db: DbSession) -> dict[str, Any]:
+def _person(db: DbSession, user_id: uuid.UUID | None) -> dict[str, Any] | None:
+    person = db.get(User, user_id) if user_id else None
+    if person is None:
+        return None
+    return {"id": str(person.id), "display_name": person.display_name, "email": person.email}
+
+
+def _campaign_payload(
+    campaign: Campaign, db: DbSession, viewer: User | None = None
+) -> dict[str, Any]:
     raw_counts = dict(
         db.execute(
             select(SignatureAssignment.status, func.count())
@@ -383,6 +408,22 @@ def _campaign_payload(campaign: Campaign, db: DbSession) -> dict[str, Any]:
         "description": campaign.description,
         "status": campaign.status.value,
         "target_mode": campaign.target_mode,
+        # Who runs it now, who started it (never changes), and who else may prepare it.
+        "owner": _person(db, campaign.owner_id or campaign.created_by),
+        "created_by": _person(db, campaign.created_by),
+        "preparers": [
+            _person(db, row.user_id)
+            for row in db.execute(
+                select(CampaignPreparer).where(CampaignPreparer.campaign_id == campaign.id)
+            ).scalars()
+        ],
+        # What the person asking may do with it: the interface only shows what the API allows.
+        "access": None
+        if viewer is None
+        else {
+            "operate": can_operate_campaign(db, viewer, campaign),
+            "content": can_manage_campaign(db, viewer, campaign),
+        },
         "signature_method": campaign.signature_method,
         "created_at": campaign.created_at.isoformat(),
         "launch_at": campaign.launch_at.isoformat() if campaign.launch_at else None,
@@ -412,7 +453,9 @@ def _campaign_payload(campaign: Campaign, db: DbSession) -> dict[str, Any]:
 def create_campaign(
     body: CreateCampaignRequest, user: User = Depends(_manage), db: DbSession = Depends(get_db)
 ) -> dict[str, Any]:
-    campaign = Campaign(name=body.name, description=body.description, created_by=user.id)
+    campaign = Campaign(
+        name=body.name, description=body.description, created_by=user.id, owner_id=user.id
+    )
     db.add(campaign)
     db.flush()
     append_audit_event(
@@ -420,33 +463,33 @@ def create_campaign(
         target_type="campaign", target_id=str(campaign.id), campaign_id=campaign.id,
     )
     db.commit()
-    return _campaign_payload(campaign, db)
+    return _campaign_payload(campaign, db, user)
 
 
-def _get_draft_campaign(db: DbSession, campaign_id: uuid.UUID) -> Campaign:
-    campaign = db.get(Campaign, campaign_id)
-    if campaign is None:
-        raise HTTPException(404, "Campaign not found")
+def _get_draft_campaign(
+    db: DbSession, campaign_id: uuid.UUID, user: User, level: Level = "content"
+) -> Campaign:
+    campaign = guard_campaign(db, user, db.get(Campaign, campaign_id), level)
     if campaign.status != CampaignStatus.DRAFT:
         raise HTTPException(409, "Campaign is no longer a draft")
     return campaign
 
 
-def _get_editable_campaign(db: DbSession, campaign_id: uuid.UUID) -> Campaign:
+def _get_editable_campaign(
+    db: DbSession, campaign_id: uuid.UUID, user: User, level: Level = "content"
+) -> Campaign:
     """A campaign still being prepared, or already sent and running (people and
     documents can be added to it; what was signed stays)."""
-    campaign = db.get(Campaign, campaign_id)
-    if campaign is None:
-        raise HTTPException(404, "Campaign not found")
+    campaign = guard_campaign(db, user, db.get(Campaign, campaign_id), level)
     if campaign.status not in (CampaignStatus.DRAFT, CampaignStatus.ACTIVE):
         raise HTTPException(409, "Cette campagne est terminée : elle ne se modifie plus")
     return campaign
 
 
-def _get_active_campaign(db: DbSession, campaign_id: uuid.UUID) -> Campaign:
-    campaign = db.get(Campaign, campaign_id)
-    if campaign is None:
-        raise HTTPException(404, "Campaign not found")
+def _get_active_campaign(
+    db: DbSession, campaign_id: uuid.UUID, user: User, level: Level = "operate"
+) -> Campaign:
+    campaign = guard_campaign(db, user, db.get(Campaign, campaign_id), level)
     if campaign.status != CampaignStatus.ACTIVE:
         raise HTTPException(409, "Seule une campagne en cours se modifie ainsi")
     return campaign
@@ -459,7 +502,7 @@ def add_campaign_document(
     user: User = Depends(_manage),
     db: DbSession = Depends(get_db),
 ) -> dict[str, Any]:
-    campaign = _get_editable_campaign(db, campaign_id)
+    campaign = _get_editable_campaign(db, campaign_id, user)
     version = db.get(DocumentVersion, body.document_version_id)
     # A draft can be added and prepared from the campaign; it is published, frozen,
     # when the campaign is launched. A superseded or archived one is not offered.
@@ -492,7 +535,7 @@ def remove_campaign_document(
 ) -> dict[str, Any]:
     """Take a document back out of a campaign: one not sent yet can always go; once
     its copies were sent it is part of the campaign."""
-    campaign = _get_editable_campaign(db, campaign_id)
+    campaign = _get_editable_campaign(db, campaign_id, user)
     if is_released(db, campaign, version_id):
         raise HTTPException(409, "Ce document est déjà envoyé : il ne se retire plus.")
     link = db.get(CampaignDocument, (campaign.id, version_id))
@@ -525,7 +568,7 @@ def put_plan(
 ) -> dict[str, Any]:
     """Keep what the operator has chosen so far (who is asked, when, how often to remind), so
     that nothing is lost on a reload. Nothing is checked beyond the shape: the launch does."""
-    campaign = _get_draft_campaign(db, campaign_id)
+    campaign = _get_draft_campaign(db, campaign_id, user)
     campaign.launch_request = body.model_dump(mode="json", exclude={"roles"})
     db.commit()
     return _campaign_payload(campaign, db)
@@ -540,7 +583,7 @@ def put_signers(
 ) -> dict[str, Any]:
     """Who signs, in which order — decided before the documents are prepared, so
     the editor can offer these very people for the elements."""
-    campaign = _get_draft_campaign(db, campaign_id)
+    campaign = _get_draft_campaign(db, campaign_id, user)
     specs = [RoleSpec(s.role, s.mode, s.user_id, s.label) for s in body.signers]
     try:
         ordered = check_signers(db, specs) if specs else []
@@ -564,7 +607,7 @@ def preview_targets(
     user: User = Depends(_manage),
     db: DbSession = Depends(get_db),
 ) -> dict[str, Any]:
-    _get_draft_campaign(db, campaign_id)
+    _get_draft_campaign(db, campaign_id, user)
     population = _resolve_population(
         db, all_users=body.all_users, group_ids=body.group_ids, user_ids=body.user_ids
     )
@@ -678,7 +721,7 @@ def launch_campaign(
     user: User = Depends(_manage),
     db: DbSession = Depends(get_db),
 ) -> dict[str, Any]:
-    campaign = _get_draft_campaign(db, campaign_id)
+    campaign = _get_draft_campaign(db, campaign_id, user)
     now = datetime.now(UTC)
     if body.start_at is not None and ensure_utc(body.start_at) > now + timedelta(minutes=1):
         # A later start: check everything now, so a refusal is known today and not on the
@@ -730,7 +773,7 @@ def add_campaign_recipients(
     db: DbSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Ask more people on a campaign already sent (groups, users or everyone)."""
-    campaign = _get_active_campaign(db, campaign_id)
+    campaign = _get_active_campaign(db, campaign_id, user)
     population = _resolve_population(
         db, all_users=body.all_users, group_ids=body.group_ids, user_ids=body.user_ids
     )
@@ -760,7 +803,7 @@ def remove_campaign_recipient(
     db: DbSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Stop asking someone: what they have not signed is cancelled, what they signed stays."""
-    campaign = _get_active_campaign(db, campaign_id)
+    campaign = _get_active_campaign(db, campaign_id, user)
     try:
         cancelled = remove_recipient(db, campaign, target_user_id)
     except ChangeError as exc:
@@ -785,7 +828,7 @@ def release_campaign_document(
 ) -> dict[str, Any]:
     """Send a document added after the launch: it is frozen (published) and its
     copies go to the signers, in order."""
-    campaign = _get_active_campaign(db, campaign_id)
+    campaign = _get_active_campaign(db, campaign_id, user, "content")
     link = db.get(CampaignDocument, (campaign.id, version_id))
     version = db.get(DocumentVersion, version_id)
     if link is None or version is None:
@@ -826,9 +869,7 @@ def remind_campaign(
     still-outstanding assignment. Someone who already signed is never
     nagged again — only PENDING/VIEWED assignments qualify.
     """
-    campaign = db.get(Campaign, campaign_id)
-    if campaign is None:
-        raise HTTPException(404, "Campaign not found")
+    campaign = guard_campaign(db, user, db.get(Campaign, campaign_id), "operate")
     if campaign.status != CampaignStatus.ACTIVE:
         raise HTTPException(409, "Only an active campaign can send reminders")
 
@@ -882,9 +923,7 @@ def remind_campaign(
 def close_campaign(
     campaign_id: uuid.UUID, user: User = Depends(_manage), db: DbSession = Depends(get_db)
 ) -> dict[str, Any]:
-    campaign = db.get(Campaign, campaign_id)
-    if campaign is None:
-        raise HTTPException(404, "Campaign not found")
+    campaign = guard_campaign(db, user, db.get(Campaign, campaign_id), "operate")
     if campaign.status != CampaignStatus.ACTIVE:
         raise HTTPException(409, "Only an active campaign can be closed")
 
@@ -938,9 +977,7 @@ def delete_campaign(
 ) -> dict[str, Any]:
     """Erase a campaign that never produced evidence (a draft, or one cancelled
     before anyone signed). Otherwise it is refused with the reason: archive it."""
-    campaign = db.get(Campaign, campaign_id)
-    if campaign is None:
-        raise HTTPException(404, "Campaign not found")
+    campaign = guard_campaign(db, user, db.get(Campaign, campaign_id), "content")
     reasons = campaign_delete_blockers(db, campaign)
     if reasons:
         raise HTTPException(
@@ -971,9 +1008,7 @@ def archive_campaign(
 ) -> dict[str, Any]:
     """Put a finished campaign away: it leaves the working list but its signatures,
     reports and audit trail stay intact and reachable."""
-    campaign = db.get(Campaign, campaign_id)
-    if campaign is None:
-        raise HTTPException(404, "Campaign not found")
+    campaign = guard_campaign(db, user, db.get(Campaign, campaign_id), "operate")
     if campaign.status not in (CampaignStatus.CLOSED, CampaignStatus.CANCELLED):
         raise HTTPException(409, "Seule une campagne clôturée ou annulée peut être archivée")
     campaign.status = CampaignStatus.ARCHIVED
@@ -990,9 +1025,7 @@ def archive_campaign(
 def cancel_campaign(
     campaign_id: uuid.UUID, user: User = Depends(_manage), db: DbSession = Depends(get_db)
 ) -> dict[str, Any]:
-    campaign = db.get(Campaign, campaign_id)
-    if campaign is None:
-        raise HTTPException(404, "Campaign not found")
+    campaign = guard_campaign(db, user, db.get(Campaign, campaign_id), "operate")
     if campaign.status not in (
         CampaignStatus.DRAFT,
         CampaignStatus.SCHEDULED,
@@ -1016,18 +1049,19 @@ def cancel_campaign(
 def list_campaigns(
     user: User = Depends(_manage), db: DbSession = Depends(get_db)
 ) -> list[dict[str, Any]]:
-    campaigns = db.execute(select(Campaign).order_by(Campaign.created_at.desc())).scalars()
-    return [_campaign_payload(c, db) for c in campaigns]
+    visible = campaigns_visible_to(db, user)
+    query = select(Campaign).order_by(Campaign.created_at.desc())
+    if visible is not None:
+        query = query.where(Campaign.id.in_(visible))
+    return [_campaign_payload(c, db, user) for c in db.execute(query).scalars()]
 
 
 @router.get("/{campaign_id}")
 def get_campaign(
     campaign_id: uuid.UUID, user: User = Depends(_manage), db: DbSession = Depends(get_db)
 ) -> dict[str, Any]:
-    campaign = db.get(Campaign, campaign_id)
-    if campaign is None:
-        raise HTTPException(404, "Campaign not found")
-    return _campaign_payload(campaign, db)
+    campaign = guard_campaign(db, user, db.get(Campaign, campaign_id), "view")
+    return _campaign_payload(campaign, db, user)
 
 
 @router.get("/{campaign_id}/assignments")
@@ -1043,9 +1077,7 @@ def list_campaign_assignments(
 ) -> list[dict[str, Any]]:
     """Follow-up table (spec §66), filterable by status, document, group,
     viewed / not viewed and overdue."""
-    campaign = db.get(Campaign, campaign_id)
-    if campaign is None:
-        raise HTTPException(404, "Campaign not found")
+    guard_campaign(db, user, db.get(Campaign, campaign_id), "view")
 
     stmt = (
         select(SignatureAssignment, User)
@@ -1198,3 +1230,118 @@ def list_my_assignments(
             }
         )
     return result
+
+
+# --- who runs a campaign: owner and preparers -----------------------------------------------
+
+
+class PersonIn(BaseModel):
+    user_id: uuid.UUID
+
+
+def _preparer_candidate(db: DbSession, user_id: uuid.UUID) -> User:
+    person = db.get(User, user_id)
+    if person is None or not person.active:
+        raise HTTPException(404, "Utilisateur introuvable ou désactivé")
+    if not (roles_of(db, person) & PREPARE_ROLES):
+        raise HTTPException(
+            422,
+            f"{person.display_name} n'a pas le rôle Préparateur (ni Opérateur, ni Admin) : "
+            "donnez-lui d'abord ce rôle.",
+        )
+    return person
+
+
+@router.get("/_meta/preparers")
+def possible_preparers(
+    user: User = Depends(_manage), db: DbSession = Depends(get_db)
+) -> list[dict[str, Any]]:
+    """The people who could be made owner or preparer: active, and allowed to prepare."""
+    rows = db.execute(
+        select(User).where(
+            User.active.is_(True),
+            User.id.in_(select(UserRole.user_id).where(UserRole.role.in_(PREPARE_ROLES))),
+        )
+    ).scalars()
+    return [
+        {"id": str(p.id), "display_name": p.display_name, "email": p.email}
+        for p in sorted(rows, key=lambda p: p.display_name.lower())
+    ]
+
+
+@router.put("/{campaign_id}/owner")
+def change_owner(
+    campaign_id: uuid.UUID,
+    body: PersonIn,
+    user: User = Depends(_manage),
+    db: DbSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Hand the campaign over (an absence, a departure). The creator is never rewritten; the
+    previous owner stays a preparer, until someone removes them."""
+    campaign = guard_campaign(db, user, db.get(Campaign, campaign_id), "operate")
+    new_owner = _preparer_candidate(db, body.user_id)
+    previous = campaign.owner_id or campaign.created_by
+    if new_owner.id != previous:
+        campaign.owner_id = new_owner.id
+        already = db.get(CampaignPreparer, (campaign.id, previous))
+        if already is None and previous != new_owner.id:
+            db.add(CampaignPreparer(campaign_id=campaign.id, user_id=previous, added_by=user.id))
+        gone = db.get(CampaignPreparer, (campaign.id, new_owner.id))
+        if gone is not None:
+            db.delete(gone)  # the owner needs no row of their own
+        append_audit_event(
+            db, action="CAMPAIGN_OWNER_CHANGED", actor_id=user.id,
+            target_type="campaign", target_id=str(campaign.id), campaign_id=campaign.id,
+            metadata={"from": str(previous), "to": str(new_owner.id)},
+        )
+    db.commit()
+    return _campaign_payload(campaign, db, user)
+
+
+@router.post("/{campaign_id}/preparers", status_code=201)
+def add_preparer(
+    campaign_id: uuid.UUID,
+    body: PersonIn,
+    user: User = Depends(_manage),
+    db: DbSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Allow someone to prepare, run and read this campaign. An operator who must see the content
+    is added here, which leaves a trace."""
+    campaign = guard_campaign(db, user, db.get(Campaign, campaign_id), "operate")
+    person = _preparer_candidate(db, body.user_id)
+    if is_member(db, person, campaign):
+        raise HTTPException(409, f"{person.display_name} est déjà propriétaire ou préparateur")
+    db.add(CampaignPreparer(campaign_id=campaign.id, user_id=person.id, added_by=user.id))
+    append_audit_event(
+        db, action="CAMPAIGN_PREPARER_ADDED", actor_id=user.id,
+        target_type="campaign", target_id=str(campaign.id), campaign_id=campaign.id,
+        metadata={"user_id": str(person.id)},
+    )
+    db.commit()
+    return _campaign_payload(campaign, db, user)
+
+
+@router.delete("/{campaign_id}/preparers/{person_id}")
+def remove_preparer(
+    campaign_id: uuid.UUID,
+    person_id: uuid.UUID,
+    user: User = Depends(_manage),
+    db: DbSession = Depends(get_db),
+) -> dict[str, Any]:
+    campaign = guard_campaign(db, user, db.get(Campaign, campaign_id), "operate")
+    if person_id == (campaign.owner_id or campaign.created_by):
+        raise HTTPException(
+            409, "Le propriétaire ne se retire pas : changez d'abord de propriétaire."
+        )
+    row = db.get(CampaignPreparer, (campaign.id, person_id))
+    if row is None:
+        raise HTTPException(404, "Cette personne n'est pas préparateur de la campagne")
+    db.delete(row)
+    append_audit_event(
+        db, action="CAMPAIGN_PREPARER_REMOVED", actor_id=user.id,
+        target_type="campaign", target_id=str(campaign.id), campaign_id=campaign.id,
+        metadata={"user_id": str(person_id)},
+    )
+    db.commit()
+    return _campaign_payload(campaign, db, user)
+

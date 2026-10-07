@@ -48,7 +48,7 @@ is not presented as one.
 | Frontend | Vite, React, TypeScript, Lucide icons, plain CSS |
 | Proxy | nginx: TLS termination point, security headers, serves the SPA, proxies `/api` (BFF) |
 | Deployment | Docker Compose for dev/integration; Kubernetes-compatible |
-| Dev SSO | `mock_oidc/`, a small OIDC provider (compose profile `dev-sso`) |
+| Mock SSO | `mock_oidc/`, a small OIDC provider, **only in the CrashTest stack** (compose profile `crashtest`) |
 
 The browser only ever talks to nginx, on a single origin. The API is never
 exposed directly, so cookies stay same-site and CORS is not needed.
@@ -74,13 +74,36 @@ docs/               this folder
 
 ## 3. Roles and access control
 
-Three roles, stored in `user_roles`. A user can hold several.
+Four roles, stored in `user_roles`. A user can hold several. A person with **no role** is an
+ordinary user: they see and sign what was asked of them, and nothing else.
 
 | Role | Can do |
 |---|---|
+| *(none)* | See and sign what was addressed to them (an assignment), see their own signatures |
 | `SIGNER` | Sign a published document **of their own accord** (nobody asked). Not needed to sign what a campaign asked: see below |
-| `OPERATOR` | Upload and publish documents, create/launch/remind/close campaigns, read the directory (to pick groups), generate reports |
-| `ADMIN` | Everything administrative: roles, audit, signing keys, SMTP, directory connectors and sync |
+| `PREPARER` (Préparateur) | Upload and prepare documents, place the elements, create a campaign, choose the signers, send, follow, remind, get the results — **only for the campaigns they own or prepare** |
+| `OPERATOR` | **Business administrator.** Sees every campaign, its status, owner, signers and progress; reassigns the owner and the preparers; helps unblock a campaign (remind, cancel, close, archive). Does **not** read the confidential content (documents, signed PDFs, certificates, proofs, reports, exports) unless made a preparer of that campaign |
+| `ADMIN` | Technical administration (users and roles, audit, signing keys, mail, directory connectors and sync) and full access to everything |
+
+### Who sees what in a campaign
+
+A campaign has an **owner** (`owner_id`, who runs it now) and keeps its **creator** (`created_by`,
+for the record, never rewritten). Other **preparers** are rows of `campaign_preparers`; the owner
+needs none. Three levels, no finer rights (`services/access.py`, `api/campaign_access.py`):
+
+| Level | What | Who |
+|---|---|---|
+| view | existence, status, owner, preparers, signers, progress | ADMIN, OPERATOR, owner, preparers |
+| operate | remind, cancel, close, archive, recipients, **hand over** (owner, preparers) | ADMIN, OPERATOR, owner, preparers |
+| content | documents and elements, building and sending, signed PDFs, certificates, proofs, reports, exports | ADMIN, owner, preparers |
+
+A preparer of another campaign gets a 404 (it does not exist for them); an operator who sees it but
+not its content gets a 403. An operator who must read the content is added as a preparer of that
+campaign (`CAMPAIGN_PREPARER_ADDED` in the audit log). Handing a campaign over keeps the previous
+owner as a preparer until someone removes them (`CAMPAIGN_OWNER_CHANGED`). Owner and preparers must
+hold `PREPARER`, `OPERATOR` or `ADMIN`. Library documents follow the same idea (`can_read_document`):
+the uploader, a preparer of a campaign using it, or an administrator read the file; an operator sees
+that it exists. Campaigns from before this model keep their creator as owner (migration 0020).
 
 **Being asked is enough.** Any active, signed-in person who holds a `SignatureAssignment`
 can see it and sign it, whatever their roles (an administrator or an operator can also be
@@ -96,8 +119,18 @@ taken over.
 
 - **Protocol:** OIDC Authorization Code with PKCE (Authlib). The provider is
   generic; configure `LCIT_SIGN_OIDC_ISSUER`, `..._CLIENT_ID`,
-  `..._CLIENT_SECRET`. If unset, auth endpoints return a clear configuration
-  error instead of failing open.
+  `..._CLIENT_SECRET`. If unset, there is no SSO (only the local sign-in) and the auth
+  endpoints return a clear configuration error instead of failing open. `GET /api/auth/options`
+  tells the sign-in page `{sso, provider, local, crashtest}`: `provider` is `entra`, `google`
+  or `generic` (from `LCIT_SIGN_OIDC_PROVIDER`, else read from the issuer's address) and only
+  changes the button's logo and wording.
+- **Two kinds of account.** *SSO accounts* have an (issuer, subject) and no password here.
+  *Local accounts* have a password (scrypt hash, `must_change_password` at first sign-in): the
+  built-in administrator and the people an administrator creates with "Compte local". The local
+  form (`POST /api/auth/local-login`, identifier = built-in name or e-mail) only matches an
+  active account that has a password, so an SSO account never signs in with it. Same throttle,
+  audit and sessions. A local account whose person later signs in through the SSO is adopted (by
+  e-mail), keeps its roles, and its password keeps working.
 - **Login flow:** `/api/auth/login` sets a short-lived signed cookie holding
   state, nonce and the PKCE verifier (HMAC-SHA256 with
   `LCIT_SIGN_SESSION_SECRET`), then redirects to the provider.
@@ -128,11 +161,13 @@ taken over.
 
 A `.docx`, `.odt` or `.doc` can be dropped like a PDF. It is checked before anything else (real
 type, a zip that would explode, macros → refused), then converted by an **isolated converter**
-(`converter/`, profile `office`): its own container, no network, no database, no access to
+(`converter/`, part of every stack: Compose and Kubernetes): its own container, no network, no database, no access to
 LCIT Sign's files, read-only, one file at a time under a fixed name, LibreOffice with macros and
 external links off. What comes back is checked again like any upload. What is signed is the PDF; the
 source is kept (`sources` bucket) with its hash (`document_versions.source_sha256`). Without
-`LCIT_SIGN_CONVERTER_URL`, only PDFs are accepted, and the message says so.
+`LCIT_SIGN_CONVERTER_URL` (set by default to the converter; empty disables it), only PDFs are
+accepted, and the message says so. In Kubernetes (`k8s/converter.yaml`) it is a pod of its own,
+read-only, with a network policy that lets only the API in and nothing out.
 
 ### Storage
 
@@ -629,7 +664,7 @@ they are entered in the admin UI and stored encrypted.
 cp .env.example .env            # edit at least the DB password and master key
 mkdir -p -m 700 certs           # before the first `up` (else Docker creates it as root)
 docker compose up -d --build    # UI on http://127.0.0.1:4180 and https://127.0.0.1:4443
-docker compose --profile dev-sso up -d   # adds the mock OIDC provider
+./crashtest/start.sh            # CrashTest: a separate stack with the mock SSO and fictional accounts
 docker compose -f docker-compose.yml -f docker-compose.test.yml up -d postfix-test
 ```
 
@@ -639,8 +674,29 @@ Where each kind of test runs (spec §95):
 |---|---|---|
 | Lint, types, unit and API tests | dev machine or CI | `ruff`, `mypy`, `pytest` (SQLite + a real mock OIDC + scripted SMTP servers), `vitest` |
 | Integration, smoke, CrashTests | the Integrations VM, in Docker | `tests/UAT/CrashTests-Sign/run-all.sh`: smoke (real PostgreSQL, nginx, SSO, Postfix), SMTP scenarios, seed, Playwright in a real browser, restore test |
-| End-to-end in a browser | the Integrations VM, on a **throwaway copy** of the stack | `scripts/e2e.sh` (via `scripts/integration-run.sh`): its own containers, ports and volumes (prefix `lcit-e2e`, see `docker/e2e.env`), the CrashTests dataset, the mock SSO, Playwright; everything is removed at the end, the real stack and its data are never touched |
+| End-to-end in a browser | the Integrations VM, on a **throwaway CrashTest stack** | `scripts/e2e.sh` (via `scripts/integration-run.sh`): its own containers, ports and volumes (prefix `lcit-e2e`, see `docker/e2e.env`), the CrashTest dataset, the mock SSO, Playwright; everything is removed at the end, the real stack and its data are never touched |
 | Destructive reset | the Integrations VM only | `scripts/integration-reset.sh --yes --seed` |
+
+### CrashTest
+
+`crashtest/` is a **separate stack** for tests and demonstrations: `./crashtest/start.sh` starts it
+(own Compose project named after `LCIT_SIGN_PREFIX`, never `lcit-sign`; own PostgreSQL named
+`lcit_sign_crashtest`; own volumes), applies the migrations and loads the dataset;
+`./crashtest/reset.sh` destroys **only that project's** containers and volumes and starts again.
+It is the only place the mock SSO exists (profile `crashtest`; the normal `docker-compose.yml`
+has no SSO, no bootstrap administrator and no fictional person by default — a clean installation
+starts with the built-in local administrator alone).
+
+The dataset (`crashtest/seed.py`, run inside the api container) refuses to load unless **both**
+`LCIT_SIGN_CRASHTEST=true` (set only by `crashtest/docker-compose.crashtest.yml`) and a database
+name ending in `_crashtest` hold, and never in `production`. It creates the 24 people of the
+demonstration directory plus Sophie Bernard, Claire Moreau, Paul Muller and Admin Crash as local
+accounts whose **password is the first name in lowercase** (`bob.dupont@lcit-test.local` / `bob`),
+stored as the usual scrypt hash, and the same people are available through the mock SSO. Roles:
+Alice Martin, Sophie Bernard, Claire Moreau, Diane Leroy `PREPARER`; Paul Muller `OPERATOR`; Admin
+Crash `ADMIN`; everyone else has none. Campaigns: *Entretiens RH 2027* (owner Alice, preparer
+Sophie, pending), *NDA Juridique* (owner Claire, pending), *Campagne sécurité 2026* (the RSSI Erwan
+signed, someone signed, others pending) and *Politique mots de passe 2026* (recipients waiting).
 
 `scripts/integration-run.sh` runs a repository script on the VM over SSH (host
 key verified, never `StrictHostKeyChecking=no`; the key stays in `~/.ssh`). The

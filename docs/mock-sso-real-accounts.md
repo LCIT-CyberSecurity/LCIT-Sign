@@ -33,7 +33,7 @@ Then put your user id in `.env` so the mock can read the private folder, and res
 
 ```bash
 echo "MOCK_OIDC_UID=$(id -u)" >> .env
-docker compose --profile dev-sso up -d --build mock-oidc
+docker compose --profile crashtest up -d --build mock-oidc
 docker compose up -d --force-recreate webui
 ```
 

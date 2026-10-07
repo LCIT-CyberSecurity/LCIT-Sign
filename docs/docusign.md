@@ -42,7 +42,7 @@ consentement) et propose « Tester la connexion ».
 
 ## Le DocuSign de test (sans compte)
 
-La pile de test (`--profile dev-sso`) contient un **faux DocuSign** (`mock_docusign/`), sans aucune
+La pile de test (CrashTest, `crashtest/start.sh`) contient un **faux DocuSign** (`mock_docusign/`), sans aucune
 valeur légale : il imite l'API utilisée, et remplace l'e-mail de DocuSign par une boîte de réception
 (`/mock-docusign/`) où l'on ouvre l'enveloppe et clique « Signer (simulation) ». Dans l'administration,
 « Utiliser le DocuSign de test » règle tout en un clic (clé jetable). Ce bouton n'existe pas quand

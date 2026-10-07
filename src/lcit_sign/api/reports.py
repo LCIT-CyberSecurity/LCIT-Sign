@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
 
+from lcit_sign.api.campaign_access import guard_campaign
 from lcit_sign.config import Settings
 from lcit_sign.deps import get_db, require_roles
 from lcit_sign.models.campaign import Campaign, SignatureAssignment
@@ -34,7 +35,8 @@ REPORTS_BUCKET = "reports"
 PDF_SUFFIX = ".pdf"
 CSV_SUFFIX = ".csv"
 
-_manage = require_roles(Role.OPERATOR, Role.ADMIN)
+# The report lists a campaign's signers and signatures: its content (services/access.py).
+_manage = require_roles(Role.PREPARER, Role.OPERATOR, Role.ADMIN)
 
 # Mounted under /campaigns: create and list a campaign's PVs.
 campaign_reports_router = APIRouter(prefix="/campaigns", tags=["reports"])
@@ -60,9 +62,7 @@ def create_report(
     user: User = Depends(_manage),
     db: DbSession = Depends(get_db),
 ) -> dict[str, Any]:
-    campaign = db.get(Campaign, campaign_id)
-    if campaign is None:
-        raise HTTPException(404, "Campaign not found")
+    campaign = guard_campaign(db, user, db.get(Campaign, campaign_id), "content")
 
     settings: Settings = request.app.state.settings
     try:
@@ -161,16 +161,18 @@ def create_report(
 def list_campaign_reports(
     campaign_id: uuid.UUID, user: User = Depends(_manage), db: DbSession = Depends(get_db)
 ) -> list[dict[str, Any]]:
+    guard_campaign(db, user, db.get(Campaign, campaign_id), "content")
     reports = db.execute(
         select(Report).where(Report.campaign_id == campaign_id).order_by(Report.generated_at.desc())
     ).scalars()
     return [_report_payload(r) for r in reports]
 
 
-def _get_report_or_404(db: DbSession, report_id: uuid.UUID) -> Report:
+def _get_report_or_404(db: DbSession, report_id: uuid.UUID, user: User) -> Report:
     report = db.get(Report, report_id)
     if report is None:
         raise HTTPException(404, "Report not found")
+    guard_campaign(db, user, db.get(Campaign, report.campaign_id), "content")
     return report
 
 
@@ -181,7 +183,7 @@ def download_report_pdf(
     user: User = Depends(_manage),
     db: DbSession = Depends(get_db),
 ) -> Response:
-    report = _get_report_or_404(db, report_id)
+    report = _get_report_or_404(db, report_id, user)
     storage: StorageService = request.app.state.storage
     data = storage.read(REPORTS_BUCKET, report.id, PDF_SUFFIX)
     append_audit_event(
@@ -202,7 +204,7 @@ def download_report_csv(
     user: User = Depends(_manage),
     db: DbSession = Depends(get_db),
 ) -> Response:
-    report = _get_report_or_404(db, report_id)
+    report = _get_report_or_404(db, report_id, user)
     storage: StorageService = request.app.state.storage
     data = storage.read(REPORTS_BUCKET, report.id, CSV_SUFFIX)
     append_audit_event(
@@ -223,7 +225,7 @@ def verify_report(
     user: User = Depends(_manage),
     db: DbSession = Depends(get_db),
 ) -> dict[str, Any]:
-    report = _get_report_or_404(db, report_id)
+    report = _get_report_or_404(db, report_id, user)
     storage: StorageService = request.app.state.storage
 
     checks = verify_report_record(db, storage, report)

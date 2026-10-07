@@ -4,9 +4,10 @@ Ce guide explique comment utiliser LCIT Sign. Il est écrit pour trois profils :
 
 | Profil | Ce qu'il fait | Chapitres |
 |---|---|---|
-| **Signataire** | Signe ce qu'on lui demande | [1](#1-se-connecter) · [2](#2-signer-un-document) |
-| **Opérateur** | Prépare les documents, fait signer, suit | [3](#3-faire-signer-un-document) · [4](#4-suivre-relancer-récupérer) · [5](#5-la-bibliothèque-de-documents) |
-| **Administrateur** | Gère les accès, les annuaires, les e-mails, les clés | [6](#6-administration) · [7](#7-installation-et-premier-accès) |
+| **Utilisateur / signataire** | Signe ce qu'on lui demande (aucun rôle nécessaire) | [1](#1-se-connecter) · [2](#2-signer-un-document) |
+| **Préparateur** | Prépare les documents, fait signer, suit — **ses propres campagnes** | [3](#3-faire-signer-un-document) · [4](#4-suivre-relancer-récupérer) · [5](#5-la-bibliothèque-de-documents) |
+| **Opérateur** | Administrateur métier : voit **toutes** les campagnes, change propriétaire et préparateurs ; ne lit pas le contenu confidentiel | [4](#4-suivre-relancer-récupérer) · [4 bis](#4-bis-qui-voit-quoi-dans-une-campagne) |
+| **Administrateur** | Gère les accès, les annuaires, les e-mails, les clés ; accès complet | [6](#6-administration) · [7](#7-installation-et-premier-accès) |
 
 Une même personne peut avoir plusieurs profils. Le menu à gauche n'affiche que ce que vous avez le droit
 de faire.
@@ -15,12 +16,17 @@ de faire.
 
 ## 1. Se connecter
 
-LCIT Sign n'a **pas de mot de passe à retenir** : on se connecte avec le compte de l'entreprise
-(Microsoft, Google ou annuaire d'entreprise, selon l'installation).
+En général, on se connecte avec le compte de l'entreprise, sans mot de passe à retenir.
 
-1. Ouvrez l'adresse de LCIT Sign et cliquez sur **Se connecter avec le SSO**.
+1. Ouvrez l'adresse de LCIT Sign et cliquez sur **Continuer avec Microsoft**, **Continuer avec Google** ou
+   **Continuer avec le SSO** (selon votre entreprise).
 2. Choisissez ou saisissez votre compte d'entreprise sur la page de votre fournisseur.
 3. Vous arrivez sur **Mes signatures**.
+
+**Connexion locale.** Sous le bouton, **Connexion locale** ouvre un formulaire (identifiant ou e-mail, mot de
+passe). Il sert au compte système et aux personnes pour qui un administrateur a créé un **compte local** ;
+à leur première connexion, elles choisissent leur propre mot de passe. Si aucun SSO n'est configuré, ce
+formulaire est la page de connexion.
 
 > Si votre session reste inactive une heure, elle se ferme : il suffit de se reconnecter.
 
@@ -165,6 +171,30 @@ ZIP** télécharge les PDF signés (et leurs preuves) en une fois.
 
 ---
 
+## 4 bis. Qui voit quoi dans une campagne
+
+Chaque campagne a un **propriétaire** (celui qui la conduit) et peut avoir d'autres **préparateurs**. On
+voit la mention « Créée par » si c'est quelqu'un d'autre : l'historique n'est jamais réécrit.
+
+| | Préparateur (propriétaire ou préparateur de la campagne) | Préparateur d'une autre campagne | Opérateur | Administrateur |
+|---|---|---|---|---|
+| Voir la campagne, son état, ses signataires, sa progression | oui | **non** (elle n'existe pas pour lui) | oui, toutes | oui |
+| Relancer, annuler, clôturer, archiver | oui | non | oui | oui |
+| Changer le propriétaire, ajouter ou retirer un préparateur | oui | non | oui | oui |
+| **Lire le contenu** : documents, PDF signés, certificats, preuves, exports, procès-verbaux | oui | **non** | **non**, sauf s'il est préparateur de cette campagne | oui |
+| Préparer, modifier, envoyer | oui | non | non | oui |
+
+**Une absence, un départ.** Alice (RH) est absente : un opérateur ajoute Sophie comme préparatrice, puis
+la désigne propriétaire. Alice reste préparatrice tant qu'on ne la retire pas ; l'historique, les
+signatures et le journal d'audit sont conservés.
+
+**Accès exceptionnel.** Un opérateur qui doit vraiment lire le contenu s'ajoute lui-même comme préparateur
+de la campagne : l'opération est **tracée dans le journal d'audit**.
+
+Dans la page d'une campagne, la carte **Propriétaire et préparateurs** montre qui conduit la campagne, et
+permet d'**Ajouter un préparateur** et de **Changer le propriétaire**. Sans accès au contenu, la page le
+dit et masque les documents signés, les preuves et les procès-verbaux.
+
 ## 5. La bibliothèque de documents
 
 Menu **Documents** : les documents réutilisables (modèles). Pour chacun : titre, description, catégorie,
@@ -185,10 +215,14 @@ Liste des personnes, d'où elles viennent (annuaire, ajout manuel, SSO), leurs r
 | Rôle | Droits |
 |---|---|
 | **Signataire** | Signer de sa propre initiative un document publié. (Recevoir et signer une demande ne demande **aucun** rôle.) |
-| **Opérateur** | Documents, **Faire signer**, **Suivi**, rapports |
-| **Administrateur** | Tout ce qui est administratif : utilisateurs, annuaire, e-mail, clés, audit |
+| **Préparateur** | Préparer des documents, créer et conduire des campagnes — les siennes, et celles dont il est préparateur |
+| **Opérateur** | Administrateur métier : voir toutes les campagnes, changer propriétaire et préparateurs ; pas le contenu confidentiel |
+| **Administrateur** | Tout ce qui est administratif : utilisateurs, annuaire, e-mail, clés, audit ; accès complet |
 
-On peut **ajouter** une personne à la main, la **désactiver** (et la réactiver) ou la **supprimer** —
+On peut **ajouter** une personne à la main en choisissant sa **méthode d'authentification** : **SSO** (aucun
+mot de passe ici) ou **Compte local** (un mot de passe initial, obligatoire, que la personne change à sa
+première connexion ; il n'est jamais affiché ni journalisé). On choisit aussi ses rôles. On peut ensuite la
+**désactiver** (et la réactiver) ou la **supprimer** —
 sauf si elle a signé : son historique est alors conservé, avec la raison indiquée.
 
 ### Logo
@@ -237,11 +271,13 @@ Un rappel s'y affiche tant que le mot de passe initial du compte système n'a pa
 
 Voir le [README](../README.md) pour installer. À la première mise en route :
 
-1. **Se connecter avec le compte système local** (identifiant `admin`). Son mot de passe initial est
-   `SecretPassword` : l'application demande de **le changer tout de suite** (mot de passe fort exigé) et
-   le rappelle à chaque connexion tant que ce n'est pas fait. C'est le **seul** compte à mot de passe :
-   tout le monde se connecte ensuite par SSO.
-2. **Configurer le SSO** (variables d'environnement, voir [`entra-sso-test.md`](entra-sso-test.md)).
+1. **Se connecter avec le compte système local** (identifiant `admin`, par « Connexion locale »). Son mot
+   de passe initial est `SecretPassword` : l'application demande de **le changer tout de suite** (mot de
+   passe fort exigé) et le rappelle à chaque connexion tant que ce n'est pas fait. Une installation neuve
+   ne contient **que ce compte** (aucune personne fictive).
+2. **Configurer le SSO** (variables d'environnement, voir [`entra-sso-test.md`](entra-sso-test.md)) : la page
+   de connexion affiche alors le bouton de votre fournisseur. Les autres personnes se connectent par SSO,
+   ou avec un compte local que vous leur créez.
 3. Dans **Administration** : brancher l'**annuaire**, l'**e-mail**, importer le **logo**, donner les rôles.
 4. Dans **Faire signer** : une première demande de test avec deux collègues.
 

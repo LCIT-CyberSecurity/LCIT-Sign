@@ -1347,3 +1347,9 @@ a.attention:hover strong { color: var(--primary); }
 .method-choice__option > span { display: grid; gap: 2px; }
 .method-choice__option.is-selected { border-color: var(--brand, #0b5cab); background: var(--surface-muted, #f6f7f9); }
 .method-choice__option.is-disabled { opacity: 0.65; cursor: not-allowed; }
+
+/* Sign-in: the provider's button, and the local form when there is no SSO. */
+.button--provider { display: inline-flex; align-items: center; justify-content: center; gap: 10px; }
+.auth-local--main { border-top: 0; padding-top: 0; margin-top: 4px; }
+.auth-local--main form { margin-top: 0; }
+.auth-crashtest { margin: 0 0 12px; padding: 8px 10px; border-radius: 8px; background: #fff7e0; color: #6b4e00; font-size: 12.5px; }

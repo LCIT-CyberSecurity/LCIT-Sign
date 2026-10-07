@@ -6,7 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session as DbSession
 
 from lcit_sign.auth.cookies import (
@@ -28,7 +28,9 @@ from lcit_sign.deps import get_current_user, get_db
 from lcit_sign.models.session import Session as SessionRecord
 from lcit_sign.models.user import Role, User, UserRole
 from lcit_sign.services.audit import actor_snapshot, append_audit_event
+from lcit_sign.services.sso import SsoConfig, resolve_sso
 from lcit_sign.services.local_auth import (
+    LOCAL_ISSUER,
     LoginThrottle,
     PasswordChangeError,
     change_password,
@@ -43,25 +45,26 @@ def _redirect_uri(request: Request) -> str:
     return settings.public_base_url.rstrip("/") + "/api/auth/callback"
 
 
-def _require_oidc_configured(request: Request) -> None:
-    settings: Settings = request.app.state.settings
-    if not (settings.oidc_issuer and settings.oidc_client_id and settings.oidc_client_secret):
+def _require_oidc_configured(db: DbSession, request: Request) -> SsoConfig:
+    sso = resolve_sso(db, request.app.state.settings)
+    if sso is None:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "SSO is not configured")
+    return sso
 
 
 @router.get("/auth/login")
-async def login(request: Request) -> Response:
-    _require_oidc_configured(request)
+async def login(request: Request, db: DbSession = Depends(get_db)) -> Response:
+    sso = _require_oidc_configured(db, request)
     settings: Settings = request.app.state.settings
 
     try:
-        metadata = await discover_provider(settings.oidc_issuer)
+        metadata = await discover_provider(sso.issuer)
     except OidcError as exc:
         raise HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE, "SSO provider unreachable"
         ) from exc
     auth_request = build_authorization_request(
-        metadata, client_id=settings.oidc_client_id, redirect_uri=_redirect_uri(request)
+        metadata, client_id=sso.client_id, redirect_uri=_redirect_uri(request)
     )
 
     response = Response(status_code=status.HTTP_302_FOUND)
@@ -91,7 +94,7 @@ async def login(request: Request) -> Response:
 async def callback(
     request: Request, code: str, state: str, db: DbSession = Depends(get_db)
 ) -> Response:
-    _require_oidc_configured(request)
+    sso = _require_oidc_configured(db, request)
     settings: Settings = request.app.state.settings
 
     raw_flow_cookie = request.cookies.get(LOGIN_FLOW_COOKIE)
@@ -111,13 +114,13 @@ async def callback(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid login state")
 
     try:
-        metadata = await discover_provider(settings.oidc_issuer)
+        metadata = await discover_provider(sso.issuer)
         claims = await exchange_code(
             metadata,
             code=code,
             redirect_uri=_redirect_uri(request),
-            client_id=settings.oidc_client_id,
-            client_secret=settings.oidc_client_secret,
+            client_id=sso.client_id,
+            client_secret=sso.client_secret,
             code_verifier=flow["code_verifier"],
             expected_nonce=flow["nonce"],
         )
@@ -138,8 +141,13 @@ async def callback(
         # person from the roster, ahead of their first login — adopt that
         # row instead of creating a duplicate (spec §20-22: SSO and the
         # directory are different sources that still name the same user).
+        # (A local account an administrator created for this person is adopted the same way,
+        # and keeps its password.)
         user = db.execute(
-            select(User).where(User.issuer.like("directory:%"), User.email == claims.email)
+            select(User).where(
+                or_(User.issuer.like("directory:%"), User.issuer == LOCAL_ISSUER),
+                User.email == claims.email,
+            )
         ).scalar_one_or_none()
 
     full_name = f"{claims.given_name} {claims.family_name}".strip()
@@ -220,18 +228,32 @@ class LocalLoginRequest(BaseModel):
 
 
 @router.get("/auth/options")
-def login_options(request: Request) -> dict[str, bool]:
-    """What the sign-in page may offer. The built-in account form is shown only
-    when it is enabled; nothing else in the application takes a password."""
+def login_options(request: Request) -> dict[str, Any]:
+    """What the sign-in page may offer: the SSO (and which provider's button), and the local
+    form (the built-in administrator and the accounts an administrator gave a password to)."""
     settings: Settings = request.app.state.settings
-    return {"sso": bool(settings.oidc_issuer), "local": settings.local_auth_enabled}
+    factory = getattr(request.app.state, "session_factory", None)
+    if factory is None:  # no database (some tests): the environment only
+        sso = resolve_sso(None, settings)
+    else:
+        with factory() as db:
+            sso = resolve_sso(db, settings)
+    provider = sso.provider if sso else None
+    return {
+        "sso": provider is not None,
+        "provider": provider,
+        "local": settings.local_auth_enabled,
+        # The CrashTest stack (fictional accounts): the sign-in page says so.
+        "crashtest": settings.crashtest,
+    }
 
 
 @router.post("/auth/local-login")
 def local_login(
     request: Request, body: LocalLoginRequest, db: DbSession = Depends(get_db)
 ) -> Response:
-    """Sign in as the built-in system account."""
+    """Sign in with a local account: the built-in administrator, or a person an administrator
+    gave a password to. An account without a password (everyone who uses the SSO) never matches."""
     settings: Settings = request.app.state.settings
     if not settings.local_auth_enabled:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
@@ -359,5 +381,13 @@ async def me(
         # True only for the built-in account while it still has its initial password:
         # the interface reminds its owner, at every sign-in, until it is changed.
         "must_change_password": user.must_change_password,
-        "source": "builtin" if user.issuer.startswith("builtin:") else "sso",
+        # How they sign in: the built-in account, a local account (it has a password here, which
+        # they may change), or the SSO alone.
+        "source": (
+            "builtin"
+            if user.issuer.startswith("builtin:")
+            else "local"
+            if user.password_hash
+            else "sso"
+        ),
     }

@@ -39,7 +39,9 @@ export default function App() {
 
   if (!user) return <LoginPage />;
 
-  const isOperator = hasRole("OPERATOR") || hasRole("ADMIN");
+  // Anyone who may prepare: the menus of "Documents", "Faire signer" and "Suivi". What they may open
+  // there is decided per campaign by the API.
+  const isOperator = hasRole("PREPARER") || hasRole("OPERATOR") || hasRole("ADMIN");
   const isAdmin = hasRole("ADMIN");
 
   return (

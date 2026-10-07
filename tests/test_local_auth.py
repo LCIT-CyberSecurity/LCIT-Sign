@@ -158,7 +158,7 @@ def test_wrong_credentials_are_refused_audited_and_throttled(tmp_path, mock_oidc
     assert failures and all(PASSWORD not in str(e.metadata_json) for e in failures)
 
 
-def test_only_the_system_account_can_use_a_password(tmp_path, mock_oidc_base_url):
+def test_an_sso_user_cannot_use_the_local_form(tmp_path, mock_oidc_base_url):
     from test_auth_flow import login_as
 
     app, client = started(tmp_path, mock_oidc_base_url, local_admin_password=PASSWORD)
