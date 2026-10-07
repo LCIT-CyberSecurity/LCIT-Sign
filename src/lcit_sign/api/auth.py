@@ -3,7 +3,6 @@ from __future__ import annotations
 import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel
@@ -29,6 +28,7 @@ from lcit_sign.deps import get_current_user, get_db
 from lcit_sign.models.session import Session as SessionRecord
 from lcit_sign.models.user import Role, User, UserRole
 from lcit_sign.services.audit import actor_snapshot, append_audit_event
+from lcit_sign.services.sso import SsoConfig, resolve_sso
 from lcit_sign.services.local_auth import (
     LOCAL_ISSUER,
     LoginThrottle,
@@ -45,25 +45,26 @@ def _redirect_uri(request: Request) -> str:
     return settings.public_base_url.rstrip("/") + "/api/auth/callback"
 
 
-def _require_oidc_configured(request: Request) -> None:
-    settings: Settings = request.app.state.settings
-    if sso_provider(settings) is None:
+def _require_oidc_configured(db: DbSession, request: Request) -> SsoConfig:
+    sso = resolve_sso(db, request.app.state.settings)
+    if sso is None:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "SSO is not configured")
+    return sso
 
 
 @router.get("/auth/login")
-async def login(request: Request) -> Response:
-    _require_oidc_configured(request)
+async def login(request: Request, db: DbSession = Depends(get_db)) -> Response:
+    sso = _require_oidc_configured(db, request)
     settings: Settings = request.app.state.settings
 
     try:
-        metadata = await discover_provider(settings.oidc_issuer)
+        metadata = await discover_provider(sso.issuer)
     except OidcError as exc:
         raise HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE, "SSO provider unreachable"
         ) from exc
     auth_request = build_authorization_request(
-        metadata, client_id=settings.oidc_client_id, redirect_uri=_redirect_uri(request)
+        metadata, client_id=sso.client_id, redirect_uri=_redirect_uri(request)
     )
 
     response = Response(status_code=status.HTTP_302_FOUND)
@@ -93,7 +94,7 @@ async def login(request: Request) -> Response:
 async def callback(
     request: Request, code: str, state: str, db: DbSession = Depends(get_db)
 ) -> Response:
-    _require_oidc_configured(request)
+    sso = _require_oidc_configured(db, request)
     settings: Settings = request.app.state.settings
 
     raw_flow_cookie = request.cookies.get(LOGIN_FLOW_COOKIE)
@@ -113,13 +114,13 @@ async def callback(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid login state")
 
     try:
-        metadata = await discover_provider(settings.oidc_issuer)
+        metadata = await discover_provider(sso.issuer)
         claims = await exchange_code(
             metadata,
             code=code,
             redirect_uri=_redirect_uri(request),
-            client_id=settings.oidc_client_id,
-            client_secret=settings.oidc_client_secret,
+            client_id=sso.client_id,
+            client_secret=sso.client_secret,
             code_verifier=flow["code_verifier"],
             expected_nonce=flow["nonce"],
         )
@@ -226,29 +227,18 @@ class LocalLoginRequest(BaseModel):
     password: str
 
 
-def sso_provider(settings: Settings) -> str | None:
-    """Which identity provider the SSO button stands for: "entra", "google" or "generic", or
-    None when no SSO is configured. It only changes the logo and the wording: the engine is the
-    same OpenID Connect for all of them. An explicit LCIT_SIGN_OIDC_PROVIDER wins; otherwise it
-    is read from the issuer's address."""
-    if not (settings.oidc_issuer and settings.oidc_client_id and settings.oidc_client_secret):
-        return None
-    if settings.oidc_provider:
-        return settings.oidc_provider
-    host = (urlparse(settings.oidc_issuer).hostname or "").lower()
-    if host in ("login.microsoftonline.com", "sts.windows.net"):
-        return "entra"
-    if host == "accounts.google.com":
-        return "google"
-    return "generic"
-
-
 @router.get("/auth/options")
 def login_options(request: Request) -> dict[str, Any]:
     """What the sign-in page may offer: the SSO (and which provider's button), and the local
     form (the built-in administrator and the accounts an administrator gave a password to)."""
     settings: Settings = request.app.state.settings
-    provider = sso_provider(settings)
+    factory = getattr(request.app.state, "session_factory", None)
+    if factory is None:  # no database (some tests): the environment only
+        sso = resolve_sso(None, settings)
+    else:
+        with factory() as db:
+            sso = resolve_sso(db, settings)
+    provider = sso.provider if sso else None
     return {
         "sso": provider is not None,
         "provider": provider,
