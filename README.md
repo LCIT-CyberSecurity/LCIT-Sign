@@ -79,14 +79,29 @@ docker compose up -d --build
 - API : proxyée par nginx sous `/api`, santé sur `/api/health`
 - Certificat HTTPS : `scripts/certificate-installer.sh` · Sauvegarde / restauration : `scripts/backup.sh`, `scripts/restore.sh`
 - Documents Word / LibreOffice : ajouter `--profile office`
-- **Premier accès** : un compte administrateur système local existe pour amorcer la plateforme. Son
-  mot de passe initial est `SecretPassword` ; il est **à changer dès la première connexion**
+- **Premier accès** : un compte administrateur système local existe pour amorcer la plateforme (identifiant
+  `admin`). Son mot de passe initial est `SecretPassword` ; il est **à changer dès la première connexion**
   (l'application le rappelle à chaque connexion, et la page Diagnostic le signale tant que ce n'est
-  pas fait). Ensuite, tout se fait en SSO.
+  pas fait). Une installation neuve ne contient **que ce compte** : aucune personne fictive, aucun SSO de
+  test.
+- **Brancher le vrai SSO** : renseigner `LCIT_SIGN_OIDC_ISSUER`, `..._CLIENT_ID` et `..._CLIENT_SECRET` dans
+  `.env` (Microsoft Entra ID, Google ou tout fournisseur OpenID Connect). La page de connexion affiche alors
+  « Continuer avec Microsoft », « Continuer avec Google » ou « Continuer avec le SSO », et garde une
+  « Connexion locale » discrète. Sans SSO, la connexion locale est la page de connexion.
+- **Comptes locaux** : dans Administration → Utilisateurs, choisir « Compte local » pour créer une personne
+  avec un mot de passe (obligatoire, haché, à changer à sa première connexion) au lieu du SSO.
 
-Pour essayer sans fournisseur d'identité : `docker compose --profile dev-sso up -d --build` ajoute un
-SSO de test (identités fictives, et vos vrais comptes Entra / Google / LDAP si vous le configurez,
-voir [`docs/mock-sso-real-accounts.md`](docs/mock-sso-real-accounts.md)).
+### Environnement CrashTest (tests et démonstration)
+
+```bash
+./crashtest/start.sh     # pile séparée : base, volumes, SSO de test, comptes et campagnes fictifs
+./crashtest/reset.sh     # détruit uniquement les volumes CrashTest et recharge le jeu de données
+```
+
+CrashTest est le **seul** endroit où existe le Mock SSO. Les comptes fictifs ont pour mot de passe leur
+**prénom en minuscules** (`bob.dupont@lcit-test.local` / `bob`) et peuvent aussi se connecter en un clic par
+le SSO de test. Le jeu de données refuse de se charger hors d'une pile CrashTest. Détails :
+[`crashtest/README.md`](crashtest/README.md).
 
 ## Développement et tests
 
