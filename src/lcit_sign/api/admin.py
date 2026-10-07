@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session as DbSession
 from lcit_sign.config import Settings
 from lcit_sign.deps import get_db, require_roles, user_roles
 from lcit_sign.models.audit import AuditEvent
-from lcit_sign.models.campaign import Campaign, SignatureAssignment
+from lcit_sign.models.campaign import Campaign, CampaignPreparer, SignatureAssignment
 from lcit_sign.models.directory import GroupMembership
 from lcit_sign.models.document import Document
 from lcit_sign.models.mail import MailConnector, Notification, NotificationStatus, NotificationType
@@ -79,6 +79,8 @@ def _user_blockers(db: DbSession, users: list[User]) -> dict[uuid.UUID, list[str
     count(SignatureAssignment.user_id, "document(s) à signer")
     count(Document.created_by, "document(s) créé(s)")
     count(Campaign.created_by, "campagne(s) créée(s)")
+    count(Campaign.owner_id, "campagne(s) dont il est propriétaire")
+    count(CampaignPreparer.user_id, "campagne(s) où il est préparateur")
     count(Report.generated_by, "procès-verbal(aux) généré(s)")
     for user in users:
         source = user_source(user)

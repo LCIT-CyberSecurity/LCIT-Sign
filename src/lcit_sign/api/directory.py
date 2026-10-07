@@ -31,7 +31,7 @@ _admin = require_roles(Role.ADMIN)
 # Reading the roster is also an OPERATOR need (picking groups to target a
 # campaign at, spec §33); only mutating the directory (sync) stays
 # ADMIN-only, matching spec §12-13's split of responsibilities.
-_read = require_roles(Role.OPERATOR, Role.ADMIN)
+_read = require_roles(Role.PREPARER, Role.OPERATOR, Role.ADMIN)
 
 
 def _run_payload(run: DirectorySyncRun) -> dict[str, Any]:

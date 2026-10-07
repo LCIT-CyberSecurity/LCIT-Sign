@@ -66,7 +66,11 @@ class Campaign(Base):
         String(30), default=CampaignTargetMode.SPECIFIC_USERS.value
     )
 
+    # Who started it, for the record: never changes.
     created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    # Who runs it now. Starts as the creator; an operator can hand it over (an absence, a
+    # departure) without touching the history in `created_by`.
+    owner_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     launch_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # The launch request as the operator filled it. On a draft it is the work in progress
@@ -131,6 +135,19 @@ class CampaignRole(Base):
     label: Mapped[str] = mapped_column(String(100), default="")
     mode: Mapped[str] = mapped_column(String(10))  # FIXED | EACH
     user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+
+
+class CampaignPreparer(Base):
+    """Someone allowed to prepare, run and read this campaign besides its owner (who always can,
+    without a row here): a colleague covering for an absence, or an operator who must see the
+    content. Adding one is audited."""
+
+    __tablename__ = "campaign_preparers"
+
+    campaign_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("campaigns.id"), primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    added_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class CampaignTargetUser(Base):
