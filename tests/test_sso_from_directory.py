@@ -1,5 +1,5 @@
 """The Entra application configured under Annuaires also serves for sign-in when no SSO variables
-are set (or on the CrashTest stack)."""
+are set. Variables that are set always win: on the CrashTest stack the mock SSO stays in front."""
 from __future__ import annotations
 
 import json
@@ -36,34 +36,34 @@ def test_environment_wins_on_a_normal_installation(tmp_path, mock_oidc_base_url)
         assert sso and sso.client_id == "test-client"
 
 
-def test_the_directory_application_is_used_on_crashtest_and_when_no_variables(
-    tmp_path, mock_oidc_base_url
-):
+def test_the_directory_application_is_used_when_no_variables(tmp_path, mock_oidc_base_url):
     app = make_app(tmp_path, mock_oidc_base_url, master_key="test-master-key-0123456789abcdef")
-    with TestClient(app) as client:
+    with TestClient(app):
         store_entra(app)
-        settings = app.state.settings
-        for over in ({"crashtest": True}, {"oidc_issuer": "", "oidc_client_id": ""}):
-            with app.state.session_factory() as db:
-                sso = resolve_sso(db, settings.model_copy(update=over))
-            assert sso and sso.provider == "entra" and sso.client_id == "app-1"
-            assert sso.issuer == f"https://login.microsoftonline.com/{TENANT}/v2.0"
-        assert client.get("/api/auth/options").json()["sso"] is True
+        settings = app.state.settings.model_copy(update={"oidc_issuer": "", "oidc_client_id": ""})
+        with app.state.session_factory() as db:
+            sso = resolve_sso(db, settings)
+        assert sso and sso.provider == "entra" and sso.client_id == "app-1"
+        assert sso.issuer == f"https://login.microsoftonline.com/{TENANT}/v2.0"
 
 
-def test_crashtest_keeps_the_mock_sso_as_a_second_button_next_to_the_real_one(
-    tmp_path, mock_oidc_base_url
-):
+def test_crashtest_keeps_the_mock_oidc_even_with_an_entra_directory(tmp_path, mock_oidc_base_url):
     app = make_app(
         tmp_path, mock_oidc_base_url, master_key="test-master-key-0123456789abcdef", crashtest=True
     )
     with TestClient(app) as client:
-        assert client.get("/api/auth/options").json()["test_sso"] is False  # nothing real yet
+        settings = app.state.settings
+        assert settings.crashtest and settings.oidc_issuer == mock_oidc_base_url
         store_entra(app)
+        with app.state.session_factory() as db:
+            sso = resolve_sso(db, settings)
+        # The mock stays the issuer; Entra is reached through it, never directly.
+        assert sso and sso.issuer == mock_oidc_base_url and sso.client_id == "test-client"
+        assert "login.microsoftonline.com" not in sso.issuer
         options = client.get("/api/auth/options").json()
-        assert options["provider"] == "entra" and options["test_sso"] is True
-        # The mock one signs people in, whatever the real one is.
-        login_as(client, mock_oidc_base_url, sub="u-rh-2", path="/api/auth/login?test_sso=true")
+        assert options["sso"] is True and options["provider"] != "entra"
+        assert options["test_sso"] is False  # the mock is the main button, not a second one
+        login_as(client, mock_oidc_base_url, sub="u-rh-2")
         assert client.get("/api/auth/me").json()["email"] == "sophie.bernard@lcit-test.local"
 
 

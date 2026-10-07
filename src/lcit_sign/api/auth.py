@@ -28,7 +28,6 @@ from lcit_sign.deps import get_current_user, get_db
 from lcit_sign.models.session import Session as SessionRecord
 from lcit_sign.models.user import Role, User, UserRole
 from lcit_sign.services.audit import actor_snapshot, append_audit_event
-from lcit_sign.services.sso import SsoConfig, has_test_sso_alongside, resolve_sso
 from lcit_sign.services.local_auth import (
     LOCAL_ISSUER,
     LoginThrottle,
@@ -36,6 +35,7 @@ from lcit_sign.services.local_auth import (
     change_password,
     check_credentials,
 )
+from lcit_sign.services.sso import SsoConfig, has_test_sso_alongside, resolve_sso
 
 router = APIRouter(tags=["auth"])
 

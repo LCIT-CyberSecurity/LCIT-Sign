@@ -1,9 +1,13 @@
 """Which identity provider the sign-in page uses.
 
-Normally the LCIT_SIGN_OIDC_* variables. When none are set (or on the CrashTest stack, where they
-point at a mock), the Microsoft Entra application an administrator already configured under
-Administration > Annuaires is used for sign-in too: same tenant, same application, secret read
-from the encrypted store. The application must list /api/auth/callback as a redirect URI.
+The LCIT_SIGN_OIDC_* variables whenever they are set, on every stack. When none are set, the
+Microsoft Entra application an administrator already configured under Administration > Annuaires
+is used for sign-in too: same tenant, same application, secret read from the encrypted store. The
+application must list /api/auth/callback as a redirect URI.
+
+On the CrashTest stack the variables point at the mock SSO, which stays the entry point: it offers
+the fictional identities and, behind them, the real Microsoft Entra. Configuring or synchronising
+the Entra directory there must never replace it.
 """
 from __future__ import annotations
 
@@ -79,9 +83,9 @@ def resolve_sso(
     env = _from_environment(settings)
     if test_sso:
         return env if settings.crashtest else None
-    if env is None or settings.crashtest:
-        return (_from_directory(db, settings) if db is not None else None) or env
-    return env
+    if env is not None:
+        return env
+    return _from_directory(db, settings) if db is not None else None
 
 
 def has_test_sso_alongside(db: Session | None, settings: Settings) -> bool:
