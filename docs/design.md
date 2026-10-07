@@ -78,9 +78,14 @@ Three roles, stored in `user_roles`. A user can hold several.
 
 | Role | Can do |
 |---|---|
-| `SIGNER` | See their own assignments, read and sign documents, download their own proofs |
+| `SIGNER` | Sign a published document **of their own accord** (nobody asked). Not needed to sign what a campaign asked: see below |
 | `OPERATOR` | Upload and publish documents, create/launch/remind/close campaigns, read the directory (to pick groups), generate reports |
 | `ADMIN` | Everything administrative: roles, audit, signing keys, SMTP, directory connectors and sync |
+
+**Being asked is enough.** Any active, signed-in person who holds a `SignatureAssignment`
+can see it and sign it, whatever their roles (an administrator or an operator can also be
+a designated signer). `SIGNER` is only required to sign a document nobody asked them to sign
+(a campaign-less signature). Someone who was not asked and lacks `SIGNER` gets a 403.
 
 Routes are guarded by `require_roles(...)` in `deps.py`. Roles are granted by
 an ADMIN. `LCIT_SIGN_BOOTSTRAP_ADMIN` gives ADMIN to one email on login so
@@ -151,7 +156,8 @@ This is the core of the product.
 
 ### What happens when a signer signs
 
-1. The signer must hold `SIGNER`, the version must be `PUBLISHED`, and the
+1. The signer must have been asked (an outstanding assignment) or hold `SIGNER`
+   for a signature of their own accord, the version must be `PUBLISHED`, and the
    consent box must be ticked.
 2. The platform appends **one attestation page** to the original PDF: a
    sober metadata block plus a cursive rendering of the signer's
@@ -171,6 +177,23 @@ This is the core of the product.
    is written, and a confirmation email is queued.
 
 One user can sign a given version only once (database unique constraint).
+
+### One signature answers one campaign
+
+When the same version is asked of the same person by several campaigns, a signature
+closes **only the assignment of the campaign it answers**. The signer page names the
+campaign (`campaign_id` in the sign request, and `sign-all` always passes its own). A
+request with no campaign named while several are outstanding is refused (409) rather
+than guessed; signing one never closes the other.
+
+### The master key must match the signing key
+
+Before any proof is signed (or a report), the service derives the public key from
+`LCIT_SIGN_MASTER_KEY` and the active key's id and compares it with the public key recorded
+in the database. A mismatch (a replaced or mistyped master key) stops the signature with a 503
+and a message that names no secret: nothing is created and no assignment is closed. Existing
+signatures stay verifiable (they rely on the recorded public keys). Key rotation skips the
+check, so an administrator can recover by rotating to a key the current master key derives.
 
 ### Why the snapshot
 
@@ -558,12 +581,19 @@ All routes sit under `/api`.
 
 A single-page React app, role-aware:
 
-- **Signer:** list of assignments, a detail page with PDF viewer, consent and
-  sign button, and access to their proofs.
-- **Operator:** documents and versions, campaigns (create, target, launch,
-  remind, close), reports.
-- **Admin:** users and roles, audit log and integrity check, signing keys,
-  SMTP, directory (source selector, sync history, connector credential forms).
+- **Signer:** one page, **Mes signatures** (to sign, coming up, signed with the signed PDF one
+  click away), a detail page that shows the document as it will be signed (earlier signers'
+  stamps and their own elements in place), consent and sign button, and their proofs and chain
+  of signers.
+- **Operator:** *Documents* (library), *Faire signer* (the five-screen flow: signers and
+  planning, documents, preparing in the PDF.js editor, review and send, signed documents) and
+  *Suivi* (campaigns, signed documents, reminders, changes after sending), reports.
+- **Admin:** users and roles, company logo, audit log and integrity check, signing keys,
+  diagnostics, mail (SMTP, Microsoft Graph, Gmail) and directory (Entra ID, Google Workspace,
+  LDAP: forms drawn from each connector's description, with help bubbles and a step-by-step
+  guide).
+
+The user guide is [guide-utilisateur.md](guide-utilisateur.md).
 
 Secret fields are write-only: the forms send them and clear them, and show
 only whether a secret is set.
@@ -637,10 +667,10 @@ Deliberate deviations (design choices):
   keeps only public keys. Same goal as spec §44 (no private key in Git, images,
   PostgreSQL or logs), different mechanism. Consequence: the master key is the
   single secret to protect and back up.
-- **The PDF viewer is the browser's native one (an `<iframe>`), not PDF.js.**
-  Uploads are validated and PDFs with JavaScript/auto-actions are refused, but
-  hyperlink opening (`noopener`, "you are leaving LCIT Sign" notice, spec §24)
-  is the browser's behaviour, not LCIT Sign's.
+- **Signers read the document in the browser's native PDF viewer (an `<iframe>`).**
+  Only the element editor uses PDF.js. Uploads are validated and PDFs with
+  JavaScript/auto-actions are refused, but hyperlink opening (`noopener`, "you are
+  leaving LCIT Sign" notice, spec §24) is the browser's behaviour, not LCIT Sign's.
 - **SSO and security settings are environment-driven, not editable in the UI.**
   The `OIDC_CONFIGURATION_CHANGED` and `SECURITY_CONFIGURATION_CHANGED` audit
   events therefore never occur, and the admin menu has no SSO/General/Security
@@ -655,14 +685,18 @@ Not implemented:
   one consent text is configured globally.
 - Reports cover one campaign, not an arbitrary document / period / population
   selection (spec §67).
-- Google Workspace *mail* sending (SMTP and Microsoft Graph exist).
 
 Untested against the real world:
 
-- **Entra ID and Google directory connectors and the Microsoft Graph mailer have
-  been exercised only against mocked HTTP transports**, never a real tenant. The
-  Graph procedure (`docs/microsoft-graph-setup.md`) must be followed by a tenant
+- **The Entra ID directory and the Microsoft Graph mailer have been verified on the real
+  LCIT tenant.** The **Google Workspace directory and Gmail, and LDAP, have only been
+  exercised against mocked HTTP transports / a fake LDAP**, never a real domain or server.
+  The Graph procedure (`docs/microsoft-graph-setup.md`) must be followed by a tenant
   administrator, including the mandatory isolation test.
+- After someone has signed in with SSO, their identity (issuer, subject) is the SSO's, and
+  nothing in the row says which directory they came from: a directory sync finds them again by
+  e-mail, and a person who leaves the directory after that is not deactivated. Fixing this
+  needs a source marker on the user (an additive migration) and is deliberately not done yet.
 - Kubernetes manifests are schema-validated (`kubeconform`), not applied to a
   live cluster.
 
