@@ -72,7 +72,8 @@ class FakeGoogle:
                 return httpx.Response(200, json={"nextPageToken": "g2", "groups": [
                     {"id": "g1", "name": "Compta", "email": "compta@corp.test"}]})
             return httpx.Response(200, json={"groups": [
-                {"id": "g2", "name": "Tous", "email": "tous@corp.test", "description": "Everyone"}]})
+                {"id": "g2", "name": "Tous", "email": "tous@corp.test",
+                 "description": "Everyone"}]})
         if path.startswith("/groups/") and path.endswith("/members"):
             self._strict(path, params, MEMBERS)
             group = path.split("/")[2]
@@ -103,7 +104,8 @@ def test_every_list_is_paged_with_the_parameters_its_endpoint_takes():
         ("/groups", "g2"),
         ("/groups/g2/members", None),
     ]
-    assert sorted(u.email for u in snapshot.users) == ["ann@corp.test", "bob@corp.test", "cy@corp.test"]
+    assert sorted(u.email for u in snapshot.users) == [
+        "ann@corp.test", "bob@corp.test", "cy@corp.test"]
 
 
 def test_members_are_users_or_nested_groups_and_strangers_are_ignored():

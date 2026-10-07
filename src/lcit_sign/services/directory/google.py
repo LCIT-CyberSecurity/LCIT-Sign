@@ -71,13 +71,16 @@ class GoogleWorkspaceConnector:
         headers: dict[str, str],
         *,
         customer: bool = True,
-        **extra: str,
+        extra: dict[str, str] | None = None,
     ) -> Iterator[dict[str, Any]]:
         """Every page of a list. `customer=my_customer` scopes users.list and groups.list to the
         whole account; members.list takes none (the group already says whose it is)."""
+        extra_params = extra or {}
         page_token: str | None = None
         while True:
-            params = {"maxResults": "200", **({"customer": "my_customer"} if customer else {}), **extra}
+            params = {"maxResults": "200", **extra_params}
+            if customer:
+                params["customer"] = "my_customer"
             if page_token:
                 params["pageToken"] = page_token
             page = get_json(self._client, url, headers=headers, params=params)
@@ -97,7 +100,7 @@ class GoogleWorkspaceConnector:
         team_values: dict[str, str] = {}
         # The department lives in the user's "organizations", only returned in full projection.
         extra = {"projection": "full"} if self._team_attribute == "department" else {}
-        for raw in self._pages(f"{self.API}/users", "users", headers, **extra):
+        for raw in self._pages(f"{self.API}/users", "users", headers, extra=extra):
             if self._team_attribute == "orgunit":
                 team_values[raw["id"]] = (
                     str(raw.get("orgUnitPath") or "").strip("/").replace("/", " / ")

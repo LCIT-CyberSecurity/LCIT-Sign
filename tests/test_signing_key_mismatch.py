@@ -57,7 +57,8 @@ def test_an_administrator_can_still_rotate_to_recover_from_a_changed_master_key(
     app, admin, operator, signer, _ = setup_campaign_fixture(tmp_path, mock_oidc_base_url)
     version_id = publish(operator)
     ask(operator, version_id, get_user_id(signer), "A")
-    assert admin.post("/api/admin/signing-keys/rotate").status_code == 201  # a key under the old key
+    # A signing key exists under the old master key.
+    assert admin.post("/api/admin/signing-keys/rotate").status_code == 201
 
     use_master_key(app, WRONG)
     assert signer.post(

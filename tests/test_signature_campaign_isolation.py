@@ -7,7 +7,7 @@ from sqlalchemy import select
 from test_campaigns import get_user_id, setup_campaign_fixture
 from test_prepared_fields import element, upload
 
-from lcit_sign.models.campaign import AssignmentStatus, SignatureAssignment
+from lcit_sign.models.campaign import SignatureAssignment
 from lcit_sign.models.signature import Signature
 
 
