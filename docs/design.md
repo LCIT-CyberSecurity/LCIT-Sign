@@ -161,11 +161,13 @@ taken over.
 
 A `.docx`, `.odt` or `.doc` can be dropped like a PDF. It is checked before anything else (real
 type, a zip that would explode, macros → refused), then converted by an **isolated converter**
-(`converter/`, profile `office`): its own container, no network, no database, no access to
+(`converter/`, part of every stack: Compose and Kubernetes): its own container, no network, no database, no access to
 LCIT Sign's files, read-only, one file at a time under a fixed name, LibreOffice with macros and
 external links off. What comes back is checked again like any upload. What is signed is the PDF; the
 source is kept (`sources` bucket) with its hash (`document_versions.source_sha256`). Without
-`LCIT_SIGN_CONVERTER_URL`, only PDFs are accepted, and the message says so.
+`LCIT_SIGN_CONVERTER_URL` (set by default to the converter; empty disables it), only PDFs are
+accepted, and the message says so. In Kubernetes (`k8s/converter.yaml`) it is a pod of its own,
+read-only, with a network policy that lets only the API in and nothing out.
 
 ### Storage
 

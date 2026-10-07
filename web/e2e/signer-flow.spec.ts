@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 
 // Fictional CrashTest identities of the mock OIDC provider. The stack must
@@ -592,7 +593,27 @@ test("the sign-in page offers Entra, Google and LDAP, and says which are not set
   await expect(page.locator('input[type="password"]')).toHaveCount(0);
 });
 
-test("a Word document is refused in words when the converter is not there", async ({ page }) => {
+test("Word, LibreOffice and PDF files are all accepted in the library", async ({ page }) => {
+  await loginAs(page, "Diane");
+  await page.goto("/documents");
+  const stamp = Date.now();
+  await page.getByTestId("dropzone-input").setInputFiles([
+    { name: `pdf-${stamp}.pdf`, mimeType: "application/pdf", buffer: MINIMAL_PDF },
+    { name: `docx-${stamp}.docx`, mimeType: "application/octet-stream", buffer: readFileSync("e2e/fixtures/charte.docx") },
+    { name: `doc-${stamp}.doc`, mimeType: "application/msword", buffer: readFileSync("e2e/fixtures/charte.doc") },
+    { name: `odt-${stamp}.odt`, mimeType: "application/octet-stream", buffer: readFileSync("e2e/fixtures/charte.odt") },
+  ]);
+  await page.getByRole("button", { name: /Importer 4 documents/ }).click();
+  const results = page.getByTestId("upload-results");
+  for (const name of [`pdf-${stamp}.pdf`, `docx-${stamp}.docx`, `doc-${stamp}.doc`, `odt-${stamp}.odt`]) {
+    await expect(results.locator("li", { hasText: name })).toContainText("ajouté à la bibliothèque", {
+      timeout: 60_000,
+    });
+  }
+  await expect(results).not.toContainText("✕");
+});
+
+test("a fake Word file is refused in words, never a blank failure", async ({ page }) => {
   await loginAs(page, "Diane");
   await page.goto("/documents");
   await page.getByTestId("dropzone-input").setInputFiles({
@@ -601,9 +622,60 @@ test("a Word document is refused in words when the converter is not there", asyn
     buffer: Buffer.from("PK\u0003\u0004 not really a document"),
   });
   await page.getByRole("button", { name: "Importer le document" }).click();
-  // Refused in words (here it is not even a real document); never a blank failure.
-  await expect(page.getByTestId("upload-results")).toContainText(/pas un document|pas activée/);
+  await expect(page.getByTestId("upload-results")).toContainText(/pas un document/);
 });
+
+for (const [ext, mime] of [
+  ["docx", "application/octet-stream"],
+  ["doc", "application/msword"],
+  ["odt", "application/octet-stream"],
+  ["pdf", "application/pdf"],
+] as const) {
+  test(`a ${ext} document is converted if need be, prepared and signed, and the signed PDF comes back`, async ({
+    browser,
+  }) => {
+    const title = `Format ${ext} ${Date.now()}`;
+    const context = await browser.newContext();
+    const op = await context.newPage();
+    await loginAs(op, "Diane");
+    const api = context.request;
+    const buffer = ext === "pdf" ? MINIMAL_PDF : readFileSync(`e2e/fixtures/charte.${ext}`);
+    const created = await api.post("/api/documents", {
+      multipart: { title, version_label: "1.0", file: { name: `charte.${ext}`, mimeType: mime, buffer } },
+      timeout: 120_000,
+    });
+    expect(created.status(), await created.text()).toBe(201);
+    const versionId = (await created.json()).versions[0].id as string;
+    // What is signed is a PDF, whatever came in.
+    const content = await api.get(`/api/documents/versions/${versionId}/content`);
+    expect((await content.body()).subarray(0, 4).toString()).toBe("%PDF");
+    expect(
+      (
+        await api.put(`/api/documents/versions/${versionId}/fields`, {
+          data: { fields: [{ page: 1, x: 0.1, y: 0.7, width: 0.3, height: 0.06, kind: "SIGNATURE", role: 1 }] },
+        })
+      ).status(),
+    ).toBe(200);
+    expect((await api.post(`/api/documents/versions/${versionId}/publish`)).status()).toBe(200);
+    const bob = await userIdOf(op, "bob.dupont@lcit-test.local");
+    const campaign = await (await api.post("/api/campaigns", { data: { name: title } })).json();
+    await api.post(`/api/campaigns/${campaign.id}/documents`, { data: { document_version_id: versionId } });
+    expect((await api.post(`/api/campaigns/${campaign.id}/launch`, { data: { user_ids: [bob] } })).status()).toBe(200);
+    await context.close();
+
+    const signer = await browser.newContext();
+    const page = await signer.newPage();
+    await loginAs(page, "Bob");
+    await page.getByRole("link", { name: new RegExp(title) }).click();
+    await page.getByRole("checkbox").check();
+    await page.getByRole("button", { name: /^Signer/ }).click();
+    await expect(page.getByText("Document signé")).toBeVisible();
+    const pdf = await signer.request.get((await page.getByRole("link", { name: /PDF signé/ }).getAttribute("href"))!);
+    expect(pdf.status()).toBe(200);
+    expect((await pdf.body()).subarray(0, 4).toString()).toBe("%PDF");
+    await signer.close();
+  });
+}
 
 test("a whole team is asked, everyone signs, and everyone gets their own signed document", async ({ browser }) => {
   const stamp = Date.now();

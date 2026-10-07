@@ -78,7 +78,6 @@ docker compose up -d --build
 - Interface : http://127.0.0.1:4180 (dev) et https://127.0.0.1:4443 (certificat auto-signé tant qu'aucun n'est installé)
 - API : proxyée par nginx sous `/api`, santé sur `/api/health`
 - Certificat HTTPS : `scripts/certificate-installer.sh` · Sauvegarde / restauration : `scripts/backup.sh`, `scripts/restore.sh`
-- Documents Word / LibreOffice : ajouter `--profile office`
 - **Premier accès** : un compte administrateur système local existe pour amorcer la plateforme (identifiant
   `admin`). Son mot de passe initial est `SecretPassword` ; il est **à changer dès la première connexion**
   (l'application le rappelle à chaque connexion, et la page Diagnostic le signale tant que ce n'est

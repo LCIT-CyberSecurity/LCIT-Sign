@@ -73,9 +73,9 @@ services:
       # Email granted ADMIN at its SSO sign-in (empty: nobody). A clean installation starts with
       # the built-in local administrator only.
       LCIT_SIGN_BOOTSTRAP_ADMIN: ${LCIT_SIGN_BOOTSTRAP_ADMIN:-}
-      # Word / LibreOffice files as input: the isolated converter (profile "office"). Empty =
-      # only PDFs are accepted. Example: LCIT_SIGN_CONVERTER_URL=http://converter:8090
-      LCIT_SIGN_CONVERTER_URL: ${LCIT_SIGN_CONVERTER_URL:-}
+      # Word / LibreOffice files as input (.docx, .doc, .odt): the isolated converter below, started
+      # with every stack. Set this to empty to accept PDFs only.
+      LCIT_SIGN_CONVERTER_URL: ${LCIT_SIGN_CONVERTER_URL-http://converter:8090}
     volumes:
       - lcit-sign-data:/var/lib/lcit-sign
       - ${LCIT_SIGN_SECRETS_DIR:-./secrets}:/run/secrets/lcit-sign:ro
@@ -120,14 +120,13 @@ services:
     restart: unless-stopped
 
   # Converts Word / LibreOffice documents to PDF, in a container of its own: no network, no
-  # database, no access to LCIT Sign's files, read-only, little memory and time. Started with
-  # the "office" profile:  docker compose --profile office up -d
+  # database, no access to LCIT Sign's files, read-only, little memory and time. Part of every
+  # stack (Word and LibreOffice files are accepted as input).
   converter:
     build:
       context: converter
     image: ${LCIT_SIGN_PREFIX:-lcit-sign}-converter:latest
     container_name: ${LCIT_SIGN_PREFIX:-lcit-sign}-converter
-    profiles: ["office"]
     networks: [converter-net]
     read_only: true
     tmpfs:

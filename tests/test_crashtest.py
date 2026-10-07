@@ -167,6 +167,23 @@ def test_the_normal_compose_has_no_mock_sso_and_no_default_identity():
         assert block and 'profiles: ["crashtest", "dev-sso"]' in block.group(1), service
 
 
+def test_word_and_libreoffice_are_accepted_by_default_everywhere():
+    """The isolated converter is part of every stack, and the API points at it unless told
+    otherwise; the Kubernetes manifests have it too, with no way out."""
+    compose = (ROOT / "docker-compose.yml").read_text()
+    assert "LCIT_SIGN_CONVERTER_URL: ${LCIT_SIGN_CONVERTER_URL-http://converter:8090}" in compose
+    block = re.search(r"\n  converter:\n(.*?)(?=\n  [a-z-]+:\n|\nnetworks:)", compose, re.S)
+    assert block and "profiles:" not in block.group(1)  # no profile to forget
+    assert "read_only: true" in block.group(1) and "networks: [converter-net]" in block.group(1)
+    k8s = ROOT / "k8s"
+    assert "converter.yaml" in (k8s / "kustomization.yaml").read_text()
+    config = (k8s / "config.yaml").read_text()
+    assert "LCIT_SIGN_CONVERTER_URL: http://lcit-sign-converter:8090" in config
+    policy = (k8s / "networkpolicy.yaml").read_text()
+    assert "converter-no-egress" in policy and "egress: []" in policy
+    assert "readOnlyRootFilesystem: true" in (k8s / "converter.yaml").read_text()
+
+
 def test_crashtest_wires_the_mock_sso_and_its_own_database():
     override = (ROOT / "crashtest" / "docker-compose.crashtest.yml").read_text()
     assert 'LCIT_SIGN_CRASHTEST: "true"' in override

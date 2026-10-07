@@ -1,0 +1,61 @@
+# The isolated converter of Word / LibreOffice files (.docx, .doc, .odt) to PDF: a pod of its own,
+# read-only, no capability, no secret, no database, and — see networkpolicy.yaml — reachable only
+# from the API and unable to reach anything.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lcit-sign-converter
+  namespace: lcit-sign
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: lcit-sign-converter}
+  template:
+    metadata:
+      labels: {app: lcit-sign-converter}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10002
+        runAsGroup: 10002
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: converter
+          image: lcit-sign-converter:latest   # replace with your registry/tag
+          imagePullPolicy: IfNotPresent
+          ports: [{containerPort: 8090, name: http}]
+          env:
+            - {name: CONVERTER_WORKDIR, value: /tmp}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 20
+            failureThreshold: 6
+          startupProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 3
+            failureThreshold: 20
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {memory: 1Gi}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: tmp
+          emptyDir: {sizeLimit: 256Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lcit-sign-converter
+  namespace: lcit-sign
+spec:
+  selector: {app: lcit-sign-converter}
+  ports: [{name: http, port: 8090, targetPort: http}]
