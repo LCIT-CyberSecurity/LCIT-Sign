@@ -254,6 +254,25 @@ describe("SignRequestPage", () => {
     expect(screen.queryByRole("button", { name: "Supprimer cette demande" })).toBeNull();
   });
 
+  it("shows the count of the latest choice when an older answer comes back last", async () => {
+    // After a reload: first "nothing chosen yet" (answered late, 0), then what was kept (answered
+    // at once, 5). The late 0 must not replace the 5.
+    let asked = 0;
+    vi.mocked(api.post).mockImplementation(async (path: string) => {
+      if (!path.endsWith("/targets/preview")) return {};
+      asked += 1;
+      if (asked === 1) {
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        return { population_count: 0 };
+      }
+      return { population_count: 5 };
+    });
+    open(1, undefined, { user_ids: ["u1"] });
+    await waitFor(() => expect(screen.getByTestId("recipient-count")).toHaveTextContent("5"));
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(screen.getByTestId("recipient-count")).toHaveTextContent("5");
+  });
+
   it("does not write anything for a request that was already sent", async () => {
     server.status = "ACTIVE";
     open(5);

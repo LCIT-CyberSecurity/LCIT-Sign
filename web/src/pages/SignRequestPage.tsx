@@ -104,14 +104,20 @@ export default function SignRequestPage() {
   // de-duplicated server-side, nested groups already expanded by the sync).
   useEffect(() => {
     if (!id || campaign?.status !== "DRAFT") return;
+    // After a reload the count is asked twice in a row (nothing chosen yet, then what was kept):
+    // only the answer to the latest choice may be shown, whatever the order they come back in.
+    let latest = true;
     api
       .post<{ population_count: number }>(`/campaigns/${id}/targets/preview`, {
         all_users: allUsers,
         group_ids: allUsers ? [] : selectedGroupIds,
         user_ids: allUsers ? [] : selectedUserIds,
       })
-      .then((r) => setRecipientCount(r.population_count))
-      .catch(() => setRecipientCount(null));
+      .then((r) => latest && setRecipientCount(r.population_count))
+      .catch(() => latest && setRecipientCount(null));
+    return () => {
+      latest = false;
+    };
   }, [id, campaign?.status, allUsers, selectedGroupIds, selectedUserIds]);
 
   if (!campaign) return <p className="muted">Chargement…</p>;
