@@ -1352,3 +1352,4 @@ a.attention:hover strong { color: var(--primary); }
 .button--provider { display: inline-flex; align-items: center; justify-content: center; gap: 10px; }
 .auth-local--main { border-top: 0; padding-top: 0; margin-top: 4px; }
 .auth-local--main form { margin-top: 0; }
+.auth-crashtest { margin: 0 0 12px; padding: 8px 10px; border-radius: 8px; background: #fff7e0; color: #6b4e00; font-size: 12.5px; }

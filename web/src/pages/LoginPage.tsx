@@ -13,6 +13,8 @@ interface Options {
   sso: boolean;
   provider: "entra" | "google" | "generic" | null;
   local: boolean;
+  /** The CrashTest stack: fictional accounts, say so. */
+  crashtest?: boolean;
 }
 
 const SSO_BUTTONS: Record<string, { label: string; logo: ReactNode }> = {
@@ -122,6 +124,12 @@ export default function LoginPage() {
                 Connectez-vous avec votre compte pour consulter et signer les documents qui vous
                 attendent.
               </p>
+              {options?.crashtest && (
+                <p className="auth-crashtest" data-testid="crashtest-note">
+                  Environnement de test CrashTest : comptes fictifs. Identifiant = adresse e-mail,
+                  mot de passe = prénom en minuscules (Bob Dupont : bob.dupont@lcit-test.local / bob).
+                </p>
+              )}
               {button && (
                 <a
                   className="button button--primary button--block button--provider"

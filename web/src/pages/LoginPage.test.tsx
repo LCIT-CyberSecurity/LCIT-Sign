@@ -41,6 +41,17 @@ describe("<LoginPage />", () => {
     expect(screen.getByRole("heading", { level: 1, name: "Connexion" })).toBeInTheDocument();
   });
 
+  it("says it is the CrashTest stack, with the convention of its accounts, and only there", async () => {
+    options = { sso: true, provider: "generic", local: true, crashtest: true };
+    const { unmount } = render(<LoginPage />);
+    expect(await screen.findByTestId("crashtest-note")).toHaveTextContent("mot de passe = prénom en minuscules");
+    unmount();
+    options = { sso: true, provider: "generic", local: true, crashtest: false };
+    render(<LoginPage />);
+    await screen.findByTestId("sso-button");
+    expect(screen.queryByTestId("crashtest-note")).toBeNull();
+  });
+
   it("shows only the local form when no SSO is configured", async () => {
     options = { sso: false, provider: null, local: true };
     render(<LoginPage />);
