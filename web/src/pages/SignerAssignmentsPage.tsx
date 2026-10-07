@@ -22,7 +22,7 @@ export default function SignerAssignmentsPage() {
   const [assignments, setAssignments] = useState<MyAssignment[] | null>(null);
   const [signatures, setSignatures] = useState<SignatureDetail[] | null>(null);
   const { user, hasRole } = useAuth();
-  const staff = hasRole("OPERATOR") || hasRole("ADMIN");
+  const staff = hasRole("PREPARER") || hasRole("OPERATOR") || hasRole("ADMIN");
 
   useEffect(() => {
     api.get<MyAssignment[]>("/me/assignments").then(setAssignments);

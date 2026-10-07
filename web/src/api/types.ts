@@ -146,12 +146,24 @@ export interface CampaignPlan {
 
 export type CampaignStatus = "DRAFT" | "SCHEDULED" | "ACTIVE" | "CLOSED" | "CANCELLED" | "ARCHIVED";
 
+export interface PersonRef {
+  id: string;
+  display_name: string;
+  email: string;
+}
+
 export interface Campaign {
   id: string;
   name: string;
   description: string;
   status: CampaignStatus;
   target_mode: string;
+  /** Who runs it now, who started it (never changes), and who else may prepare it. */
+  owner?: PersonRef | null;
+  created_by?: PersonRef | null;
+  preparers?: (PersonRef | null)[];
+  /** What the viewer may do with it: "content" means its documents, signed PDFs and proofs. */
+  access?: { operate: boolean; content: boolean } | null;
   signature_method?: SignatureMethod;
   created_at: string;
   launch_at: string | null;

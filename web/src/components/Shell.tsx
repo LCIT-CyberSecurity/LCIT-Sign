@@ -77,11 +77,17 @@ export default function Shell() {
   const [changingPassword, setChangingPassword] = useState(false);
   // The company's own logo when an administrator set one, the LCIT one otherwise.
   const companyLogo = useCompanyLogo();
-  const isOperator = hasRole("OPERATOR") || hasRole("ADMIN");
+  const isOperator = hasRole("PREPARER") || hasRole("OPERATOR") || hasRole("ADMIN");
   const isAdmin = hasRole("ADMIN");
   const close = () => setOpen(false);
 
-  const roleLabel = isAdmin ? "Administrateur" : isOperator ? "Opérateur" : "Signataire";
+  const roleLabel = isAdmin
+    ? "Administrateur"
+    : hasRole("OPERATOR")
+      ? "Opérateur"
+      : hasRole("PREPARER")
+        ? "Préparateur"
+        : "Signataire";
 
   const logout = async () => {
     try {

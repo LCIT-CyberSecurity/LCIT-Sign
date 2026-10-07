@@ -3,6 +3,7 @@ import { Navigate, useParams, Link } from "react-router-dom";
 import { ArrowLeft, Bell, StopCircle, FileBarChart, Download } from "lucide-react";
 import { api, ApiError } from "../api/client";
 import CampaignDocuments from "../components/CampaignDocuments";
+import CampaignOwnership from "../components/CampaignOwnership";
 import ConfirmButton from "../components/ConfirmButton";
 import SignedDocuments from "../components/SignedDocuments";
 import { describePolicies } from "../components/Schedule";
@@ -62,7 +63,8 @@ export default function OperatorCampaignDetailPage() {
     if (!id) return;
     api.get<Campaign>(`/campaigns/${id}`).then(setCampaign);
     loadAssignments();
-    api.get<ReportSummary[]>(`/campaigns/${id}/reports`).then(setReports);
+    // The reports are confidential content: refused to an operator who is not on the campaign.
+    api.get<ReportSummary[]>(`/campaigns/${id}/reports`).then(setReports).catch(() => setReports([]));
   };
 
   useEffect(() => {
@@ -79,6 +81,8 @@ export default function OperatorCampaignDetailPage() {
   // Not launched yet: it is still being prepared, in Signer.
   if (campaign.status === "DRAFT") return <Navigate to={`/sign/${campaign.id}`} replace />;
 
+  // Without the access, the documents, signed PDFs, proofs and reports stay out of sight.
+  const canContent = campaign.access?.content ?? true;
   const publishedAndUsed = campaign.documents.map((d) => ({
     id: d.version_id,
     label: `${d.title} — v${d.version_label}`,
@@ -174,6 +178,8 @@ export default function OperatorCampaignDetailPage() {
         {campaign.signature_method === "DOCUSIGN" ? "eIDAS avec DocuSign" : "signature LCIT"}
       </p>
 
+      <CampaignOwnership campaign={campaign} onChanged={setCampaign} />
+
       {describePolicies(campaign.policies).length > 0 && (
         <div className="card">
           <div className="card-title">Politiques</div>
@@ -231,8 +237,12 @@ export default function OperatorCampaignDetailPage() {
               </div>
             </>
           )}
-          <div className="field-label">Documents</div>
-          <CampaignDocuments campaign={campaign} library={library} onChanged={load} active />
+          {canContent && (
+            <>
+              <div className="field-label">Documents</div>
+              <CampaignDocuments campaign={campaign} library={library} onChanged={load} active />
+            </>
+          )}
         </div>
       )}
 
@@ -374,7 +384,7 @@ export default function OperatorCampaignDetailPage() {
                   <td>{a.reminder_count}</td>
                   <td>
                     <div className="row-actions">
-                      {a.signature_id && (
+                      {a.signature_id && canContent && (
                         <>
                           <a
                             className="button button--secondary button--sm"
@@ -447,12 +457,14 @@ export default function OperatorCampaignDetailPage() {
         </div>
       )}
 
-      <section data-testid="campaign-signed">
-        <h2 className="card-title">Documents signés</h2>
-        <SignedDocuments campaignIds={[campaign.id]} refreshKey={assignments?.length ?? 0} />
-      </section>
+      {canContent && (
+        <section data-testid="campaign-signed">
+          <h2 className="card-title">Documents signés</h2>
+          <SignedDocuments campaignIds={[campaign.id]} refreshKey={assignments?.length ?? 0} />
+        </section>
+      )}
 
-      {(
+      {canContent && (
         <div className="card">
           <div className="card-title">
             <FileBarChart size={16} aria-hidden="true" /> Procès-verbaux
