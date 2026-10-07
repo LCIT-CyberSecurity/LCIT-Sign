@@ -1,4 +1,4 @@
-export type Role = "SIGNER" | "OPERATOR" | "ADMIN";
+export type Role = "SIGNER" | "PREPARER" | "OPERATOR" | "ADMIN";
 
 export interface Me {
   id: string;
@@ -7,7 +7,7 @@ export interface Me {
   roles: Role[];
   // The built-in account still has its initial password: remind at every sign-in.
   must_change_password?: boolean;
-  source?: "builtin" | "sso";
+  source?: "builtin" | "local" | "sso";
 }
 
 export interface PublicConfig {

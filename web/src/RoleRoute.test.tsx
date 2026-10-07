@@ -19,7 +19,14 @@ vi.mock("./auth/AuthContext", () => ({
   }),
 }));
 vi.mock("./api/client", () => ({
-  api: { get: vi.fn().mockResolvedValue([]), post: vi.fn(), put: vi.fn(), del: vi.fn() },
+  api: {
+    get: vi.fn((path: string) =>
+      Promise.resolve(path === "/auth/options" ? { sso: true, provider: "generic", local: true } : []),
+    ),
+    post: vi.fn(),
+    put: vi.fn(),
+    del: vi.fn(),
+  },
   ApiError: class extends Error {},
 }));
 
@@ -32,10 +39,10 @@ function renderAt(path: string) {
 }
 
 describe("role-based navigation (the UI only hides; the API enforces)", () => {
-  it("shows the login page to an anonymous visitor", () => {
+  it("shows the login page to an anonymous visitor", async () => {
     auth.current = { user: null, roles: [] };
     renderAt("/");
-    expect(screen.getByText(/Se connecter avec le SSO/)).toBeInTheDocument();
+    expect(await screen.findByText(/Continuer avec le SSO/)).toBeInTheDocument();
   });
 
   it("does not offer operator or admin sections to a plain signer", () => {
