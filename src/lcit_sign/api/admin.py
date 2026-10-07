@@ -26,12 +26,14 @@ from lcit_sign.models.signing_key import SigningKey, SigningKeyStatus
 from lcit_sign.models.user import Role, User, UserRole
 from lcit_sign.services.audit import append_audit_event, verify_audit_chain
 from lcit_sign.services.crypto import decrypt_secret, encrypt_secret
+from lcit_sign.services.local_auth import LOCAL_ISSUER
 from lcit_sign.services.mail import (
     MailSendError,
     build_sender,
 )
 from lcit_sign.services.mail_graph import GraphSender
 from lcit_sign.services.mail_specs import SPECS as MAIL_SPECS
+from lcit_sign.services.passwords import hash_password
 from lcit_sign.services.signing_keys import get_or_create_active_key, rotate_signing_key
 from lcit_sign.services.ssrf import OutboundTargetError, validate_outbound_target
 
@@ -52,6 +54,8 @@ def user_source(user: User) -> str:
         return user.issuer.split(":", 1)[1]
     if user.issuer.startswith("builtin:"):
         return "builtin"
+    if user.issuer == LOCAL_ISSUER:
+        return "password"  # ("local" is already the demonstration directory)
     return "sso"
 
 
@@ -78,7 +82,7 @@ def _user_blockers(db: DbSession, users: list[User]) -> dict[uuid.UUID, list[str
     count(Report.generated_by, "procès-verbal(aux) généré(s)")
     for user in users:
         source = user_source(user)
-        if source not in ("sso", "manual"):
+        if source not in ("sso", "manual", "password"):
             blockers[user.id].append(f"géré par la source « {source} »")
     return blockers
 
@@ -125,6 +129,13 @@ class CreateUserRequest(BaseModel):
     given_name: str = ""
     family_name: str = ""
     roles: list[Role] = [Role.SIGNER]
+    # "sso": they sign in with the company's SSO (no password here). "local": an account of this
+    # application with a password, mandatory, changed by the person at their first sign-in.
+    auth_method: Literal["sso", "local"] = "sso"
+    password: str | None = None
+
+
+MIN_LOCAL_PASSWORD = 8
 
 
 @router.post("/users", status_code=201)
@@ -133,9 +144,10 @@ def create_user(
     user: User = Depends(require_roles(Role.ADMIN)),
     db: DbSession = Depends(get_db),
 ) -> dict[str, Any]:
-    """Add someone by e-mail address, with no password and no account anywhere:
-    they sign in with their usual SSO and are matched to this entry by address,
-    keeping the roles given here."""
+    """Add someone by e-mail address. With the SSO (the default) there is no password and no
+    account anywhere: they sign in with their usual SSO and are matched to this entry by address,
+    keeping the roles given here. As a local account they get a password (mandatory), kept only
+    as a hash, and must choose their own at the first sign-in."""
     email = body.email.strip().lower()
     if not _EMAIL.match(email) or len(email) > 320:
         raise HTTPException(422, "Adresse e-mail invalide")
@@ -143,15 +155,28 @@ def create_user(
     if clash is not None:
         raise HTTPException(409, "Un utilisateur avec cette adresse existe déjà")
 
+    local = body.auth_method == "local"
+    if local:
+        if not body.password:
+            raise HTTPException(422, "Un compte local a besoin d'un mot de passe")
+        if len(body.password) < MIN_LOCAL_PASSWORD:
+            raise HTTPException(
+                422, f"Le mot de passe doit faire au moins {MIN_LOCAL_PASSWORD} caractères"
+            )
+    elif body.password:
+        raise HTTPException(422, "Un compte SSO n'a pas de mot de passe ici")
+
     given, family = body.given_name.strip(), body.family_name.strip()
     created = User(
-        issuer="directory:manual",
-        subject=f"manual:{uuid.uuid4()}",
+        issuer=LOCAL_ISSUER if local else "directory:manual",
+        subject=f"local:{uuid.uuid4()}" if local else f"manual:{uuid.uuid4()}",
         email=email,
         given_name=given,
         family_name=family,
         display_name=f"{given} {family}".strip() or email.split("@")[0],
         active=True,
+        password_hash=hash_password(body.password) if local and body.password else None,
+        must_change_password=local,
     )
     db.add(created)
     db.flush()
@@ -159,7 +184,8 @@ def create_user(
         db.add(UserRole(user_id=created.id, role=role))
     append_audit_event(
         db, action="USER_CREATED", actor_id=user.id, target_type="user",
-        target_id=str(created.id), metadata={"email": email, "source": "manual"},
+        target_id=str(created.id),
+        metadata={"email": email, "source": "local" if local else "manual"},
     )
     db.commit()
     return _user_payload(db, created, _user_blockers(db, [created]))

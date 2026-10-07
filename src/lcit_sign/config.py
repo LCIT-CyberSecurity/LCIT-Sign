@@ -33,6 +33,9 @@ class Settings(BaseSettings):
 
     # Generic OIDC Authorization Code + PKCE provider. Left empty, auth
     # endpoints return a clear configuration error rather than failing open.
+    # Only the look of the sign-in button (logo and wording): the engine is always generic OIDC.
+    # Left empty, it is read from the issuer address (Microsoft, Google) and is "generic" otherwise.
+    oidc_provider: Literal["", "entra", "google", "generic"] = ""
     oidc_issuer: str = ""
     oidc_client_id: str = ""
     oidc_client_secret: str = ""

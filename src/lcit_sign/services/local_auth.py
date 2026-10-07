@@ -17,7 +17,7 @@ import time
 from collections import defaultdict
 from threading import Lock
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session as DbSession
 
 from lcit_sign.config import Settings
@@ -32,6 +32,9 @@ from lcit_sign.services.passwords import (
 logger = logging.getLogger(__name__)
 
 BUILTIN_ISSUER = "builtin:local"
+# People an administrator gave a password to (the built-in account is separate). A person from
+# the SSO has no password here: an account with none can never sign in with this form.
+LOCAL_ISSUER = "local:user"
 MAX_FAILURES = 5
 WINDOW_SECONDS = 300.0
 
@@ -94,8 +97,8 @@ class PasswordChangeError(ValueError):
 
 
 def change_password(db: DbSession, user: User, current: str, new: str) -> None:
-    """Let the built-in account's owner choose their own password."""
-    if user.issuer != BUILTIN_ISSUER:
+    """Let the owner of a local account (the built-in one included) choose their own password."""
+    if not user.password_hash:
         raise PasswordChangeError("Ce compte se connecte par SSO : il n'a pas de mot de passe ici")
     if not verify_password(current, user.password_hash):
         raise PasswordChangeError("Le mot de passe actuel est incorrect")
@@ -142,13 +145,17 @@ class LoginThrottle:
 def check_credentials(
     db: DbSession, settings: Settings, username: str, password: str
 ) -> User | None:
-    """The built-in account if these are its credentials, else None."""
-    user = ensure_builtin_admin(db, settings)
-    submitted_ok = (
-        user is not None
-        and user.active
-        and username.strip().lower() == settings.local_admin_username.lower()
-    )
+    """The account these credentials open: the built-in administrator (by its name), or a local
+    account (by its e-mail address). Only an active account that HAS a password can match."""
+    name = username.strip().lower()
+    builtin = ensure_builtin_admin(db, settings)
+    if name == settings.local_admin_username.lower():
+        candidate = builtin
+    else:
+        candidate = db.execute(
+            select(User).where(func.lower(User.email) == name, User.password_hash.is_not(None))
+        ).scalars().first()
+    submitted_ok = candidate is not None and candidate.active
     # Always spend one verification, so timing does not tell accounts apart.
-    password_ok = verify_password(password, user.password_hash if user else None)
-    return user if (submitted_ok and password_ok) else None
+    password_ok = verify_password(password, candidate.password_hash if candidate else None)
+    return candidate if (submitted_ok and password_ok) else None
