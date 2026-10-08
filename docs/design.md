@@ -96,11 +96,11 @@ session.
 
 Two different questions, one administration page (*Identities & access*), two backend models:
 
-* **Connexion** (`login_providers`): how people authenticate. One external SSO provider is in use
+* **Sign-in** (*Connexion*) (`login_providers`): how people authenticate. One external SSO provider is in use
   (`active`), plus the local form. If the `LCIT_SIGN_OIDC_*` variables are set they ARE the SSO
   (the page says so); otherwise it is the active provider (Microsoft Entra ID or Google). On CrashTest
   the variables point at the mock SSO, which stays the only entry point; Entra is reached through it.
-* **Annuaire** (`directory_connector_configs`): where users and groups come from. One directory is
+* **Directory** (*Annuaire*) (`directory_connector_configs`): where users and groups come from. One directory is
   active (`active`; the bundled demonstration one when none): only it is synced, by hand or on
   schedule. Saving a connector makes it active; others are switched on explicitly.
 
