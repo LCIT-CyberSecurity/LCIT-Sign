@@ -59,7 +59,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: shellcheck
         run: |
-          shellcheck ops/admin/*.sh ops/dev/*.sh \
+          shellcheck bootstrap_lcit-sign-deployement.sh ops/admin/*.sh ops/dev/*.sh \
             tests/crashtest/*.sh tests/crashtest/uat/*.sh tests/integration/*.sh \
             ops/docker/nginx/40-lcit-sign-tls.sh ops/docker/backend-entrypoint.sh \
             ops/docker/postfix-test/entrypoint.sh

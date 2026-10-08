@@ -38,6 +38,32 @@ and qualified timestamps are out of scope.
 
 ## Deploy
 
+### With the manager script (recommended)
+
+```bash
+git clone https://github.com/LCIT-CyberSecurity/LCIT-Sign.git && cd LCIT-Sign
+./bootstrap_lcit-sign-deployement.sh
+```
+
+The script is the single entry point to install and maintain LCIT Sign. It needs only Bash, Docker (with
+Compose) and Git, and it only ever touches the Docker project `lcit-sign`.
+
+- **No installation found**: *Install*. It creates `.env` from `.env.example` (never overwrites an existing one) with
+  freshly generated secrets, creates `certs/`, builds the images, starts the stack, waits until every service is
+  healthy and prints the URL. It can also set up a production configuration (HTTPS host name) when asked.
+- **Installation found**: it shows the state (local version, branch, `origin/main`, services, URL), then:
+  1. *Update / redeploy*: offers a backup (yes by default), then `git merge --ff-only origin/main`, rebuilds, applies
+     the migrations and checks the health. Data is kept. It stops, changing nothing, if you are not on `main`, if the
+     working tree has local changes or if `main` has diverged.
+  2. *Reinstall from scratch*: removes the data (database and documents) but keeps `.env` and the certificates;
+     asks for a backup, then for the exact word `REINSTALLER`.
+  3. *Remove completely*: removes containers, volumes, images and certificates (and `.env` only if you say so);
+     asks for a backup, then for the exact words `SUPPRIMER LCIT SIGN`.
+
+The manager's messages are in French.
+
+### Manually
+
 ```bash
 git clone https://github.com/LCIT-CyberSecurity/LCIT-Sign.git && cd LCIT-Sign
 cp .env.example .env            # then edit it, see below
@@ -94,8 +120,12 @@ changed at first sign-in. There is no SSO, no directory and no sample data. Sign
 
 ### Update, backup
 
-Update: `git pull && docker compose up -d --build` (migrations run at start). Backup and restore:
-`ops/admin/backup.sh`, `ops/admin/restore.sh`.
+Update: option 1 of the manager, or `git pull && docker compose up -d --build` (migrations run at start).
+
+Backup: `ops/admin/backup.sh` writes one archive, `backups/lcit-sign-backup-<UTC timestamp>.tar.bz2`, holding
+`db.dump` (PostgreSQL), `data.tar` (documents and signed files), `SHA256SUMS` and `MANIFEST.txt`. The master key is
+**not** in it: keep `LCIT_SIGN_MASTER_KEY` somewhere else. Restore (destructive, checksums verified first):
+`ops/admin/restore.sh backups/lcit-sign-backup-<timestamp>.tar.bz2`.
 
 ## Demo and test environment
 
@@ -104,13 +134,13 @@ Update: `git pull && docker compose up -d --build` (migrations run at start). Ba
 ./tests/crashtest/reset.sh     # destroys only that stack and starts again
 ```
 
-CrashTest is the only place where the mock SSO and the fictional data exist. See [`crashtest/README.md`](tests/crashtest/README.md).
+CrashTest is the only place where the mock SSO and the fictional data exist. See [`tests/crashtest/README.md`](tests/crashtest/README.md).
 
 ## Development
 
 ```bash
-pip install -e '.[dev]' && ruff check . && mypy src && pytest     # backend
-cd web && npm ci && npm test && npm run build                     # frontend
+pip install -e '.[dev]' && ruff check . && mypy backend/src && pytest     # backend
+cd frontend && npm ci && npm test && npm run build                     # frontend
 ops/dev/e2e.sh                                                    # end to end on a throwaway stack
 ```
 
