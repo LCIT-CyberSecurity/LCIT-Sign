@@ -24,52 +24,78 @@ def admin_client(tmp_path, oidc):
     return app, client
 
 
+def without_environment_sso(app) -> None:
+    """The LCIT_SIGN_OIDC_* variables decide the SSO when they are set; these tests are about
+    the providers an administrator sets up, so the environment's is taken out after sign-in."""
+    app.state.settings = app.state.settings.model_copy(update={"oidc_issuer": ""})
+
+
 def test_nothing_is_offered_until_an_administrator_sets_it_up(tmp_path, mock_oidc_base_url):
     app = make_app(tmp_path, mock_oidc_base_url, master_key=MASTER)
     app.state.settings = app.state.settings.model_copy(update={"oidc_issuer": ""})
     with TestClient(app) as client:
         Base.metadata.create_all(app.state.engine)
         options = client.get("/api/auth/options").json()
-        assert options["sso"] is False and options["providers"] == []
+        assert options["sso"] is False and "providers" not in options
         assert client.get("/api/auth/login").status_code == 503
 
 
-def test_microsoft_and_google_are_stored_encrypted_and_listed_without_secret(
+def test_microsoft_and_google_are_stored_encrypted_and_only_one_is_active(
     tmp_path, mock_oidc_base_url
 ):
     app, admin = admin_client(tmp_path, mock_oidc_base_url)
+    without_environment_sso(app)
     put = admin.put("/api/admin/login-providers/entra", json={
         "client_id": CLIENT, "tenant_id": TENANT, "client_secret": "s3cret-value-xyz"})
     assert put.status_code == 200 and "s3cret" not in put.text
     assert put.json()["redirect_uri"] == "http://testserver/api/auth/callback"
+    assert put.json()["active"] is True
+    # Saving a second provider makes it the one in use; the first stays configured, inactive.
     assert admin.put("/api/admin/login-providers/google", json={
         "client_id": "123-abc.apps.googleusercontent.com", "client_secret": "g-secret-value"
     }).status_code == 200
     listed = admin.get("/api/admin/login-providers")
     assert "s3cret" not in listed.text and "g-secret" not in listed.text
-    assert [p["configured"] for p in listed.json()] == [True, True]
+    assert [(p["provider"], p["configured"], p["active"]) for p in listed.json()] == [
+        ("entra", True, False), ("google", True, True)]
     with app.state.session_factory() as db:
         row = db.get(LoginProvider, "entra")
         assert row and "s3cret" not in row.encrypted_secret
-        kinds = [(c.key, c.provider) for c in available_sso(db, app.state.settings)]
-    assert kinds == [("entra", "entra"), ("google", "google"), ("sso", "generic")]
-    options = TestClient(app).get("/api/auth/options").json()
-    assert [p["id"] for p in options["providers"]] == ["entra", "google", "sso"]
+        assert [(c.key, c.provider) for c in available_sso(db, app.state.settings)] == [
+            ("google", "google")]
+    client = TestClient(app)
+    options = client.get("/api/auth/options").json()
+    assert options["sso"] is True and options["provider"] == "google"
+    # Switching: Microsoft becomes the only one offered, nothing is retyped.
+    assert admin.post("/api/admin/login-providers/entra/activate").status_code == 200
+    assert client.get("/api/auth/options").json()["provider"] == "entra"
+    assert [p["active"] for p in admin.get("/api/admin/login-providers").json()] == [True, False]
+    assert admin.post("/api/admin/login-providers/nope/activate").status_code == 404
 
 
-def test_the_login_url_picks_the_provider_and_the_callback_remembers_it(
-    tmp_path, mock_oidc_base_url
-):
+def test_the_environment_variables_win_and_the_page_says_so(tmp_path, mock_oidc_base_url):
+    app, admin = admin_client(tmp_path, mock_oidc_base_url)  # the environment's SSO is set
+    admin.put("/api/admin/login-providers/entra", json={
+        "client_id": CLIENT, "tenant_id": TENANT, "client_secret": "s3cret-value-xyz"})
+    assert admin.get("/api/admin/login-providers/status").json()["managed_by_environment"] is True
+    with app.state.session_factory() as db:
+        assert [c.key for c in available_sso(db, app.state.settings)] == ["sso"]
+    without_environment_sso(app)
+    assert admin.get("/api/admin/login-providers/status").json()["managed_by_environment"] is False
+    assert TestClient(app).get("/api/auth/options").json()["provider"] == "entra"
+
+
+def test_the_callback_remembers_which_sso_started_the_sign_in(tmp_path, mock_oidc_base_url):
     app, admin = admin_client(tmp_path, mock_oidc_base_url)
     admin.put("/api/admin/login-providers/google", json={
         "client_id": "123-abc.apps.googleusercontent.com", "client_secret": "g-secret-value"})
     with app.state.session_factory() as db:
-        assert resolve_sso(db, app.state.settings, "google").issuer == "https://accounts.google.com"
-        assert resolve_sso(db, app.state.settings, "entra") is None
+        # One SSO is in use; asking for another by name finds nothing.
+        assert resolve_sso(db, app.state.settings).issuer == mock_oidc_base_url
+        assert resolve_sso(db, app.state.settings, "google") is None
         assert resolve_sso(db, app.state.settings, "sso").issuer == mock_oidc_base_url
     other = TestClient(app)
     assert other.get("/api/auth/login?provider=entra").status_code == 503
-    # The environment's provider still signs people in when named, whatever else is configured.
     login_as(other, mock_oidc_base_url, sub="u-rh-2", path="/api/auth/login?provider=sso")
     assert other.get("/api/auth/me").status_code == 200
 
@@ -131,9 +157,43 @@ def test_connections_export_and_import_keep_secrets_encrypted_and_check_the_key(
     monkeypatch.setattr("sys.stdin", io.StringIO(dumped))
     assert cli.main(["import-connections"]) == 0
     assert admin.get("/api/admin/login-providers").json()[0]["configured"] is True
+    assert admin.get("/api/admin/login-providers").json()[0]["active"] is True
     # Another master key cannot read the secrets: refused, nothing written.
     monkeypatch.setenv("LCIT_SIGN_MASTER_KEY", "another-master-key-0123456789abcdef")
     get_settings.cache_clear()
     monkeypatch.setattr("sys.stdin", io.StringIO(dumped))
     assert cli.main(["import-connections"]) == 1
+    get_settings.cache_clear()
+
+
+def test_the_mock_sso_gets_its_real_accounts_from_the_stored_connections(
+    tmp_path, mock_oidc_base_url, monkeypatch, capsys
+):
+    """crashtest/start.sh builds the mock's private providers file from what was imported: a sign-in
+    provider first, else the application of the Entra directory connector."""
+    import json
+
+    from lcit_sign import cli
+    from lcit_sign.config import get_settings
+
+    app, admin = admin_client(tmp_path, mock_oidc_base_url)
+    monkeypatch.setenv("LCIT_SIGN_DATABASE_URL", app.state.settings.database_url)
+    monkeypatch.setenv("LCIT_SIGN_MASTER_KEY", MASTER)
+    get_settings.cache_clear()
+
+    def exported() -> dict:
+        assert cli.main(["export-mock-providers"]) == 0
+        out = capsys.readouterr().out
+        return json.loads(out.strip().splitlines()[-1])
+
+    assert exported() == {}  # nothing stored: the mock keeps its fictional people only
+    assert admin.put("/api/admin/directory/sources/entra/config", json={
+        "fields": {"tenant_id": TENANT, "client_id": CLIENT}, "secret": "dir-secret-value~1"}
+    ).status_code == 200
+    assert exported() == {"entra": {
+        "tenant_id": TENANT, "client_id": CLIENT, "client_secret": "dir-secret-value~1"}}
+    admin.put("/api/admin/login-providers/entra", json={
+        "client_id": "444a1a3e-1d45-4661-9c9e-2c91d7b0c5d3", "tenant_id": TENANT,
+        "client_secret": "login-secret-value"})
+    assert exported()["entra"]["client_secret"] == "login-secret-value"  # the sign-in app wins
     get_settings.cache_clear()

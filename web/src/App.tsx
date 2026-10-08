@@ -12,8 +12,7 @@ import SignPage from "./pages/SignPage";
 import SignRequestPage from "./pages/SignRequestPage";
 import OperatorCampaignDetailPage from "./pages/OperatorCampaignDetailPage";
 import AdminUsersPage from "./pages/AdminUsersPage";
-import AdminDirectoryPage from "./pages/AdminDirectoryPage";
-import AdminLoginPage from "./pages/AdminLoginPage";
+import AdminIdentityPage from "./pages/AdminIdentityPage";
 import AdminMailPage from "./pages/AdminMailPage";
 import AdminAuditPage from "./pages/AdminAuditPage";
 import AdminSigningKeysPage from "./pages/AdminSigningKeysPage";
@@ -39,9 +38,9 @@ export default function App() {
 
   if (!user) return <LoginPage />;
 
-  // Anyone who may prepare: the menus of "Documents", "Faire signer" and "Suivi". What they may open
-  // there is decided per campaign by the API.
-  const isOperator = hasRole("PREPARER") || hasRole("OPERATOR") || hasRole("ADMIN");
+  // Anyone who may prepare — a signer is the standard user: the menus of "Documents", "Faire signer"
+  // and "Suivi". What they may open there is decided per campaign by the API.
+  const isOperator = hasRole("SIGNER") || hasRole("OPERATOR") || hasRole("ADMIN");
   const isAdmin = hasRole("ADMIN");
 
   return (
@@ -120,21 +119,15 @@ export default function App() {
           }
         />
         <Route
-          path="/admin/login"
+          path="/admin/identity"
           element={
             <RoleRoute allowed={isAdmin}>
-              <AdminLoginPage />
+              <AdminIdentityPage />
             </RoleRoute>
           }
         />
-        <Route
-          path="/admin/directory"
-          element={
-            <RoleRoute allowed={isAdmin}>
-              <AdminDirectoryPage />
-            </RoleRoute>
-          }
-        />
+        <Route path="/admin/login" element={<Navigate to="/admin/identity" replace />} />
+        <Route path="/admin/directory" element={<Navigate to="/admin/identity" replace />} />
         <Route
           path="/admin/mail"
           element={

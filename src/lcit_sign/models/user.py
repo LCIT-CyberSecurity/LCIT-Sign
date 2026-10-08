@@ -13,9 +13,9 @@ from lcit_sign.database import Base
 class Role(enum.StrEnum):
     """What someone may do besides signing what they were asked to sign (which needs no role).
 
-    SIGNER      sign a published document of one's own accord.
-    PREPARER    prepare documents and run signature campaigns — one's own, or those one is
-                a preparer of.
+    SIGNER      the standard user: prepares documents, runs signature campaigns (those one owns,
+                or is a preparer of) and signs what is asked of them. Everyone active has it by
+                default; an administrator may take it away.
     OPERATOR    business administrator: sees every campaign and who owns it, reassigns owners
                 and preparers, helps unblock one. Does NOT read the confidential content (the
                 documents, the signed PDFs, the proofs) unless made a preparer of the campaign.
@@ -23,7 +23,6 @@ class Role(enum.StrEnum):
     """
 
     SIGNER = "SIGNER"
-    PREPARER = "PREPARER"
     OPERATOR = "OPERATOR"
     ADMIN = "ADMIN"
 

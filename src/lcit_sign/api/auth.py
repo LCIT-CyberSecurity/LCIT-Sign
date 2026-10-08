@@ -249,9 +249,6 @@ def login_options(request: Request) -> dict[str, Any]:
     return {
         "sso": bool(choices),
         "provider": choices[0].provider if choices else None,
-        # One button per provider the administrator set up (Microsoft, Google), then the
-        # environment's own (the mock SSO on CrashTest).
-        "providers": [{"id": c.key, "kind": c.provider} for c in choices],
         "local": settings.local_auth_enabled,
         # The CrashTest stack (fictional accounts): the sign-in page says so.
         "crashtest": settings.crashtest,

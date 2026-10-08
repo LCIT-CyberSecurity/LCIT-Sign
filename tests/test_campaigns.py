@@ -69,6 +69,13 @@ def get_user_id(client: TestClient) -> str:
     return client.get("/api/auth/me").json()["id"]
 
 
+def without_signer_role(admin: TestClient, client: TestClient) -> TestClient:
+    """An administrator takes SIGNER away: the person keeps an account and no right at all."""
+    taken = admin.delete(f"/api/admin/users/{get_user_id(client)}/roles/SIGNER")
+    assert taken.status_code == 200 and taken.json()["roles"] == []
+    return client
+
+
 def test_launch_creates_pending_assignments_for_each_target(tmp_path, mock_oidc_base_url):
     app, admin, operator, signer1, signer2 = setup_campaign_fixture(tmp_path, mock_oidc_base_url)
     _, version_id = publish_a_document(operator)
@@ -183,10 +190,13 @@ def test_close_and_cancel_lifecycle(tmp_path, mock_oidc_base_url):
     assert cancel_draft.json()["status"] == "CANCELLED"
 
 
-def test_signer_cannot_manage_campaigns(tmp_path, mock_oidc_base_url):
+def test_a_signer_prepares_campaigns_and_someone_without_the_role_cannot(
+    tmp_path, mock_oidc_base_url
+):
     app, admin, operator, signer1, signer2 = setup_campaign_fixture(tmp_path, mock_oidc_base_url)
-    response = signer1.post("/api/campaigns", json={"name": "Interdit"})
-    assert response.status_code == 403
+    assert signer1.post("/api/campaigns", json={"name": "Ma campagne"}).status_code == 201
+    without_signer_role(admin, signer2)
+    assert signer2.post("/api/campaigns", json={"name": "Interdit"}).status_code == 403
 
 
 def test_unauthenticated_cannot_list_own_assignments(tmp_path, mock_oidc_base_url):

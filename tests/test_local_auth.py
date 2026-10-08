@@ -42,7 +42,7 @@ def test_a_fresh_non_production_deployment_has_the_default_admin_which_must_be_c
     assert login(client, password="not-it").status_code == 401
     assert login(client, password=DEFAULT).status_code == 204
     me = client.get("/api/auth/me").json()
-    assert me["roles"] == ["ADMIN"] and me["source"] == "builtin"
+    assert me["roles"] == ["ADMIN", "SIGNER"] and me["source"] == "builtin"
     assert me["must_change_password"] is True  # the interface nags until it is changed
 
 

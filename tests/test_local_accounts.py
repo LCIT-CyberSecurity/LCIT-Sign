@@ -152,8 +152,7 @@ def test_the_sign_in_page_knows_which_provider_is_configured(
     app = app_with(tmp_path, issuer, "id" if issuer else "", "s" if issuer else "", explicit)
     options = TestClient(app).get("/api/auth/options").json()
     assert options == {
-        "sso": expected is not None, "provider": expected, "local": True, "crashtest": False,
-        "providers": [{"id": "sso", "kind": expected}] if expected else []}
+        "sso": expected is not None, "provider": expected, "local": True, "crashtest": False}
 
 
 def test_without_a_complete_sso_only_the_local_form_is_offered(tmp_path):

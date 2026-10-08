@@ -20,6 +20,8 @@ class LoginProvider(Base):
     client_id: Mapped[str] = mapped_column(String(255))
     tenant_id: Mapped[str | None] = mapped_column(String(255))
     encrypted_secret: Mapped[str] = mapped_column(String(10000))
+    # One sign-in provider is active at a time (the one the login page offers).
+    active: Mapped[bool] = mapped_column(default=False, server_default="0")
     updated_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

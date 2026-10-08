@@ -28,7 +28,7 @@ from lcit_sign.services.directory.base import (
     DirectoryConnector,
     DirectoryConnectorError,
 )
-from lcit_sign.services.directory.registry import build_remote_connector
+from lcit_sign.services.directory.registry import active_source, build_remote_connector
 from lcit_sign.services.directory_sync import LocalConnector, sync_directory
 from lcit_sign.services.notification_queue import enqueue_notification
 from lcit_sign.services.storage import StorageService
@@ -241,7 +241,8 @@ def process_directory_syncs(
     ran = 0
     configs = db.execute(
         select(DirectoryConnectorConfig).where(
-            DirectoryConnectorConfig.sync_interval_minutes.is_not(None)
+            DirectoryConnectorConfig.sync_interval_minutes.is_not(None),
+            DirectoryConnectorConfig.source == active_source(db),
         )
     ).scalars()
     for config in list(configs):

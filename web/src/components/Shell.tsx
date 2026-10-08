@@ -5,7 +5,6 @@ import {
   ChevronRight,
   FileSignature,
   FileText,
-  FolderCog,
   ImageIcon,
   KeyRound,
   Mail,
@@ -57,8 +56,7 @@ const TITLES: [prefix: string, label: string][] = [
   ["/campaigns", "Suivi"],
   ["/admin/users", "Utilisateurs"],
   ["/admin/branding", "Logo"],
-  ["/admin/login", "Connexion"],
-  ["/admin/directory", "Annuaire"],
+  ["/admin/identity", "Identités & accès"],
   ["/admin/mail", "E-mail"],
   ["/admin/audit", "Audit"],
   ["/admin/signing-keys", "Clés de signature"],
@@ -76,7 +74,7 @@ export default function Shell() {
   const [changingPassword, setChangingPassword] = useState(false);
   // The company's own logo when an administrator set one, the LCIT one otherwise.
   const companyLogo = useCompanyLogo();
-  const isOperator = hasRole("PREPARER") || hasRole("OPERATOR") || hasRole("ADMIN");
+  const isOperator = hasRole("SIGNER") || hasRole("OPERATOR") || hasRole("ADMIN");
   const isAdmin = hasRole("ADMIN");
   const close = () => setOpen(false);
 
@@ -84,9 +82,9 @@ export default function Shell() {
     ? "Administrateur"
     : hasRole("OPERATOR")
       ? "Opérateur"
-      : hasRole("PREPARER")
-        ? "Préparateur"
-        : "Signataire";
+      : hasRole("SIGNER")
+        ? "Signataire"
+        : "Utilisateur";
 
   const logout = async () => {
     try {
@@ -113,7 +111,7 @@ export default function Shell() {
           <NavItem to="/" end icon={<FileSignature size={18} />} label="Mes signatures" onNavigate={close} />
           {isOperator && (
             <>
-              <div className="nav-heading">Opérateur</div>
+              <div className="nav-heading">Mes demandes</div>
               <NavItem to="/documents" icon={<FileText size={18} />} label="Documents" onNavigate={close} />
               <NavItem to="/sign" icon={<PenLine size={18} />} label="Faire signer" onNavigate={close} />
               <NavItem to="/campaigns" icon={<Megaphone size={18} />} label="Suivi" onNavigate={close} />
@@ -124,8 +122,7 @@ export default function Shell() {
               <div className="nav-heading">Administration</div>
               <NavItem to="/admin/users" icon={<Users size={18} />} label="Utilisateurs" onNavigate={close} />
               <NavItem to="/admin/branding" icon={<ImageIcon size={18} />} label="Logo" onNavigate={close} />
-              <NavItem to="/admin/login" icon={<KeyRound size={18} />} label="Connexion" onNavigate={close} />
-              <NavItem to="/admin/directory" icon={<FolderCog size={18} />} label="Annuaire" onNavigate={close} />
+              <NavItem to="/admin/identity" icon={<KeyRound size={18} />} label="Identités & accès" onNavigate={close} />
               <NavItem to="/admin/mail" icon={<Mail size={18} />} label="Email" onNavigate={close} />
               <NavItem to="/admin/audit" icon={<ScrollText size={18} />} label="Audit" onNavigate={close} />
               <NavItem

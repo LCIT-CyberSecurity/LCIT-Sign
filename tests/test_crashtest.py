@@ -129,9 +129,9 @@ def test_roles_follow_the_dataset_and_seeding_twice_changes_nothing(tmp_path, mo
             return set(db.execute(select(UserRole.role).join(User, User.id == UserRole.user_id)
                                   .where(User.email == email)).scalars())
 
-    assert roles_of("alice.martin@lcit-test.local") == {Role.SIGNER, Role.PREPARER}
-    assert roles_of("sophie.bernard@lcit-test.local") == {Role.SIGNER, Role.PREPARER}
-    assert roles_of("claire.moreau@lcit-test.local") == {Role.SIGNER, Role.PREPARER}
+    assert roles_of("alice.martin@lcit-test.local") == {Role.SIGNER}
+    assert roles_of("sophie.bernard@lcit-test.local") == {Role.SIGNER}
+    assert roles_of("claire.moreau@lcit-test.local") == {Role.SIGNER}
     assert roles_of("paul.muller@lcit-test.local") == {Role.SIGNER, Role.OPERATOR}
     assert roles_of("admin.crash@lcit-test.local") == {Role.SIGNER, Role.ADMIN}
     assert roles_of("bob.dupont@lcit-test.local") == {Role.SIGNER}  # everyone can sign
@@ -148,7 +148,7 @@ def test_the_same_person_through_the_mock_sso_is_the_same_account(tmp_path, mock
     login_as(sso, mock_oidc_base_url, sub="u-rh-2")  # Sophie Bernard
     me = sso.get("/api/auth/me").json()
     assert me["email"] == "sophie.bernard@lcit-test.local"
-    assert sorted(me["roles"]) == ["PREPARER", "SIGNER"]
+    assert sorted(me["roles"]) == ["SIGNER"]
     assert local_login(client, "sophie.bernard@lcit-test.local", "sophie").status_code == 204
 
 

@@ -38,9 +38,10 @@ describe("<UserMenu />", () => {
     expect(screen.queryByRole("button", { name: /Changer le mot de passe/ })).toBeNull();
   });
 
-  it("names the Préparateur profile", () => {
-    render(<UserMenu user={{ ...user, roles: ["PREPARER"] }} onSignOut={vi.fn()} />);
-    expect(screen.getAllByText("Préparateur").length).toBeGreaterThan(0);
+  it("names the Signataire profile, the standard one", () => {
+    render(<UserMenu user={{ ...user, roles: ["SIGNER"] }} onSignOut={vi.fn()} />);
+    expect(screen.getAllByText("Signataire").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Préparateur")).toBeNull();
   });
 
   it("switches to night mode and remembers it", async () => {

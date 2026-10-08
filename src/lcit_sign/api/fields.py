@@ -34,7 +34,7 @@ from lcit_sign.services.storage import StorageService
 router = APIRouter(tags=["document-fields"])
 
 # Anyone who may prepare; which document they may open is decided per document.
-_manage = require_roles(Role.PREPARER, Role.OPERATOR, Role.ADMIN)
+_manage = require_roles(Role.SIGNER, Role.OPERATOR, Role.ADMIN)
 _DOCUMENTS = "documents"
 
 

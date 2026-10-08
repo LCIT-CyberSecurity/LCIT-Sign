@@ -223,6 +223,10 @@ def perform_signature(
     `dry_run` it stops after checking everything that can refuse (inputs included) and
     returns None. `only_campaign` restricts which campaign's assignment is answered.
     Raises HTTPException."""
+    # Signing is for signers: an assignment alone is not enough, the role is checked here,
+    # server-side, whatever the interface shows.
+    if Role.SIGNER not in user_roles(db, user):
+        raise HTTPException(403, "Insufficient role")
     version = db.get(DocumentVersion, version_id)
     if version is None:
         raise HTTPException(404, "Document version not found")
@@ -283,9 +287,6 @@ def perform_signature(
             "Ce document vous est demandé par plusieurs campagnes : ouvrez-le depuis la "
             "demande de signature voulue pour préciser laquelle vous signez.",
         )
-    if not pending_assignments and Role.SIGNER not in user_roles(db, user):
-        # Signing of one's own accord (nobody asked) stays a role; being asked needs none.
-        raise HTTPException(403, "Insufficient role")
     campaign_id = pending_assignments[0].campaign_id if pending_assignments else None
     role = pending_assignments[0].role if pending_assignments else 1
     # With an outstanding assignment, only a signature for that same

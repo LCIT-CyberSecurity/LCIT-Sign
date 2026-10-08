@@ -440,7 +440,7 @@ test("an administrator adds, disables and deletes a user from the interface", as
 
 test("directory settings explain themselves with a bubble and an example", async ({ page }) => {
   await loginAs(page, "Admin");
-  await page.goto("/admin/directory");
+  await page.goto("/admin/identity");
   await page.getByTestId("source-entra").getByRole("button", { name: "Configurer" }).click();
   const hint = page.getByRole("button", { name: "Aide : ID du tenant" });
   await hint.hover();
@@ -738,13 +738,14 @@ test("a person signs in locally with their first name as password, on the CrashT
   await page.getByLabel("Mot de passe").fill("bob");
   await page.getByRole("button", { name: "Se connecter", exact: true }).click();
   await expect(page.getByLabel("Compte et réglages")).toBeVisible();
-  // An ordinary person: what was asked of them, and nothing to prepare.
+  // A signer, the standard user: what was asked of them, and the means to ask others — no administration.
   await expect(page.getByRole("link", { name: "Mes signatures" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Faire signer" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Faire signer" })).toBeVisible();
+  await expect(page.getByText("Administration")).toHaveCount(0);
   await expect(page.getByTestId("password-reminder")).toHaveCount(0);
 });
 
-test("preparers see their own campaigns, the operator all of them without their content", async ({
+test("signers see the campaigns they run, the operator all of them without their content", async ({
   browser,
 }) => {
   const open = async (who: string) => {

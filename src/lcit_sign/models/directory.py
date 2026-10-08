@@ -73,6 +73,8 @@ class DirectoryConnectorConfig(Base):
     encrypted_secret: Mapped[str | None] = mapped_column(String(10000))
     # Scheduled sync (spec §15): run this source every N minutes; None = manual.
     sync_interval_minutes: Mapped[int | None] = mapped_column(Integer)
+    # One directory is active at a time: the only one that is synced (by hand or on schedule).
+    active: Mapped[bool] = mapped_column(default=False, server_default="0")
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )

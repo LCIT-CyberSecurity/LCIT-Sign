@@ -6,15 +6,12 @@ import { useAuth } from "../auth/AuthContext";
 import { GoogleLogo, MicrosoftLogo } from "../components/ProviderLogos";
 
 /** Sign-in, laid out like EARE's: an introduction panel on the left, the sign-in card on the
- *  right. The SSO configured on the server is the main way in (its own provider's button); the
+ *  right. The ONE SSO in use is the main way in (its own provider's button); the
  *  local form — the built-in administrator and the accounts an administrator made — stays
  *  available, discreet. With no SSO, the local form is the sign-in. */
 interface Options {
   sso: boolean;
   provider: "entra" | "google" | "generic" | null;
-  /** One button per provider: Microsoft and Google set up by an administrator, then the
-   *  environment's own (the mock SSO on CrashTest). */
-  providers?: { id: string; kind: "entra" | "google" | "generic" }[];
   local: boolean;
   /** The CrashTest stack: fictional accounts, say so. */
   crashtest?: boolean;
@@ -80,14 +77,9 @@ export default function LoginPage() {
       .then(setOptions)
       .catch(() => setOptions({ sso: false, provider: null, local: true }));
   }, []);
-  // Older servers only said which single provider there was.
-  const buttons = !options?.sso
-    ? []
-    : (options.providers ?? [{ id: "sso", kind: options.provider ?? "generic" }]).map((p) => ({
-        id: p.id,
-        ...(SSO_BUTTONS[p.kind] ?? SSO_BUTTONS.generic),
-      }));
-  const button = buttons.length > 0;
+  // A single SSO: the provider in use, or none (then the local form is the sign-in).
+  const sso = options?.sso ? (SSO_BUTTONS[options.provider ?? "generic"] ?? SSO_BUTTONS.generic) : null;
+  const button = sso !== null;
 
   return (
     <div className="login-page">
@@ -140,17 +132,16 @@ export default function LoginPage() {
                   mot de passe = prénom en minuscules (Bob Dupont : bob.dupont@lcit-test.local / bob).
                 </p>
               )}
-              {buttons.map((b, index) => (
+              {sso && (
                 <a
-                  key={b.id}
-                  className={`button ${index === 0 ? "button--primary " : ""}button--block button--provider`}
-                  href={`/api/auth/login?provider=${encodeURIComponent(b.id)}`}
-                  data-testid={index === 0 ? "sso-button" : `sso-button-${b.id}`}
+                  className="button button--primary button--block button--provider"
+                  href="/api/auth/login"
+                  data-testid="sso-button"
                 >
-                  {b.logo}
-                  {b.label}
+                  {sso.logo}
+                  {sso.label}
                 </a>
-              ))}
+              )}
               {options?.local && button && (
                 <details className="auth-local" data-testid="local-login">
                   <summary>Connexion locale</summary>

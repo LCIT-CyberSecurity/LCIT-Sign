@@ -1,4 +1,4 @@
-export type Role = "SIGNER" | "PREPARER" | "OPERATOR" | "ADMIN";
+export type Role = "SIGNER" | "OPERATOR" | "ADMIN";
 
 export interface Me {
   id: string;
@@ -307,6 +307,8 @@ export interface DirectorySource {
   configured: boolean;
   fields: Record<string, string>;
   sync_interval_minutes: number | null;
+  /** The one directory in use: the only one that is synced. */
+  active?: boolean;
   /** Absent for the demonstration directory, which has nothing to configure. */
   spec?: ConnectorSpec;
 }

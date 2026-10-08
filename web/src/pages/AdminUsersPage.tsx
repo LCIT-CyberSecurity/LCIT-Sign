@@ -5,10 +5,9 @@ import { api, ApiError } from "../api/client";
 import ConfirmButton from "../components/ConfirmButton";
 import type { AdminUser, Role } from "../api/types";
 
-const ALL_ROLES: Role[] = ["SIGNER", "PREPARER", "OPERATOR", "ADMIN"];
+const ALL_ROLES: Role[] = ["SIGNER", "OPERATOR", "ADMIN"];
 const ROLE_LABELS: Record<Role, string> = {
   SIGNER: "Signataire",
-  PREPARER: "Préparateur",
   OPERATOR: "Opérateur",
   ADMIN: "Admin",
 };

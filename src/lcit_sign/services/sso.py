@@ -1,11 +1,11 @@
-"""The sign-in buttons the login page offers.
+"""The one external sign-in the login page offers (next to the local form).
 
-Each one is an OpenID Connect provider:
-  * "entra" and "google": set up by an administrator under Administration > Connexion, the secret
-    stored encrypted in the database (nothing in Git, nothing in the environment);
-  * "sso": the single provider given by the LCIT_SIGN_OIDC_* variables, for installations that
-    prefer configuring it that way;
-  * "test": on the CrashTest stack, the same variables point at the mock SSO (fictional people).
+It is an OpenID Connect provider, and exactly one is in use, chosen without any hidden priority:
+  1. when the LCIT_SIGN_OIDC_* variables are set, they ARE the SSO ("sso"; "test" on CrashTest,
+     where they point at the mock SSO). Administration > Connexion says so;
+  2. otherwise the provider an administrator marked active under Administration > Identités &
+     accès ("entra" or "google"), its secret stored encrypted in the database.
+Several can be configured; only the active one is offered.
 """
 from __future__ import annotations
 
@@ -57,37 +57,44 @@ def _from_environment(settings: Settings) -> SsoConfig | None:
     )
 
 
-def _from_database(db: Session, settings: Settings) -> list[SsoConfig]:
+def _from_database(db: Session, settings: Settings) -> SsoConfig | None:
     if not settings.master_key:
-        return []
+        return None
     try:
-        rows = db.execute(select(LoginProvider).order_by(LoginProvider.provider)).scalars().all()
+        row = db.execute(
+            select(LoginProvider).where(LoginProvider.active.is_(True))
+        ).scalars().first()
     except SQLAlchemyError:  # no table yet (first start)
-        return []
-    found: dict[str, SsoConfig] = {}
-    for row in rows:
-        try:
-            secret = decrypt_secret(settings.master_key, row.encrypted_secret)
-        except Exception:  # noqa: S112 - unreadable (another master key): no button
-            continue
-        if row.provider == "entra" and row.tenant_id:
-            found["entra"] = SsoConfig(
-                "entra", entra_issuer(row.tenant_id), row.client_id, secret, "entra"
-            )
-        elif row.provider == "google":
-            found["google"] = SsoConfig("google", GOOGLE_ISSUER, row.client_id, secret, "google")
-    return [found[k] for k in ("entra", "google") if k in found]
+        return None
+    if row is None:
+        return None
+    try:
+        secret = decrypt_secret(settings.master_key, row.encrypted_secret)
+    except Exception:  # noqa: BLE001 - unreadable (another master key): no button
+        return None
+    if row.provider == "entra" and row.tenant_id:
+        return SsoConfig("entra", entra_issuer(row.tenant_id), row.client_id, secret, "entra")
+    if row.provider == "google":
+        return SsoConfig("google", GOOGLE_ISSUER, row.client_id, secret, "google")
+    return None
+
+
+def environment_sso(settings: Settings) -> SsoConfig | None:
+    """The SSO imposed by the LCIT_SIGN_OIDC_* variables, if they are set."""
+    return _from_environment(settings)
 
 
 def available_sso(db: Session | None, settings: Settings) -> list[SsoConfig]:
-    """The buttons, in display order: Microsoft, Google, then the environment's provider."""
-    configured = _from_database(db, settings) if db is not None else []
+    """The SSO in use: zero or one. The environment's, when set; else the active provider."""
     env = _from_environment(settings)
-    return [*configured, *([env] if env else [])]
+    if env is not None:
+        return [env]
+    configured = _from_database(db, settings) if db is not None else None
+    return [configured] if configured else []
 
 
 def resolve_sso(db: Session | None, settings: Settings, key: str | None = None) -> SsoConfig | None:
-    """The provider asked for, or the first one when none is named."""
+    """The SSO in use, or None; a named provider that is no longer the one in use is refused."""
     choices = available_sso(db, settings)
     if key is None:
         return choices[0] if choices else None

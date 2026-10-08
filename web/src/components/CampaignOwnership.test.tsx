@@ -78,10 +78,10 @@ describe("CampaignOwnership", () => {
   it("says why when the server refuses", async () => {
     const user = userEvent.setup();
     const { ApiError } = await import("../api/client");
-    vi.mocked(api.post).mockRejectedValue(new ApiError(422, "Sophie n'a pas le rôle Préparateur"));
+    vi.mocked(api.post).mockRejectedValue(new ApiError(422, "Sophie n'a pas le rôle Signataire"));
     render(<CampaignOwnership campaign={campaign()} onChanged={vi.fn()} />);
     await user.selectOptions(await screen.findByLabelText("Ajouter un préparateur"), "u-sophie");
     await user.click(screen.getByRole("button", { name: "Ajouter" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("n'a pas le rôle Préparateur");
+    expect(await screen.findByRole("alert")).toHaveTextContent("n'a pas le rôle Signataire");
   });
 });

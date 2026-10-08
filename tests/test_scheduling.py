@@ -231,7 +231,8 @@ def test_dashboard_and_assignment_filters(tmp_path, mock_oidc_base_url):
     assert board["assignments"]["overdue"] == expected - 1      # the deadline has passed
     assert board["signature_rate"] == round(100 / expected)
     assert admin.get("/api/campaigns/_meta/dashboard").status_code == 200
-    assert signer1.get("/api/campaigns/_meta/dashboard").status_code == 403
+    # The dashboard of a signer who owns nothing counts nothing: it is not the operator's.
+    assert signer1.get("/api/campaigns/_meta/dashboard").json()["campaigns"]["active"] == 0
 
     base = f"/api/campaigns/{campaign['id']}/assignments"
     everyone = operator.get(base).json()

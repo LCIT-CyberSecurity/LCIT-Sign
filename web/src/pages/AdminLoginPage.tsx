@@ -6,6 +6,7 @@ import { GoogleLogo, MicrosoftLogo } from "../components/ProviderLogos";
 interface Provider {
   provider: "entra" | "google";
   configured: boolean;
+  active?: boolean;
   client_id: string;
   tenant_id: string;
   redirect_uri: string;
@@ -35,10 +36,20 @@ function ProviderCard({ item, onSaved }: { item: Provider; onSaved: () => void }
         client_secret: secret || undefined,
       });
       setSecret(""); // the secret never stays in the page once sent
-      setMessage({ ok: true, text: "Enregistré. Le bouton apparaît sur la page de connexion." });
+      setMessage({ ok: true, text: "Enregistré : c'est maintenant le fournisseur de connexion." });
       onSaved();
     } catch (err) {
       setMessage({ ok: false, text: err instanceof ApiError ? err.message : "Échec de l'enregistrement." });
+    }
+  };
+
+  const activate = async () => {
+    setMessage(null);
+    try {
+      await api.post(`/admin/login-providers/${item.provider}/activate`);
+      onSaved();
+    } catch (err) {
+      setMessage({ ok: false, text: err instanceof ApiError ? err.message : "Échec de l'activation." });
     }
   };
 
@@ -63,7 +74,8 @@ function ProviderCard({ item, onSaved }: { item: Provider; onSaved: () => void }
       data-testid={`login-provider-${item.provider}`}
     >
       <div className="card-title">
-        {label.logo} {label.name} {item.configured ? "(activé)" : "(non configuré)"}
+        {label.logo} {label.name}{" "}
+        {item.active ? "(actif)" : item.configured ? "(configuré, inactif)" : "(non configuré)"}
       </div>
       <p className="muted small">
         Adresse de retour à déclarer chez le fournisseur : <code>{item.redirect_uri}</code>
@@ -108,9 +120,14 @@ function ProviderCard({ item, onSaved }: { item: Provider; onSaved: () => void }
         <button className="button button--primary" type="submit">
           Enregistrer
         </button>
+        {item.configured && !item.active && (
+          <button className="button" type="button" onClick={activate}>
+            Utiliser ce fournisseur
+          </button>
+        )}
         {item.configured && (
           <button className="button" type="button" onClick={remove}>
-            Désactiver
+            Supprimer
           </button>
         )}
       </div>
@@ -123,26 +140,39 @@ function ProviderCard({ item, onSaved }: { item: Provider; onSaved: () => void }
   );
 }
 
+/** Connexion: ONE external sign-in provider is in use (the active one), and the local form is
+ *  always there next to it. */
 export default function AdminLoginPage() {
   const [items, setItems] = useState<Provider[] | null>(null);
-  const load = () => api.get<Provider[]>("/admin/login-providers").then(setItems);
-  useEffect(() => {
-    load();
-  }, []);
+  const [fixedByServer, setFixedByServer] = useState(false);
+  const load = () => {
+    api.get<Provider[]>("/admin/login-providers").then(setItems);
+    api
+      .get<{ managed_by_environment: boolean }>("/admin/login-providers/status")
+      .then((s) => setFixedByServer(Boolean(s?.managed_by_environment)))
+      .catch(() => undefined);
+  };
+  useEffect(load, []);
   if (!items) return <p className="muted">Chargement…</p>;
   return (
-    <div className="page">
-      <h1>
-        <KeyRound size={20} aria-hidden="true" /> Connexion
-      </h1>
+    <section className="stack" data-testid="identity-login">
+      <h2 className="page-title" style={{ fontSize: 18, margin: 0 }}>
+        <KeyRound size={18} aria-hidden="true" /> Connexion
+      </h2>
       <p className="muted">
-        Les boutons de la page de connexion. Les identifiants se saisissent ici : ils sont stockés chiffrés
-        dans la base, jamais dans le code ni dans l&apos;environnement. La connexion locale reste toujours
-        disponible.
+        Comment les gens s&apos;authentifient : <strong>un seul</strong> fournisseur SSO est actif (celui que la
+        page de connexion propose), plus la connexion locale, toujours disponible. Les identifiants se saisissent
+        ici : ils sont stockés chiffrés dans la base, jamais dans le code ni dans l&apos;environnement.
       </p>
+      {fixedByServer && (
+        <p className="error-text" role="status" data-testid="sso-fixed-by-server">
+          Le SSO est imposé par la configuration du serveur (variables LCIT_SIGN_OIDC_*) : tant qu&apos;elles sont
+          définies, elles passent avant les réglages ci-dessous.
+        </p>
+      )}
       {items.map((item) => (
-        <ProviderCard key={`${item.provider}-${item.configured}`} item={item} onSaved={load} />
+        <ProviderCard key={`${item.provider}-${item.configured}-${item.active}`} item={item} onSaved={load} />
       ))}
-    </div>
+    </section>
   );
 }

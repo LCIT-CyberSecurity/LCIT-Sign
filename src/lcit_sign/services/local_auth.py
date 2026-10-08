@@ -55,6 +55,7 @@ def ensure_builtin_admin(db: DbSession, settings: Settings) -> User | None:
             db.commit()
         return None
 
+    is_new = user is None
     if user is None:
         user = User(
             issuer=BUILTIN_ISSUER,
@@ -67,11 +68,13 @@ def ensure_builtin_admin(db: DbSession, settings: Settings) -> User | None:
         )
         db.add(user)
         db.flush()
-    has_role = db.execute(
-        select(UserRole).where(UserRole.user_id == user.id, UserRole.role == Role.ADMIN)
-    ).scalar_one_or_none()
-    if has_role is None:
+    # The built-in account administers, and like everybody it can sign (unless that is taken away
+    # later: only a brand-new account gets the default).
+    held = set(db.execute(select(UserRole.role).where(UserRole.user_id == user.id)).scalars())
+    if Role.ADMIN not in held:
         db.add(UserRole(user_id=user.id, role=Role.ADMIN))
+    if is_new and Role.SIGNER not in held:
+        db.add(UserRole(user_id=user.id, role=Role.SIGNER))
 
     # The configured (or deployment-default) password is only the INITIAL one: it is
     # applied when the account has none. A password the administrator chose is never

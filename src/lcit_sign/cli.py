@@ -116,13 +116,13 @@ def export_connections() -> int:
             "version": 1,
             "login_providers": [
                 {"provider": r.provider, "client_id": r.client_id, "tenant_id": r.tenant_id,
-                 "encrypted_secret": r.encrypted_secret}
+                 "encrypted_secret": r.encrypted_secret, "active": r.active}
                 for r in db.execute(select(LoginProvider)).scalars()
             ],
             "directory_connectors": [
                 {"source": r.source, "settings_json": r.settings_json,
                  "encrypted_secret": r.encrypted_secret,
-                 "sync_interval_minutes": r.sync_interval_minutes}
+                 "sync_interval_minutes": r.sync_interval_minutes, "active": r.active}
                 for r in db.execute(select(DirectoryConnectorConfig)).scalars()
                 if r.source != "local"
             ],
@@ -155,6 +155,7 @@ def import_connections() -> int:
             row = db.get(LoginProvider, r["provider"]) or LoginProvider(provider=r["provider"])
             row.client_id, row.tenant_id = r["client_id"], r.get("tenant_id")
             row.encrypted_secret = r["encrypted_secret"]
+            row.active = False  # decided below: one at a time
             db.add(row)
         for r in data.get("directory_connectors", []):
             cfg = db.get(DirectoryConnectorConfig, r["source"]) or DirectoryConnectorConfig(
@@ -163,9 +164,56 @@ def import_connections() -> int:
             cfg.settings_json = r["settings_json"]
             cfg.encrypted_secret = r.get("encrypted_secret")
             cfg.sync_interval_minutes = r.get("sync_interval_minutes")
+            cfg.active = False
             db.add(cfg)
+        db.flush()
+        # One sign-in provider and one directory at a time: the exported file says which (an old
+        # file without it: the first provider, the first remote connector).
+        providers = data.get("login_providers", [])
+        if providers:
+            chosen = next((p for p in providers if p.get("active")), providers[0])
+            db.get(LoginProvider, chosen["provider"]).active = True  # type: ignore[union-attr]
+        remotes = [c for c in data.get("directory_connectors", []) if c["source"] != "local"]
+        if remotes:
+            chosen = next((c for c in remotes if c.get("active")), remotes[0])
+            db.get(DirectoryConnectorConfig, chosen["source"]).active = True  # type: ignore[union-attr]
         db.commit()
     print(f"{len(rows)} connexion(s) restaurée(s).")  # noqa: T201
+    return 0
+
+
+def export_mock_providers() -> int:
+    """The real accounts the CrashTest mock SSO may offer (Entra, Google), as the JSON file the
+    mock reads, built from the connections already stored in this installation:
+      * a sign-in provider set up under Identités & accès (Microsoft / Google), else
+      * for Entra only, the application of the Entra directory connector (same registration).
+    The secrets are decrypted here and go to STDOUT for crashtest/start.sh to write into a
+    private file (mode 600) outside the repository; nothing is logged."""
+    from lcit_sign.models.directory import DirectoryConnectorConfig
+    from lcit_sign.models.login_provider import LoginProvider
+    from lcit_sign.services.crypto import decrypt_secret
+
+    settings = get_settings()
+    out: dict[str, dict[str, str]] = {}
+    with make_session_factory(make_engine(settings.database_url))() as db:
+        for row in db.execute(select(LoginProvider)).scalars():
+            secret = decrypt_secret(settings.master_key, row.encrypted_secret)
+            if row.provider == "entra" and row.tenant_id:
+                out["entra"] = {"tenant_id": row.tenant_id, "client_id": row.client_id,
+                                "client_secret": secret}
+            elif row.provider == "google":
+                out["google"] = {"client_id": row.client_id, "client_secret": secret}
+        directory = db.get(DirectoryConnectorConfig, "entra")
+        if "entra" not in out and directory is not None and directory.encrypted_secret:
+            fields = json.loads(directory.settings_json)
+            if fields.get("tenant_id") and fields.get("client_id"):
+                out["entra"] = {
+                    "tenant_id": fields["tenant_id"], "client_id": fields["client_id"],
+                    "client_secret": decrypt_secret(
+                        settings.master_key, directory.encrypted_secret
+                    ),
+                }
+    print(json.dumps(out))  # noqa: T201
     return 0
 
 
@@ -173,7 +221,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="lcit_sign.cli")
     parser.add_argument(
         "command",
-        choices=["verify-all", "reset-admin-password", "export-connections", "import-connections"],
+        choices=[
+            "verify-all", "reset-admin-password", "export-connections", "import-connections",
+            "export-mock-providers",
+        ],
     )
     args = parser.parse_args(argv)
     if args.command == "reset-admin-password":
@@ -182,6 +233,8 @@ def main(argv: list[str] | None = None) -> int:
         return export_connections()
     if args.command == "import-connections":
         return import_connections()
+    if args.command == "export-mock-providers":
+        return export_mock_providers()
     result = verify_all()
     print(json.dumps(result, indent=2))  # noqa: T201
     return 0 if result["ok"] else 1

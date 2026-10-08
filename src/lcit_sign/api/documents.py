@@ -54,7 +54,7 @@ PDF_SUFFIX = ".pdf"
 # SignatureAssignment for it (see get_version_content) — a signer must be
 # able to read what they are being asked to sign.
 # Anyone who may prepare; which documents they may open is decided per document.
-_manage = require_roles(Role.PREPARER, Role.OPERATOR, Role.ADMIN)
+_manage = require_roles(Role.SIGNER, Role.OPERATOR, Role.ADMIN)
 
 
 def _readable_document(db: DbSession, user: User, document: Document | None) -> Document:

@@ -36,7 +36,7 @@ PDF_SUFFIX = ".pdf"
 CSV_SUFFIX = ".csv"
 
 # The report lists a campaign's signers and signatures: its content (services/access.py).
-_manage = require_roles(Role.PREPARER, Role.OPERATOR, Role.ADMIN)
+_manage = require_roles(Role.SIGNER, Role.OPERATOR, Role.ADMIN)
 
 # Mounted under /campaigns: create and list a campaign's PVs.
 campaign_reports_router = APIRouter(prefix="/campaigns", tags=["reports"])

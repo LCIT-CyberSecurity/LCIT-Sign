@@ -17,7 +17,6 @@ import type { Me } from "../api/types";
 
 const ROLE_LABELS: Record<string, string> = {
   SIGNER: "Signataire",
-  PREPARER: "Préparateur",
   OPERATOR: "Opérateur",
   ADMIN: "Administrateur",
 };

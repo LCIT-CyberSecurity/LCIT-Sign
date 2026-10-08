@@ -32,7 +32,7 @@ router = APIRouter(prefix="/signed", tags=["signed"])
 
 # The signed PDFs are the confidential content of their campaigns: only the campaigns this person
 # owns or prepares (an administrator: all) are listed or exported (services/access.py).
-_manage = require_roles(Role.PREPARER, Role.OPERATOR, Role.ADMIN)
+_manage = require_roles(Role.SIGNER, Role.OPERATOR, Role.ADMIN)
 
 
 def _scope(

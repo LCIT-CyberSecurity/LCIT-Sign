@@ -237,11 +237,17 @@ def test_ordinary_pdfs_are_not_mistaken_for_scripts(tmp_path, mock_oidc_base_url
     assert _upload_status(operator, make_pdf_with_hyperlink_and_false_markers()).status_code == 201
 
 
-def test_signer_without_role_cannot_manage_documents(tmp_path, mock_oidc_base_url):
+def test_someone_without_the_signer_role_cannot_manage_documents(tmp_path, mock_oidc_base_url):
     app = make_app(tmp_path, mock_oidc_base_url)
     with TestClient(app) as client:
         Base.metadata.create_all(app.state.engine)
-        login_as(client, mock_oidc_base_url, sub="u-rh-1")  # no roles granted
+        login_as(client, mock_oidc_base_url, sub="u-rh-1")  # SIGNER, like everybody
+        # A signer is the standard user: they upload and prepare documents.
+        assert client.get("/api/documents").status_code == 200
+        me = client.get("/api/auth/me").json()
+        admin = TestClient(app)
+        login_as(admin, mock_oidc_base_url, sub="u-direction-1")  # the bootstrap administrator
+        assert admin.delete(f"/api/admin/users/{me['id']}/roles/SIGNER").status_code == 200
 
         response = client.post(
             "/api/documents",

@@ -96,7 +96,8 @@ def test_only_staff_can_cancel_delete_or_archive(tmp_path, mock_oidc_base_url):
         lambda: s1.delete(f"/api/campaigns/{cid}"),
         lambda: s1.post(f"/api/campaigns/{cid}/archive"),
     ):
-        assert call().status_code == 403
+        # Not their campaign: hidden (404) or refused (403), never done.
+        assert call().status_code in (403, 404)
     assert admin.post(f"/api/campaigns/{cid}/cancel").status_code == 200
     assert admin.delete(f"/api/campaigns/{cid}").status_code == 200
 

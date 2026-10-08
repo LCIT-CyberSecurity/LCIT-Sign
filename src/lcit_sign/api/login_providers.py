@@ -7,6 +7,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
+from sqlalchemy import update
 from sqlalchemy.orm import Session as DbSession
 
 from lcit_sign.deps import get_db, require_roles
@@ -14,6 +15,7 @@ from lcit_sign.models.login_provider import LoginProvider
 from lcit_sign.models.user import Role, User
 from lcit_sign.services.audit import append_audit_event
 from lcit_sign.services.crypto import encrypt_secret
+from lcit_sign.services.sso import environment_sso
 
 router = APIRouter(prefix="/admin/login-providers", tags=["login"])
 _admin = require_roles(Role.ADMIN)
@@ -39,6 +41,7 @@ def _payload(provider: str, row: LoginProvider | None, request: Request) -> dict
     return {
         "provider": provider,
         "configured": row is not None,
+        "active": bool(row and row.active),
         "client_id": row.client_id if row else "",
         "tenant_id": (row.tenant_id or "") if row else "",
         "updated_at": row.updated_at.isoformat() if row and row.updated_at else None,
@@ -52,6 +55,45 @@ def list_providers(
     request: Request, db: DbSession = Depends(get_db), user: User = Depends(_admin)
 ) -> list[dict[str, Any]]:
     return [_payload(p, db.get(LoginProvider, p), request) for p in PROVIDERS]
+
+
+@router.get("/status")
+def status_of_sso(request: Request, user: User = Depends(_admin)) -> dict[str, Any]:
+    """Who decides the SSO: the environment variables when set (they win, visibly), else the
+    active provider below."""
+    env = environment_sso(request.app.state.settings)
+    return {
+        "managed_by_environment": env is not None,
+        "environment_kind": env.provider if env else None,
+    }
+
+
+def _make_active(db: DbSession, provider: str) -> None:
+    db.execute(update(LoginProvider).where(LoginProvider.provider != provider).values(active=False))
+    row = db.get(LoginProvider, provider)
+    if row is not None:
+        row.active = True
+
+
+@router.post("/{provider}/activate")
+def activate_provider(
+    provider: str,
+    request: Request,
+    db: DbSession = Depends(get_db),
+    user: User = Depends(_admin),
+) -> dict[str, Any]:
+    """Switch the sign-in to an already configured provider; the other one stops being offered."""
+    row = db.get(LoginProvider, provider) if provider in PROVIDERS else None
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "not configured")
+    _make_active(db, provider)
+    append_audit_event(
+        db, action="LOGIN_PROVIDER_ACTIVATED", actor_id=user.id, target_type="login_provider",
+        target_id=provider,
+    )
+    db.commit()
+    db.refresh(row)
+    return _payload(provider, row, request)
 
 
 @router.put("/{provider}")
@@ -98,6 +140,9 @@ def put_provider(
     row.updated_by = user.id
     if secret:
         row.encrypted_secret = encrypt_secret(settings.master_key, secret)
+    # One sign-in provider at a time: the one just saved is the one in use.
+    db.flush()
+    _make_active(db, provider)
     append_audit_event(
         db, action="LOGIN_PROVIDER_CONFIGURED", actor_id=user.id, target_type="login_provider",
         target_id=provider,

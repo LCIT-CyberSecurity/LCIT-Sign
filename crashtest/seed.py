@@ -45,14 +45,11 @@ EXTRA_PEOPLE = [
     ("admin.crash", "Admin", "Crash", "Direction"),
 ]
 
-# Everyone can sign by default (SIGNER); these come on top.
+# Everyone is a SIGNER by default (the standard user: prepares, sends, signs); these come on top.
+# Alice, Sophie (RH), Claire (Legal) and Diane (Sales) are plain signers who run their campaigns.
 ROLES: dict[str, list[Role]] = {
     "admin.crash": [Role.ADMIN],
     "paul.muller": [Role.OPERATOR],  # business administrator: sees every campaign, not its content
-    "alice.martin": [Role.PREPARER],  # RH
-    "sophie.bernard": [Role.PREPARER],  # RH
-    "claire.moreau": [Role.PREPARER],  # Juridique
-    "diane.leroy": [Role.PREPARER],  # Sales: runs the security campaigns
 }
 
 

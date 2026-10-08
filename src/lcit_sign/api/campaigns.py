@@ -72,7 +72,7 @@ from lcit_sign.time_utils import ensure_utc
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])
 
 # Anyone who may prepare; what they may touch is decided per campaign (services/access.py).
-_manage = require_roles(Role.PREPARER, Role.OPERATOR, Role.ADMIN)
+_manage = require_roles(Role.SIGNER, Role.OPERATOR, Role.ADMIN)
 
 
 @router.get("/_meta/users")
@@ -1222,7 +1222,7 @@ def _preparer_candidate(db: DbSession, user_id: uuid.UUID) -> User:
     if not (roles_of(db, person) & PREPARE_ROLES):
         raise HTTPException(
             422,
-            f"{person.display_name} n'a pas le rôle Préparateur (ni Opérateur, ni Admin) : "
+            f"{person.display_name} n'a pas le rôle Signataire (ni Opérateur, ni Admin) : "
             "donnez-lui d'abord ce rôle.",
         )
     return person
