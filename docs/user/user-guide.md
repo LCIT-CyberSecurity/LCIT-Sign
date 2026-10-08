@@ -142,7 +142,7 @@ One page, two independent sections, even when Microsoft Entra ID serves both:
 - **Directory** (*Annuaire*): **one** directory is active, the only one that syncs: **Microsoft Entra ID**, **Google Workspace** or
   **LDAP / Active Directory**. A fresh installation has **no directory** ("No directory configured"); the demo
   directory exists only in CrashTest. Each form has help bubbles and examples; secrets are encrypted and **never
-  shown again**. The team name comes from directory groups, an attribute, or both. *Sync now* (or a
+  shown again**. The team name comes from directory groups, an attribute, or both. The steps to take in Microsoft Entra ID and Google Workspace are in [`directory-setup.md`](../integrations/directory-setup.md). *Sync now* (or a
   schedule) runs a sync; someone who disappears from the directory is **disabled**, never deleted; people added by
   hand or external are never touched.
 
