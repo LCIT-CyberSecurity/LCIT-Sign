@@ -128,11 +128,10 @@ https_port() { local p; p="$(env_get LCIT_SIGN_HTTPS_PORT)"; printf '%s' "${p:-4
 http_port()  { local p; p="$(env_get LCIT_SIGN_HTTP_PORT)"; printf '%s' "${p:-4180}"; }
 
 public_url() {
-    local base fqdn
-    base="$(env_get LCIT_SIGN_PUBLIC_BASE_URL)"
+    local fqdn
     fqdn="$(env_get LCIT_SIGN_FQDN)"
     if [ -n "$fqdn" ]; then printf 'https://%s:%s' "$fqdn" "$(https_port)"
-    else printf 'https://localhost:%s  (ou %s)' "$(https_port)" "${base:-http://127.0.0.1:$(http_port)}"; fi
+    else printf 'https://localhost:%s  (ou http://127.0.0.1:%s)' "$(https_port)" "$(http_port)"; fi
 }
 
 # --- safety -----------------------------------------------------------------------------------------
