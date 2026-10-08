@@ -1,0 +1,13 @@
+# kubectl apply -k ops/kubernetes/   (after creating the lcit-sign-secrets Secret)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: lcit-sign
+resources:
+  - namespace.yaml
+  - config.yaml
+  - postgres.yaml
+  - api.yaml
+  - converter.yaml
+  - webui.yaml
+  - ingress.yaml
+  - networkpolicy.yaml

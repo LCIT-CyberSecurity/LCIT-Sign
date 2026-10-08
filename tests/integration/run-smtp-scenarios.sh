@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Run the SMTP scenarios against the test Postfix, on the machine hosting
 # the stack:
-#   docker compose -f docker-compose.yml -f docker-compose.test.yml up -d --build postfix-test
+#   docker compose -f compose.yaml -f compose.test.yaml up -d --build postfix-test
 #   tests/integration/run-smtp-scenarios.sh
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."

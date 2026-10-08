@@ -20,14 +20,14 @@ jobs:
           python-version: "3.12"
       - run: pip install -e '.[dev]'
       - run: ruff check .
-      - run: mypy src
+      - run: mypy backend/src
       - run: pytest --cov
 
   frontend:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: web
+        working-directory: frontend
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -51,7 +51,7 @@ jobs:
         with:
           node-version: "22"
       - run: npm audit --audit-level=high
-        working-directory: web
+        working-directory: frontend
 
   scripts-and-deploy:
     runs-on: ubuntu-latest
@@ -59,15 +59,18 @@ jobs:
       - uses: actions/checkout@v4
       - name: shellcheck
         run: |
-          shellcheck scripts/*.sh tests/UAT/CrashTests-Sign/*.sh tests/integration/*.sh \
-            web/nginx/40-lcit-sign-tls.sh docker/entrypoint.sh docker/postfix-test/entrypoint.sh
+          shellcheck ops/admin/*.sh ops/dev/*.sh \
+            tests/crashtest/*.sh tests/crashtest/uat/*.sh tests/integration/*.sh \
+            ops/docker/nginx/40-lcit-sign-tls.sh ops/docker/backend-entrypoint.sh \
+            ops/docker/postfix-test/entrypoint.sh
       - name: docker compose files are valid
         run: |
-          docker compose -f docker-compose.yml config -q
-          docker compose -f docker-compose.yml -f docker-compose.test.yml config -q
+          docker compose -f compose.yaml config -q
+          docker compose -f compose.yaml -f compose.test.yaml config -q
+          docker compose -f compose.yaml -f tests/crashtest/compose.crashtest.yaml --profile crashtest config -q
       - name: Kubernetes manifests are valid
         run: |
-          docker run --rm -v "$PWD/k8s:/k:ro" ghcr.io/yannh/kubeconform:latest \
+          docker run --rm -v "$PWD/ops/kubernetes:/k:ro" ghcr.io/yannh/kubeconform:latest \
             -strict -summary -ignore-missing-schemas -skip Kustomization /k
 
   secret-scan:

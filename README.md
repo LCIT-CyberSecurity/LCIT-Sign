@@ -31,7 +31,7 @@ and qualified timestamps are out of scope.
 
 - A Linux host with **Docker** and the **Docker Compose** plugin. The whole application (API, web server, PostgreSQL,
   document converter) runs as containers; nothing else has to be installed.
-- Read the **[user guide](docs/user-guide.md)** first: it explains the roles, the signature workflow and the
+- Read the **[user guide](docs/user/user-guide.md)** first: it explains the roles, the signature workflow and the
   administration pages used after the first start.
 - For production: a public URL with TLS, and two random secrets of at least 32 characters (session secret and master
   key).
@@ -49,7 +49,7 @@ docker compose ps               # all services should become "healthy"
 The stack has four containers: `postgres` (database), `api` (FastAPI backend), `webui` (nginx: HTTPS, the web
 interface and the `/api` proxy) and `converter` (isolated Word / LibreOffice to PDF conversion). Data lives in two
 Docker volumes (database, stored documents and signed files). The UI is on `https://<host>:4443` (self-signed
-certificate until you install yours with `scripts/certificate-installer.sh`) and on `http://127.0.0.1:4180`; health
+certificate until you install yours with `ops/admin/certificate-installer.sh`) and on `http://127.0.0.1:4180`; health
 check at `/api/health`.
 
 ### The `.env` file
@@ -90,36 +90,36 @@ either secret is empty, a development value or shorter than 32 characters, or if
 
 A fresh installation contains only the local account `admin` with the initial password `SecretPassword`, which must be
 changed at first sign-in. There is no SSO, no directory and no sample data. Sign in locally, then configure
-*Administration → Identities & access* (SSO, directory) and *Email*; the [user guide](docs/user-guide.md) walks through it.
+*Administration → Identities & access* (SSO, directory) and *Email*; the [user guide](docs/user/user-guide.md) walks through it.
 
 ### Update, backup
 
 Update: `git pull && docker compose up -d --build` (migrations run at start). Backup and restore:
-`scripts/backup.sh`, `scripts/restore.sh`.
+`ops/admin/backup.sh`, `ops/admin/restore.sh`.
 
 ## Demo and test environment
 
 ```bash
-./crashtest/start.sh     # separate stack (own database and volumes): mock SSO, fictional users, groups and campaigns
-./crashtest/reset.sh     # destroys only that stack and starts again
+./tests/crashtest/start.sh     # separate stack (own database and volumes): mock SSO, fictional users, groups and campaigns
+./tests/crashtest/reset.sh     # destroys only that stack and starts again
 ```
 
-CrashTest is the only place where the mock SSO and the fictional data exist. See [`crashtest/README.md`](crashtest/README.md).
+CrashTest is the only place where the mock SSO and the fictional data exist. See [`crashtest/README.md`](tests/crashtest/README.md).
 
 ## Development
 
 ```bash
 pip install -e '.[dev]' && ruff check . && mypy src && pytest     # backend
 cd web && npm ci && npm test && npm run build                     # frontend
-scripts/e2e.sh                                                    # end to end on a throwaway stack
+ops/dev/e2e.sh                                                    # end to end on a throwaway stack
 ```
 
 Stack: Python 3.12, FastAPI, SQLAlchemy 2, Alembic, PostgreSQL, Vite, React, nginx.
 
 ## Documentation
 
-- [`docs/user-guide.md`](docs/user-guide.md): using LCIT Sign
-- [`docs/design.md`](docs/design.md): design, security model, known limits
-- [`docs/entra-sso-test.md`](docs/entra-sso-test.md): Entra ID sign-in
-- [`docs/microsoft-graph-setup.md`](docs/microsoft-graph-setup.md): mail through Microsoft Graph
-- [`docs/mock-sso-real-accounts.md`](docs/mock-sso-real-accounts.md): mock SSO with real accounts
+- [`docs/user/user-guide.md`](docs/user/user-guide.md): using LCIT Sign
+- [`docs/architecture/design.md`](docs/architecture/design.md): design, security model, known limits
+- [`docs/integrations/entra-sso-test.md`](docs/integrations/entra-sso-test.md): Entra ID sign-in
+- [`docs/integrations/microsoft-graph-setup.md`](docs/integrations/microsoft-graph-setup.md): mail through Microsoft Graph
+- [`docs/integrations/mock-sso-real-accounts.md`](docs/integrations/mock-sso-real-accounts.md): mock SSO with real accounts
