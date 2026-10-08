@@ -93,8 +93,10 @@ step_skipped() { lead "$1"; say "${YELLOW}IGNORÉ${RESET}"; }
 
 # --- environment ----------------------------------------------------------------------------------
 
-# env_get KEY: value of KEY in .env (empty when absent).
+# env_get KEY: the value Compose will see: the shell's own variable first, else the one in .env
+# (empty when absent).
 env_get() {
+    if [ -n "${!1-}" ]; then printf '%s' "${!1}"; return 0; fi
     [ -f "$ENV_FILE" ] || return 0
     sed -n "s/^$1=//p" "$ENV_FILE" | tail -n 1
 }
