@@ -60,7 +60,7 @@ self-signed certificate).
 ## 3. How a person is recognised
 
 LCIT Sign matches a sign-in to a person by **e-mail address**. Someone already imported from the
-directory (Annuaire → Synchroniser) keeps their roles when they sign in with the same address;
+directory (Directory → Sync now) keeps their roles when they sign in with the same address;
 otherwise a new account is created as a signer. An administrator grants more roles in
 Utilisateurs.
 
