@@ -19,12 +19,12 @@ providers you want:
 
 ```json
 {
-  "entra":  {"tenant_id": "<ID du tenant>", "client_id": "<ID de l'application (client)>",
-             "client_secret": "<valeur du secret>"},
+  "entra":  {"tenant_id": "<tenant ID>", "client_id": "<application (client) ID>",
+             "client_secret": "<secret value>"},
   "google": {"client_id": "<id>.apps.googleusercontent.com", "client_secret": "<secret>",
-             "allowed_domain": "votre-domaine.fr"},
-  "ldap":   {"server_url": "ldaps://ldap.entreprise.fr:636", "bind_dn": "cn=lcit-sign,ou=services,dc=entreprise,dc=fr",
-             "bind_password": "<mot de passe>", "base_dn": "dc=entreprise,dc=fr",
+             "allowed_domain": "your-domain.com"},
+  "ldap":   {"server_url": "ldaps://ldap.example.com:636", "bind_dn": "cn=lcit-sign,ou=services,dc=example,dc=com",
+             "bind_password": "<password>", "base_dn": "dc=example,dc=com",
              "user_filter": "(&(objectClass=person)(|(mail={login})(uid={login})(sAMAccountName={login})))"}
 }
 ```
@@ -49,8 +49,8 @@ application → Authentification → Ajouter une plateforme → Web), add the re
 Nothing else changes: `openid`, `profile` and `email` need no administrator consent, and no
 permission is added. People sign in with their own account; no account is created in Entra.
 
-**Google** — Google Cloud → APIs et services → Identifiants → Créer des identifiants → ID client
-OAuth (application Web), with the redirect URI `…/mock-oidc/callback/google`. `allowed_domain`
+**Google** — Google Cloud → APIs & Services → Credentials → Create credentials → OAuth client
+ID (Web application), with the redirect URI `…/mock-oidc/callback/google`. `allowed_domain`
 restricts sign-in to your domain.
 
 **LDAP** — a read-only service account that can search people under `base_dn`. Use `ldaps://`; the

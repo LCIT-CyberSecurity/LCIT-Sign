@@ -28,8 +28,8 @@ The two identifiers can be shared; **the secret must never be pasted in a chat, 
 
 ## In LCIT Sign
 
-Easiest: *Administration → Identités & accès → Connexion → Microsoft (Entra ID)*, enter the tenant ID, client ID and
-secret, **Enregistrer**. The secret is stored encrypted and never shown again; saving makes Entra the active SSO.
+Easiest: *Administration → Identities & access → Sign-in → Microsoft (Entra ID)*, enter the tenant ID, client ID and
+secret, **Save**. The secret is stored encrypted and never shown again; saving makes Entra the active SSO.
 
 Alternatively, with environment variables (they then override the UI): put the secret in a file outside Git
 (`install -m 600 /dev/stdin secrets/oidc_client_secret`) and in `.env`:
@@ -48,7 +48,7 @@ then `docker compose up -d --force-recreate api webui`.
 - On first sign-in LCIT Sign creates a profile with the name and e-mail (no password). Every new active account is a
   **SIGNER**; administrators are designated by an administrator (or `LCIT_SIGN_BOOTSTRAP_ADMIN` on a first install).
 - Sign-in does not read the directory: LCIT Sign only knows people who signed in at least once.
-- *Administration → Identités & accès → Annuaire → Microsoft Entra ID* is **another thing**: it *imports* users and groups,
+- *Administration → Identities & access → Directory → Microsoft Entra ID* is **another thing**: it *imports* users and groups,
   with another app registration and directory read permissions an administrator must consent to.
 
 ## Rolling back

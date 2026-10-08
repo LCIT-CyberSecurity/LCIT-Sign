@@ -94,7 +94,7 @@ session.
 
 ### Identities and access
 
-Two different questions, one administration page (*Identités & accès*), two backend models:
+Two different questions, one administration page (*Identities & access*), two backend models:
 
 * **Connexion** (`login_providers`): how people authenticate. One external SSO provider is in use
   (`active`), plus the local form. If the `LCIT_SIGN_OIDC_*` variables are set they ARE the SSO
