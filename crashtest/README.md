@@ -17,19 +17,36 @@ L'identifiant est l'adresse e-mail, le **mot de passe est le prénom en minuscul
 
 | Personne | E-mail | Mot de passe | Rôle |
 |---|---|---|---|
-| Alice Martin | alice.martin@lcit-test.local | alice | Préparateur (RH) |
-| Sophie Bernard | sophie.bernard@lcit-test.local | sophie | Préparateur (RH, co-préparatrice) |
-| Claire Moreau | claire.moreau@lcit-test.local | claire | Préparateur (Juridique) |
-| Diane Leroy | diane.leroy@lcit-test.local | diane | Préparateur (Sales, campagnes sécurité) |
-| Paul Muller | paul.muller@lcit-test.local | paul | Opérateur (administrateur métier) |
-| Admin Crash | admin.crash@lcit-test.local | admin | Administrateur |
-| Bob Dupont | bob.dupont@lcit-test.local | bob | utilisateur (aucun rôle) |
-| Charlie Durand, Manon Faure, Nicolas Blanc, Olivia Henry, Erwan Petit, Fatima Benali… | prenom.nom@lcit-test.local | prénom | utilisateurs (24 personnes au total) |
+| Alice Martin | alice.martin@lcit-test.local | alice | Signataire (RH) |
+| Sophie Bernard | sophie.bernard@lcit-test.local | sophie | Signataire (RH, préparatrice de la campagne d'Alice) |
+| Claire Moreau | claire.moreau@lcit-test.local | claire | Signataire (Juridique) |
+| Diane Leroy | diane.leroy@lcit-test.local | diane | Signataire (Sales, campagnes sécurité) |
+| Paul Muller | paul.muller@lcit-test.local | paul | Signataire + Opérateur (administrateur métier) |
+| Admin Crash | admin.crash@lcit-test.local | admin | Signataire + Administrateur |
+| Bob Dupont | bob.dupont@lcit-test.local | bob | Signataire |
+| Charlie Durand, Manon Faure, Nicolas Blanc, Olivia Henry, Erwan Petit, Fatima Benali… | prenom.nom@lcit-test.local | prénom | Signataires (24 personnes au total) |
 
 Le compte système local reste `admin` / `SecretPassword`. Ces mots de passe sont volontairement simples :
 les comptes sont fictifs et n'existent que dans cette pile. En base, seul le hachage est stocké.
 
-Le **SSO de test** propose les mêmes personnes en un clic (« Continuer avec le SSO »).
+Le **SSO de test** (Mock SSO) reste l'unique entrée de CrashTest : « Continuer avec le SSO » mène au Mock, qui
+propose les mêmes personnes en un clic **et**, si vous avez importé votre configuration, le vrai Entra.
+
+## Partir d'une installation propre, avec votre vrai Entra
+
+```bash
+git clone … && cd LCIT-Sign
+# 1. une fois, depuis une pile où Entra est configuré (Administration > Identités & accès) :
+./scripts/connections.sh export --crashtest      # → ~/.config/lcit-sign/connections.json (secrets chiffrés, hors Git)
+# 2. à chaque repartie de zéro, avec la MÊME clé maître que celle de l'export (LCIT_SIGN_MASTER_KEY) :
+./crashtest/reset.sh      # build, migrations, jeu de données, import de connections.json, Mock SSO + Entra
+```
+
+`start.sh` importe `connections.json`, puis fabrique `~/.config/lcit-sign/mock-sso/mock-oidc-providers.json`
+(mode 600, hors Git, jamais affiché) à partir du fournisseur de connexion Entra/Google ou, à défaut, de
+l'application de l'annuaire Entra : c'est ce fichier que le Mock lit pour proposer « Se connecter avec
+Microsoft Entra ID ». Côté Microsoft, l'URI de redirection `<URL publique>/mock-oidc/callback/entra` doit être
+déclarée dans l'application.
 
 ## Les données
 

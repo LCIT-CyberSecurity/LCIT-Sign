@@ -38,7 +38,7 @@ d'entreprise.
 | Signer ce qu'on m'a demandé | **Mes signatures** : à signer, à venir, signés — un clic pour ouvrir ou télécharger le PDF signé |
 | Faire signer un document | **Faire signer** : 1 signataires et planning · 2 documents · 3 préparer · 4 vérifier et envoyer · 5 documents signés |
 | Suivre, relancer, récupérer | **Suivi** : campagnes, documents signés (export ZIP), relances, ajout de personnes ou de documents en cours de route |
-| Gérer la plateforme | **Administration** : utilisateurs et rôles, logo, annuaire, e-mail, clés de signature, audit, diagnostic |
+| Gérer la plateforme | **Administration** : utilisateurs et rôles, logo, identités & accès (un SSO, un annuaire, connexion locale), e-mail, clés de signature, audit, diagnostic |
 
 Le guide complet est dans [`docs/guide-utilisateur.md`](docs/guide-utilisateur.md).
 

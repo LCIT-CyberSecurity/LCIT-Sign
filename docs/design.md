@@ -15,7 +15,7 @@ in the repository today.
 
 - SSO only (OpenID Connect). No local accounts, no passwords.
 - Documents are versioned and **immutable once published**.
-- A visual, DocuSign-like signature backed by a **technical proof**
+- A visual signature backed by a **technical proof**
   (SHA-256 + Ed25519) that anyone with the public key can re-verify.
 - A tamper-evident audit trail.
 - Self-contained deployment: PostgreSQL and a filesystem volume. Nothing else.
@@ -74,16 +74,36 @@ docs/               this folder
 
 ## 3. Roles and access control
 
-Four roles, stored in `user_roles`. A user can hold several. A person with **no role** is an
-ordinary user: they see and sign what was asked of them, and nothing else.
+Three roles, stored in `user_roles`. A user can hold several. **Everyone active has `SIGNER`**: it is
+given when the account is created (first SSO sign-in, directory import, local account, external
+signer) and by migration 0024 to every existing active user. Afterwards it is administered: a
+directory sync never gives it back to someone it was taken from. The former global `PREPARER` role
+no longer exists (migration 0024 turned it into `SIGNER` and removed it); do not confuse it with
+**CampaignPreparer**, a right on ONE campaign (below), which stays.
 
 | Role | Can do |
 |---|---|
-| *(none)* | See and sign what was addressed to them (an assignment), see their own signatures |
-| `SIGNER` | Sign a published document **of their own accord** (nobody asked). Not needed to sign what a campaign asked: see below |
-| `PREPARER` (Préparateur) | Upload and prepare documents, place the elements, create a campaign, choose the signers, send, follow, remind, get the results — **only for the campaigns they own or prepare** |
+| `SIGNER` | The standard user. Upload and prepare documents, place the elements, create a campaign, choose the signers (themselves included), send, follow, remind, get the results — **only for the campaigns they own or prepare** — and **sign** what is asked of them. Signing needs an active account, `SIGNER` **and** an assignment; the role is checked by the API (`403 Insufficient role` without it, assignment or not) |
 | `OPERATOR` | **Business administrator.** Sees every campaign, its status, owner, signers and progress; reassigns the owner and the preparers; helps unblock a campaign (remind, cancel, close, archive). Does **not** read the confidential content (documents, signed PDFs, certificates, proofs, reports, exports) unless made a preparer of that campaign |
-| `ADMIN` | Technical administration (users and roles, audit, signing keys, mail, directory connectors and sync) and full access to everything |
+| `ADMIN` | Technical administration (users and roles, audit, signing keys, mail, identities and access) and full access to everything |
+
+Signing in is not a role: any successful authentication enters the application (an account an
+administrator disabled stays refused). The roles decide what one can do, not whether one can open a
+session.
+
+### Identities and access
+
+Two different questions, one administration page (*Identités & accès*), two backend models:
+
+* **Connexion** (`login_providers`): how people authenticate. One external SSO provider is in use
+  (`active`), plus the local form. If the `LCIT_SIGN_OIDC_*` variables are set they ARE the SSO
+  (the page says so); otherwise it is the active provider (Microsoft Entra ID or Google). On CrashTest
+  the variables point at the mock SSO, which stays the only entry point; Entra is reached through it.
+* **Annuaire** (`directory_connector_configs`): where users and groups come from. One directory is
+  active (`active`; the bundled demonstration one when none): only it is synced, by hand or on
+  schedule. Saving a connector makes it active; others are switched on explicitly.
+
+Configuring one never changes the other.
 
 ### Who sees what in a campaign
 
@@ -101,7 +121,7 @@ A preparer of another campaign gets a 404 (it does not exist for them); an opera
 not its content gets a 403. An operator who must read the content is added as a preparer of that
 campaign (`CAMPAIGN_PREPARER_ADDED` in the audit log). Handing a campaign over keeps the previous
 owner as a preparer until someone removes them (`CAMPAIGN_OWNER_CHANGED`). Owner and preparers must
-hold `PREPARER`, `OPERATOR` or `ADMIN`. Library documents follow the same idea (`can_read_document`):
+hold `SIGNER`, `OPERATOR` or `ADMIN`. Library documents follow the same idea (`can_read_document`):
 the uploader, a preparer of a campaign using it, or an administrator read the file; an operator sees
 that it exists. Campaigns from before this model keep their creator as owner (migration 0020).
 
@@ -693,8 +713,7 @@ name ending in `_crashtest` hold, and never in `production`. It creates the 24 p
 demonstration directory plus Sophie Bernard, Claire Moreau, Paul Muller and Admin Crash as local
 accounts whose **password is the first name in lowercase** (`bob.dupont@lcit-test.local` / `bob`),
 stored as the usual scrypt hash, and the same people are available through the mock SSO. Roles:
-Alice Martin, Sophie Bernard, Claire Moreau, Diane Leroy `PREPARER`; Paul Muller `OPERATOR`; Admin
-Crash `ADMIN`; everyone else has none. Campaigns: *Entretiens RH 2027* (owner Alice, preparer
+Everyone is a `SIGNER`; Paul Muller is also `OPERATOR` and Admin Crash `ADMIN`. Campaigns: *Entretiens RH 2027* (owner Alice, preparer
 Sophie, pending), *NDA Juridique* (owner Claire, pending), *Campagne sécurité 2026* (the RSSI Erwan
 signed, someone signed, others pending) and *Politique mots de passe 2026* (recipients waiting).
 
@@ -767,12 +786,4 @@ Inherent limits:
   rewrite all of it. Keep an off-site copy of the latest hash if that matters.
 - The rate limiter is in memory (one API process); the API runs the background
   worker and applies migrations, so it is deployed as a single replica.
-
-## Signature eIDAS avec DocuSign (branche `docusign`)
-
-Une demande se signe soit avec la signature LCIT, soit avec DocuSign (`campaigns.signature_method`,
-choisie à l'écran 1 de « Faire signer », gardée avec le brouillon). Pour DocuSign : une enveloppe par
-assignation (`docusign_envelopes`), envoyée puis suivie par le worker, rapatriée à la fin (PDF signé +
-certificat), enregistrée comme une signature (`identity_provider = docusign`) et suivie du
-signataire suivant. Détails, limites et DocuSign de test : [docusign.md](docusign.md).
 

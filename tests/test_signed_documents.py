@@ -5,7 +5,7 @@ import io
 import zipfile
 
 from test_campaign_changes import prepared_doc
-from test_campaigns import get_user_id, setup_campaign_fixture
+from test_campaigns import get_user_id, setup_campaign_fixture, without_signer_role
 
 
 def launch(operator, title, people):
@@ -64,6 +64,10 @@ def test_an_operator_opens_the_signed_pdf_of_someone_else(tmp_path, mock_oidc_ba
 
 def test_only_staff_see_the_signed_documents(tmp_path, mock_oidc_base_url):
     app, admin, operator, signer1, _ = setup_campaign_fixture(tmp_path, mock_oidc_base_url)
+    # A signer sees the signed documents of the campaigns they run: none yet. Without the role,
+    # nothing at all.
+    assert signer1.get("/api/signed/documents").json()["campaigns"] == []
+    without_signer_role(admin, signer1)
     assert signer1.get("/api/signed/documents").status_code == 403
     assert signer1.get("/api/signed/export.zip").status_code == 403
     assert admin.get("/api/signed/documents").status_code == 200

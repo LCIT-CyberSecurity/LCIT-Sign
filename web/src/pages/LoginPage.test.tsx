@@ -52,6 +52,15 @@ describe("<LoginPage />", () => {
     expect(screen.queryByTestId("crashtest-note")).toBeNull();
   });
 
+  it("offers a single SSO button, never several providers side by side", async () => {
+    options = { sso: true, provider: "entra", local: true, crashtest: false };
+    render(<LoginPage />);
+    const only = await screen.findByTestId("sso-button");
+    expect(only).toHaveTextContent("Continuer avec Microsoft");
+    expect(only).toHaveAttribute("href", "/api/auth/login");
+    expect(screen.getAllByRole("link", { name: /Continuer avec/ })).toHaveLength(1);
+  });
+
   it("shows only the local form when no SSO is configured", async () => {
     options = { sso: false, provider: null, local: true };
     render(<LoginPage />);

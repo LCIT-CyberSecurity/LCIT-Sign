@@ -9,7 +9,7 @@ export interface MissingSignature {
 
 /** The signers who have elements to fill on a document but no signature placed — what
  *  produced a signed document with a date and a name and nothing to say "signed". A signature
- *  is required for each, as in DocuSign. */
+ *  is required for each. */
 export function missingSignatures(campaign: Campaign): MissingSignature[] {
   const found: MissingSignature[] = [];
   for (const doc of campaign.documents) {

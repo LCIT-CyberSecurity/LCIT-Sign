@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from test_auth_flow import login_as
 from test_campaign_changes import prepared_doc
-from test_campaigns import get_user_id, setup_campaign_fixture
+from test_campaigns import get_user_id, setup_campaign_fixture, without_signer_role
 from test_signer_roles import new_campaign
 
 from lcit_sign.models.mail import Notification
@@ -54,7 +54,9 @@ def test_the_address_is_checked_and_only_staff_can_add_people(tmp_path, mock_oid
     app, admin, operator, signer, _ = setup_campaign_fixture(tmp_path, mock_oidc_base_url)
     assert operator.post(URL, json={"email": "pas une adresse"}).status_code == 422
     assert operator.post(URL, json={"email": "a@b"}).status_code == 422
-    assert signer.post(URL, json={"email": "x@y.fr"}).status_code == 403
+    assert signer.post(URL, json={"email": "x@y.fr"}).status_code == 201  # a signer prepares too
+    without_signer_role(admin, signer)
+    assert signer.post(URL, json={"email": "w@y.fr"}).status_code == 403
     assert TestClient(app).post(URL, json={"email": "x@y.fr"}).status_code == 401
     # Someone an administrator switched off cannot be brought back through the side door.
     erwan = get_user_id(signer)
@@ -114,7 +116,7 @@ def test_on_first_sign_in_they_become_the_person_who_was_added(tmp_path, mock_oi
     assert me["id"] == added["id"] and me["roles"] == ["SIGNER"]
     # What was asked of her is waiting for her, and nothing of the operators' side is open.
     assert [a["document_title"] for a in fatima.get("/api/me/assignments").json()] == ["Contrat"]
-    assert fatima.get("/api/campaigns").status_code == 403
+    assert fatima.get("/api/campaigns").json() == []  # she owns nothing
     assert fatima.get("/api/admin/users").status_code == 403
 
 

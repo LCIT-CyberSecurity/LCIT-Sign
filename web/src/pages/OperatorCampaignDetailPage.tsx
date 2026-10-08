@@ -173,10 +173,6 @@ export default function OperatorCampaignDetailPage() {
         <h1 className="page-title">{campaign.name}</h1>
         <span className={`badge badge--${campaign.status.toLowerCase()}`}>{campaign.status}</span>
       </div>
-      <p className="muted small" data-testid="signature-method">
-        Méthode de signature :{" "}
-        {campaign.signature_method === "DOCUSIGN" ? "eIDAS avec DocuSign" : "signature LCIT"}
-      </p>
 
       <CampaignOwnership campaign={campaign} onChanged={setCampaign} />
 

@@ -342,12 +342,12 @@ def test_the_campaign_says_which_signers_have_a_signature_placed(tmp_path, mock_
     assert document["signature_roles"] == [2]  # position 1 has no signature
 
 
-def test_a_person_asked_to_sign_needs_no_role_to_do_it(tmp_path, mock_oidc_base_url):
-    """By default everyone can sign what they are asked to sign: no role has to be granted."""
+def test_signing_needs_the_signer_role_even_with_an_assignment(tmp_path, mock_oidc_base_url):
+    """Role and assignment are two conditions: an active user, SIGNER, and an assignment. Without
+    SIGNER the API refuses, whatever the interface shows."""
     _, admin, operator, signer1, _ = setup_campaign_fixture(tmp_path, mock_oidc_base_url)
     person = get_user_id(signer1)
-    assert admin.delete(f"/api/admin/users/{person}/roles/SIGNER").status_code == 200
-    assert signer1.get("/api/auth/me").json()["roles"] == []
+    assert signer1.get("/api/auth/me").json()["roles"] == ["SIGNER"]
 
     version_id = upload(operator, title="Charte", pages=1)
     operator.put(
@@ -359,10 +359,20 @@ def test_a_person_asked_to_sign_needs_no_role_to_do_it(tmp_path, mock_oidc_base_
     launched = operator.post(f"/api/campaigns/{campaign['id']}/launch", json={"user_ids": [person]})
     assert launched.status_code == 200, launched.text
 
+    # The administrator takes SIGNER away: the assignment is still there, the signature is refused.
+    assert admin.delete(f"/api/admin/users/{person}/roles/SIGNER").status_code == 200
+    refused = signer1.post(f"/api/documents/versions/{version_id}/sign", json={"consent": True})
+    assert refused.status_code == 403 and refused.json()["detail"] == "Insufficient role"
+    # …nothing was signed, and the assignment is intact.
+    assert [a["status"] for a in signer1.get("/api/me/assignments").json()] == ["PENDING"]
+    # Given back, the very same assignment can be signed.
+    given = admin.post(f"/api/admin/users/{person}/roles", json={"role": "SIGNER"})
+    assert given.status_code == 201
     signed = signer1.post(f"/api/documents/versions/{version_id}/sign", json={"consent": True})
     assert signed.status_code == 201, signed.text
-    # Nobody asked for this one: that still takes the signer role.
+    # Nobody asked for this one: signing it of one's own accord also takes the role.
     other = upload(operator, title="Autre", pages=1)
     operator.post(f"/api/documents/versions/{other}/publish")
+    assert admin.delete(f"/api/admin/users/{person}/roles/SIGNER").status_code == 200
     unasked = signer1.post(f"/api/documents/versions/{other}/sign", json={"consent": True})
     assert unasked.status_code == 403

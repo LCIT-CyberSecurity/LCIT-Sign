@@ -25,7 +25,7 @@ export default function SignatureDetailPage() {
   const [verifying, setVerifying] = useState(false);
   const [chain, setChain] = useState<SignatureChain | null>(null);
   const { hasRole } = useAuth();
-  const staff = hasRole("PREPARER") || hasRole("OPERATOR") || hasRole("ADMIN");
+  const staff = hasRole("SIGNER") || hasRole("OPERATOR") || hasRole("ADMIN");
 
   useEffect(() => {
     api

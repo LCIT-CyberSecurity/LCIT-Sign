@@ -133,6 +133,9 @@ def test_user_without_signer_role_cannot_sign_unasked(tmp_path, mock_oidc_base_u
         tmp_path, mock_oidc_base_url, master_key=TEST_MASTER_KEY
     )
     _, version_id, _ = publish_a_document(operator)
+    # Everyone can sign by default; once an administrator takes the role away, nothing unasked.
+    operator_id = operator.get("/api/auth/me").json()["id"]
+    assert _admin.delete(f"/api/admin/users/{operator_id}/roles/SIGNER").status_code == 200
     response = operator.post(f"/api/documents/versions/{version_id}/sign", json={"consent": True})
     assert response.status_code == 403
 

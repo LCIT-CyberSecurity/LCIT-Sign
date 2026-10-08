@@ -6,7 +6,7 @@ import { useAuth } from "../auth/AuthContext";
 import { GoogleLogo, MicrosoftLogo } from "../components/ProviderLogos";
 
 /** Sign-in, laid out like EARE's: an introduction panel on the left, the sign-in card on the
- *  right. The SSO configured on the server is the main way in (its own provider's button); the
+ *  right. The ONE SSO in use is the main way in (its own provider's button); the
  *  local form — the built-in administrator and the accounts an administrator made — stays
  *  available, discreet. With no SSO, the local form is the sign-in. */
 interface Options {
@@ -77,7 +77,9 @@ export default function LoginPage() {
       .then(setOptions)
       .catch(() => setOptions({ sso: false, provider: null, local: true }));
   }, []);
-  const button = options?.sso ? (SSO_BUTTONS[options.provider ?? "generic"] ?? SSO_BUTTONS.generic) : null;
+  // A single SSO: the provider in use, or none (then the local form is the sign-in).
+  const sso = options?.sso ? (SSO_BUTTONS[options.provider ?? "generic"] ?? SSO_BUTTONS.generic) : null;
+  const button = sso !== null;
 
   return (
     <div className="login-page">
@@ -130,14 +132,14 @@ export default function LoginPage() {
                   mot de passe = prénom en minuscules (Bob Dupont : bob.dupont@lcit-test.local / bob).
                 </p>
               )}
-              {button && (
+              {sso && (
                 <a
                   className="button button--primary button--block button--provider"
                   href="/api/auth/login"
                   data-testid="sso-button"
                 >
-                  {button.logo}
-                  {button.label}
+                  {sso.logo}
+                  {sso.label}
                 </a>
               )}
               {options?.local && button && (

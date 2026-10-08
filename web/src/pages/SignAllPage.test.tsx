@@ -131,11 +131,21 @@ describe("SignAllPage", () => {
     expect(card.querySelector('a[href="/api/signatures/s9/signed-pdf?inline=true"]')).not.toBeNull();
     expect(card.querySelector('a[href="/api/signatures/s9/signed-pdf"]')).toHaveTextContent("PDF signé");
     expect(card.querySelector('a[href="/signatures/s9"]')).not.toBeNull();
-    // A plain signer is not sent to Suivi.
-    expect(screen.queryByRole("link", { name: /Suivi/ })).toBeNull();
+    // A signer follows the campaigns they run, so the link to Suivi is theirs too.
+    expect(screen.getByRole("link", { name: /Suivi/ })).toBeInTheDocument();
   });
 
-  it("says where to see what others signed, to the staff only", async () => {
+  it("says where to see what others signed, to those who prepare (any signer) and not to someone with no role", async () => {
+    auth.roles = [];
+    vi.mocked(api.get).mockImplementation(async () => []);
+    const { unmount } = render(
+      <MemoryRouter>
+        <SignerAssignmentsPage />
+      </MemoryRouter>,
+    );
+    await screen.findByRole("heading", { level: 1, name: /Mes signatures/ });
+    expect(screen.queryByRole("link", { name: /Suivi → Documents signés/ })).toBeNull();
+    unmount();
     auth.roles = ["OPERATOR"];
     vi.mocked(api.get).mockImplementation(async () => []);
     render(

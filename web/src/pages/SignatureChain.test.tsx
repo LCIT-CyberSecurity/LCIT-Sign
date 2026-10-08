@@ -56,7 +56,8 @@ describe("the page of a signature says who signed the document", () => {
     expect(card.querySelectorAll("li")).toHaveLength(2);
     expect(card).toHaveTextContent("Tout le monde a signé.");
     expect(card).toHaveTextContent("votre exemplaire");
-    expect(screen.queryByRole("link", { name: "Suivi" })).toBeNull(); // a plain signer has no follow-up
+    // A signer follows the campaigns they run: the link is there. Someone with no role has none.
+    expect(screen.getByRole("link", { name: "Suivi" })).toBeInTheDocument();
   });
 
   it("says who is left, and counts the other recipients without naming them", async () => {

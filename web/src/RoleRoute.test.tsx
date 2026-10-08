@@ -45,11 +45,20 @@ describe("role-based navigation (the UI only hides; the API enforces)", () => {
     expect(await screen.findByText(/Continuer avec le SSO/)).toBeInTheDocument();
   });
 
-  it("does not offer operator or admin sections to a plain signer", () => {
+  it("offers a signer, the standard user, their own documents, requests and follow-up, but no administration", () => {
     auth.current = { user: { display_name: "Erwan", email: "x@lcit-test.local", roles: ["SIGNER"] }, roles: ["SIGNER"] };
     renderAt("/");
-    expect(screen.queryByText("Suivi")).not.toBeInTheDocument();
+    expect(screen.getByText("Faire signer")).toBeInTheDocument();
+    expect(screen.getByText("Suivi")).toBeInTheDocument();
     expect(screen.queryByText("Diagnostic")).not.toBeInTheDocument();
+    expect(screen.queryByText("Administration")).not.toBeInTheDocument();
+  });
+
+  it("offers nothing to prepare to someone whose signer role was taken away", () => {
+    auth.current = { user: { display_name: "Zoé", email: "z@lcit-test.local", roles: [] }, roles: [] };
+    renderAt("/");
+    expect(screen.queryByText("Faire signer")).not.toBeInTheDocument();
+    expect(screen.queryByText("Suivi")).not.toBeInTheDocument();
   });
 
   it("redirects a signer away from an admin URL", () => {
@@ -62,7 +71,7 @@ describe("role-based navigation (the UI only hides; the API enforces)", () => {
     auth.current = { user: { display_name: "Alice", email: "x@lcit-test.local", roles: ["ADMIN"] }, roles: ["ADMIN"] };
     renderAt("/");
     expect(screen.getByText("Diagnostic")).toBeInTheDocument();
-    expect(screen.getByText("Annuaire")).toBeInTheDocument();
+    expect(screen.getByText("Identités & accès")).toBeInTheDocument();
   });
 
   it("offers operators campaigns but not administration", () => {

@@ -51,7 +51,8 @@ def test_the_note_is_checked_for_shape_and_for_who_may_write_it(tmp_path, mock_o
     assert operator.put(f"{base}/plan", json={"reminder_first_days": 3}).status_code == 422
     with_roles = {"roles": [{"role": 1, "mode": "EACH"}]}
     assert operator.put(f"{base}/plan", json=with_roles).status_code == 422
-    assert signer1.put(f"{base}/plan", json={}).status_code == 403
+    # …and a signer who is neither its owner nor a preparer of it cannot even see it.
+    assert signer1.put(f"{base}/plan", json={}).status_code in (403, 404)
 
 
 def test_once_sent_there_is_no_note_and_it_cannot_be_written(tmp_path, mock_oidc_base_url):

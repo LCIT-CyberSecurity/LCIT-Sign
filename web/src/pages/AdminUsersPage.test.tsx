@@ -30,11 +30,12 @@ describe("AdminUsersPage — adding someone", () => {
     renderPage();
     await user.type(await screen.findByLabelText("Adresse e-mail"), "ann@corp.test");
     expect(screen.queryByLabelText("Mot de passe initial")).toBeNull();
-    await user.click(screen.getByRole("checkbox", { name: "Préparateur" }));
+    await user.click(screen.getByRole("checkbox", { name: "Opérateur" }));
+    expect(screen.queryByRole("checkbox", { name: "Préparateur" })).toBeNull();
     await user.click(screen.getByRole("button", { name: "Ajouter" }));
     await waitFor(() =>
       expect(api.post).toHaveBeenCalledWith("/admin/users", {
-        email: "ann@corp.test", given_name: "", family_name: "", roles: ["SIGNER", "PREPARER"],
+        email: "ann@corp.test", given_name: "", family_name: "", roles: ["SIGNER", "OPERATOR"],
         auth_method: "sso", password: undefined,
       }),
     );

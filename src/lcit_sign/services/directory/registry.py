@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 
 import httpx
+from sqlalchemy import select, update
+from sqlalchemy.orm import Session as DbSession
 
 from lcit_sign.models.directory import DirectoryConnectorConfig
 from lcit_sign.services.crypto import decrypt_secret
@@ -42,3 +44,27 @@ def build_remote_connector(
         raise DirectoryConnectorError(f"cannot decrypt {config.source!r} secret") from exc
     fields: dict[str, str] = json.loads(config.settings_json)
     return spec.build(client, fields, secret)
+
+
+def active_source(db: DbSession) -> str:
+    """The one directory in use: the remote connector marked active, else the bundled fictional
+    one ("local"). Only this source is synced, by hand or on schedule."""
+    found = db.execute(
+        select(DirectoryConnectorConfig.source).where(
+            DirectoryConnectorConfig.active.is_(True), DirectoryConnectorConfig.source != "local"
+        )
+    ).scalars().first()
+    return found or "local"
+
+
+def make_active(db: DbSession, source: str) -> None:
+    """Make `source` the directory in use; every other one stops being active."""
+    db.execute(
+        update(DirectoryConnectorConfig)
+        .where(DirectoryConnectorConfig.source != source)
+        .values(active=False)
+    )
+    config = db.get(DirectoryConnectorConfig, source)
+    if config is not None:
+        config.active = source != "local"
+    # "local" is what applies when no remote connector is active: it needs no flag of its own.

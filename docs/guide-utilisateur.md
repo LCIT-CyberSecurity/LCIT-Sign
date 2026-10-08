@@ -4,8 +4,7 @@ Ce guide explique comment utiliser LCIT Sign. Il est écrit pour trois profils :
 
 | Profil | Ce qu'il fait | Chapitres |
 |---|---|---|
-| **Utilisateur / signataire** | Signe ce qu'on lui demande (aucun rôle nécessaire) | [1](#1-se-connecter) · [2](#2-signer-un-document) |
-| **Préparateur** | Prépare les documents, fait signer, suit — **ses propres campagnes** | [3](#3-faire-signer-un-document) · [4](#4-suivre-relancer-récupérer) · [5](#5-la-bibliothèque-de-documents) |
+| **Signataire** (tout le monde) | Utilisateur standard : signe ce qu'on lui demande, **prépare, envoie et suit ses propres campagnes** | [1](#1-se-connecter) · [2](#2-signer-un-document) · [3](#3-faire-signer-un-document) · [4](#4-suivre-relancer-récupérer) · [5](#5-la-bibliothèque-de-documents) |
 | **Opérateur** | Administrateur métier : voit **toutes** les campagnes, change propriétaire et préparateurs ; ne lit pas le contenu confidentiel | [4](#4-suivre-relancer-récupérer) · [4 bis](#4-bis-qui-voit-quoi-dans-une-campagne) |
 | **Administrateur** | Gère les accès, les annuaires, les e-mails, les clés ; accès complet | [6](#6-administration) · [7](#7-installation-et-premier-accès) |
 
@@ -176,7 +175,7 @@ ZIP** télécharge les PDF signés (et leurs preuves) en une fois.
 Chaque campagne a un **propriétaire** (celui qui la conduit) et peut avoir d'autres **préparateurs**. On
 voit la mention « Créée par » si c'est quelqu'un d'autre : l'historique n'est jamais réécrit.
 
-| | Préparateur (propriétaire ou préparateur de la campagne) | Préparateur d'une autre campagne | Opérateur | Administrateur |
+| | Signataire propriétaire ou préparateur de la campagne | Signataire d'une autre campagne (ou simple signataire de celle-ci) | Opérateur | Administrateur |
 |---|---|---|---|---|
 | Voir la campagne, son état, ses signataires, sa progression | oui | **non** (elle n'existe pas pour lui) | oui, toutes | oui |
 | Relancer, annuler, clôturer, archiver | oui | non | oui | oui |
@@ -214,8 +213,7 @@ Liste des personnes, d'où elles viennent (annuaire, ajout manuel, SSO), leurs r
 
 | Rôle | Droits |
 |---|---|
-| **Signataire** | Signer de sa propre initiative un document publié. (Recevoir et signer une demande ne demande **aucun** rôle.) |
-| **Préparateur** | Préparer des documents, créer et conduire des campagnes — les siennes, et celles dont il est préparateur |
+| **Signataire** | Rôle de l'utilisateur standard, donné **par défaut à tout compte actif** : préparer des documents, créer et conduire des campagnes (les siennes, et celles dont il est préparateur), se choisir ou choisir d'autres signataires, et **signer**. Sans ce rôle, aucune signature n'est acceptée, même avec une demande en attente |
 | **Opérateur** | Administrateur métier : voir toutes les campagnes, changer propriétaire et préparateurs ; pas le contenu confidentiel |
 | **Administrateur** | Tout ce qui est administratif : utilisateurs, annuaire, e-mail, clés, audit ; accès complet |
 
@@ -230,7 +228,21 @@ sauf si elle a signé : son historique est alors conservé, avec la raison indiq
 Le logo de l'entreprise s'affiche en haut à gauche et sur la page de connexion. On le remplace par un
 fichier image, on peut revenir au logo LCIT.
 
-### Annuaire
+### Identités & accès
+
+Une seule page, deux sections : **Connexion** (comment les gens s'authentifient) et **Annuaire** (d'où
+viennent personnes et groupes). Les deux sont indépendants, même si Microsoft Entra ID sert aux deux.
+
+- **Connexion** : **un seul** fournisseur SSO est actif (Microsoft Entra ID ou Google) ; la page de
+  connexion ne propose que lui, plus la **connexion locale**, toujours disponible. Enregistrer un
+  fournisseur l'active ; « Utiliser ce fournisseur » bascule sur un autre déjà configuré. Si les variables
+  `LCIT_SIGN_OIDC_*` du serveur sont définies, elles imposent le SSO (la page le signale).
+- **Annuaire** : **un seul** annuaire est actif, le seul qui se synchronise. Toute personne qui
+  s'authentifie peut entrer dans LCIT Sign (un compte désactivé reste refusé) ; ses rôles disent ce
+  qu'elle y fait. Un nouveau compte actif est **Signataire** d'office ; un rôle retiré par un
+  administrateur n'est jamais redonné par une synchronisation.
+
+#### Annuaire : les sources
 
 Choisissez la **source** des personnes et des équipes : *local* (démonstration), **Microsoft Entra ID**,
 **Google Workspace** ou **LDAP / Active Directory**. Chaque formulaire a une **bulle d'aide** et un

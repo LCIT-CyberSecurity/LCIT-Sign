@@ -28,7 +28,6 @@ from lcit_sign.deps import get_current_user, get_db
 from lcit_sign.models.session import Session as SessionRecord
 from lcit_sign.models.user import Role, User, UserRole
 from lcit_sign.services.audit import actor_snapshot, append_audit_event
-from lcit_sign.services.sso import SsoConfig, resolve_sso
 from lcit_sign.services.local_auth import (
     LOCAL_ISSUER,
     LoginThrottle,
@@ -36,6 +35,7 @@ from lcit_sign.services.local_auth import (
     change_password,
     check_credentials,
 )
+from lcit_sign.services.sso import SsoConfig, available_sso, resolve_sso
 
 router = APIRouter(tags=["auth"])
 
@@ -45,16 +45,20 @@ def _redirect_uri(request: Request) -> str:
     return settings.public_base_url.rstrip("/") + "/api/auth/callback"
 
 
-def _require_oidc_configured(db: DbSession, request: Request) -> SsoConfig:
-    sso = resolve_sso(db, request.app.state.settings)
+def _require_oidc_configured(
+    db: DbSession, request: Request, provider: str | None = None
+) -> SsoConfig:
+    sso = resolve_sso(db, request.app.state.settings, provider)
     if sso is None:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "SSO is not configured")
     return sso
 
 
 @router.get("/auth/login")
-async def login(request: Request, db: DbSession = Depends(get_db)) -> Response:
-    sso = _require_oidc_configured(db, request)
+async def login(
+    request: Request, db: DbSession = Depends(get_db), provider: str | None = None
+) -> Response:
+    sso = _require_oidc_configured(db, request, provider)
     settings: Settings = request.app.state.settings
 
     try:
@@ -74,6 +78,7 @@ async def login(request: Request, db: DbSession = Depends(get_db)) -> Response:
             "state": auth_request.state,
             "nonce": auth_request.nonce,
             "code_verifier": auth_request.code_verifier,
+            "provider": sso.key,
             "issued_at": time.time(),
         },
         settings.session_secret,
@@ -94,7 +99,6 @@ async def login(request: Request, db: DbSession = Depends(get_db)) -> Response:
 async def callback(
     request: Request, code: str, state: str, db: DbSession = Depends(get_db)
 ) -> Response:
-    sso = _require_oidc_configured(db, request)
     settings: Settings = request.app.state.settings
 
     raw_flow_cookie = request.cookies.get(LOGIN_FLOW_COOKIE)
@@ -103,6 +107,7 @@ async def callback(
         if raw_flow_cookie
         else None
     )
+    sso = _require_oidc_configured(db, request, flow.get("provider") if flow else None)
 
     if flow is None or flow.get("state") != state:
         append_audit_event(
@@ -164,6 +169,9 @@ async def callback(
             last_login_at=now,
         )
         db.add(user)
+        db.flush()
+        # Everyone can sign by default; an administrator may take the role away.
+        db.add(UserRole(user_id=user.id, role=Role.SIGNER))
     else:
         user.issuer = claims.issuer
         user.subject = claims.subject
@@ -234,14 +242,13 @@ def login_options(request: Request) -> dict[str, Any]:
     settings: Settings = request.app.state.settings
     factory = getattr(request.app.state, "session_factory", None)
     if factory is None:  # no database (some tests): the environment only
-        sso = resolve_sso(None, settings)
+        choices = available_sso(None, settings)
     else:
         with factory() as db:
-            sso = resolve_sso(db, settings)
-    provider = sso.provider if sso else None
+            choices = available_sso(db, settings)
     return {
-        "sso": provider is not None,
-        "provider": provider,
+        "sso": bool(choices),
+        "provider": choices[0].provider if choices else None,
         "local": settings.local_auth_enabled,
         # The CrashTest stack (fictional accounts): the sign-in page says so.
         "crashtest": settings.crashtest,

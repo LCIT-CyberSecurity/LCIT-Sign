@@ -22,7 +22,12 @@ from lcit_sign.models.user import Role, User
 from lcit_sign.services.audit import append_audit_event
 from lcit_sign.services.crypto import encrypt_secret
 from lcit_sign.services.directory.base import DirectoryConnector, DirectoryConnectorError
-from lcit_sign.services.directory.registry import SPECS, build_remote_connector
+from lcit_sign.services.directory.registry import (
+    SPECS,
+    active_source,
+    build_remote_connector,
+    make_active,
+)
 from lcit_sign.services.directory_sync import LocalConnector, sync_directory
 
 router = APIRouter(prefix="/admin/directory", tags=["directory"])
@@ -31,7 +36,7 @@ _admin = require_roles(Role.ADMIN)
 # Reading the roster is also an OPERATOR need (picking groups to target a
 # campaign at, spec §33); only mutating the directory (sync) stays
 # ADMIN-only, matching spec §12-13's split of responsibilities.
-_read = require_roles(Role.PREPARER, Role.OPERATOR, Role.ADMIN)
+_read = require_roles(Role.SIGNER, Role.OPERATOR, Role.ADMIN)
 
 
 def _run_payload(run: DirectorySyncRun) -> dict[str, Any]:
@@ -58,10 +63,13 @@ def get_directory_http_client() -> Generator[httpx.Client]:
         yield client
 
 
-def _config_payload(source: str, config: DirectoryConnectorConfig | None) -> dict[str, Any]:
+def _config_payload(
+    source: str, config: DirectoryConnectorConfig | None, active: str = ""
+) -> dict[str, Any]:
     fields = json.loads(config.settings_json) if config else {}
     return {
         "source": source,
+        "active": source == active,
         "configured": bool(config and config.encrypted_secret),
         "fields": fields,
         "sync_interval_minutes": config.sync_interval_minutes if config else None,
@@ -72,9 +80,11 @@ def _config_payload(source: str, config: DirectoryConnectorConfig | None) -> dic
 @router.get("/sources")
 def list_sources(db: DbSession = Depends(get_db), user: User = Depends(_admin)) -> list[Any]:
     local = db.get(DirectoryConnectorConfig, "local")
+    active = active_source(db)
     payloads: list[dict[str, Any]] = [
         {
             "source": "local",
+            "active": active == "local",
             "configured": True,
             "fields": {},
             "sync_interval_minutes": local.sync_interval_minutes if local else None,
@@ -83,7 +93,7 @@ def list_sources(db: DbSession = Depends(get_db), user: User = Depends(_admin)) 
     for source, spec in SPECS.items():
         payloads.append(
             {
-                **_config_payload(source, db.get(DirectoryConnectorConfig, source)),
+                **_config_payload(source, db.get(DirectoryConnectorConfig, source), active),
                 # What the admin page needs to draw this connector's form, help bubbles included.
                 "spec": spec.payload(),
             }
@@ -134,6 +144,10 @@ def put_source_config(
     config.settings_json = json.dumps(fields)
     config.sync_interval_minutes = body.sync_interval_minutes
     config.updated_by = user.id
+    if source != "local":
+        # One directory at a time: saving a connector makes it the one in use.
+        db.flush()
+        make_active(db, source)
     if body.secret and source == "local":
         raise HTTPException(status_code=422, detail="the local directory has no secret")
     if body.secret:
@@ -147,7 +161,27 @@ def put_source_config(
     )
     db.commit()
     db.refresh(config)
-    return _config_payload(source, config)
+    return _config_payload(source, config, active_source(db))
+
+
+@router.post("/sources/{source}/activate")
+def activate_source(
+    source: str, db: DbSession = Depends(get_db), user: User = Depends(_admin)
+) -> dict[str, Any]:
+    """Switch to another directory that is already configured (or back to the bundled one):
+    only one is in use, so the others stop being synced."""
+    if source != "local" and source not in SPECS:
+        raise HTTPException(status_code=404, detail=f"unknown directory source {source!r}")
+    config = db.get(DirectoryConnectorConfig, source)
+    if source != "local" and (config is None or not config.encrypted_secret):
+        raise HTTPException(status_code=409, detail=f"connector {source!r} is not configured")
+    make_active(db, source)
+    append_audit_event(
+        db, action="DIRECTORY_CONNECTOR_ACTIVATED", actor_id=user.id,
+        target_type="directory_connector", target_id=source,
+    )
+    db.commit()
+    return {"source": source, "active": active_source(db)}
 
 
 @router.delete("/sources/{source}/config", status_code=204)
@@ -156,6 +190,7 @@ def delete_source_config(
 ) -> None:
     config = db.get(DirectoryConnectorConfig, source)
     if config is not None:
+        # An active connector that goes leaves no active directory (the bundled one applies).
         db.delete(config)
         append_audit_event(
             db, action="DIRECTORY_CONNECTOR_REMOVED", actor_id=user.id,
@@ -173,6 +208,13 @@ def trigger_sync(
     user: User = Depends(_admin),
 ) -> dict[str, Any]:
     connector: DirectoryConnector
+    active = active_source(db)
+    if (source == "local" or source in SPECS) and source != active:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Un seul annuaire est actif à la fois : {active!r}. "
+            f"Configurez {source!r} pour le rendre actif.",
+        )
     if source == "local":
         connector = LocalConnector()
     elif source in SPECS:

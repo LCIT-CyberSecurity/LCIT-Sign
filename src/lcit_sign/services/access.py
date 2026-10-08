@@ -24,7 +24,7 @@ from lcit_sign.models.campaign import Campaign, CampaignDocument, CampaignPrepar
 from lcit_sign.models.document import Document, DocumentVersion
 from lcit_sign.models.user import Role, User, UserRole
 
-PREPARE_ROLES = frozenset({Role.PREPARER, Role.OPERATOR, Role.ADMIN})
+PREPARE_ROLES = frozenset({Role.SIGNER, Role.OPERATOR, Role.ADMIN})
 
 
 def roles_of(db: DbSession, user: User) -> set[Role]:
@@ -32,7 +32,7 @@ def roles_of(db: DbSession, user: User) -> set[Role]:
 
 
 def can_prepare(roles: set[Role]) -> bool:
-    """May prepare documents and create campaigns (a plain signer may not)."""
+    """May prepare documents and create campaigns: any signer (the standard user), and the staff."""
     return bool(roles & PREPARE_ROLES)
 
 

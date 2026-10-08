@@ -37,7 +37,9 @@ def _publish(operator: TestClient) -> str:
 
 def test_signer_cannot_call_operator_or_admin_apis(tmp_path, mock_oidc_base_url):
     app, admin, operator, signer1, _ = setup_campaign_fixture(tmp_path, mock_oidc_base_url)
-    assert signer1.get("/api/campaigns").status_code == 403
+    # A signer is the standard user: they prepare their own campaigns, so the list is theirs
+    # (empty here), never someone else's.
+    assert signer1.get("/api/campaigns").json() == []
     assert signer1.get("/api/admin/audit").status_code == 403
     assert signer1.post("/api/admin/signing-keys/rotate").status_code == 403
 

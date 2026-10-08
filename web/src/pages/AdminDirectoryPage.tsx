@@ -70,6 +70,7 @@ function SourceCard({
   const [error, setError] = useState<string | null>(null);
   const Icon = info.icon;
   const ready = !info.remote || source.configured;
+  const active = Boolean(source.active);
 
   const sync = async () => {
     setSyncing(true);
@@ -82,6 +83,16 @@ function SourceCard({
       setError(err instanceof ApiError ? err.message : "Échec de la synchronisation");
     } finally {
       setSyncing(false);
+    }
+  };
+
+  const activate = async () => {
+    setError(null);
+    try {
+      await api.post(`/admin/directory/sources/${info.source}/activate`);
+      onChanged();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Échec de l'activation");
     }
   };
 
@@ -111,7 +122,7 @@ function SourceCard({
           <div className="muted small">{info.description}</div>
         </div>
         <span className={`badge ${ready ? "badge--signed" : "badge--draft"}`} data-testid="source-state">
-          {info.remote ? (source.configured ? "Configurée" : "Non configurée") : "Toujours disponible"}
+          {active ? "Actif" : info.remote ? (source.configured ? "Configuré, inactif" : "Non configuré") : "Inactif"}
         </span>
       </div>
 
@@ -122,7 +133,7 @@ function SourceCard({
         <dd>
           <select
             value={source.sync_interval_minutes ?? ""}
-            disabled={!ready}
+            disabled={!ready || !active}
             aria-label={`Planification — ${info.title}`}
             onChange={(e) => void setSchedule(e.target.value)}
           >
@@ -137,9 +148,14 @@ function SourceCard({
 
       {error && <p className="error-text" role="alert">{error}</p>}
       <div className="button-row" style={{ marginTop: 14 }}>
-        <button className="button button--primary button--sm" onClick={sync} disabled={!ready || syncing}>
+        <button className="button button--primary button--sm" onClick={sync} disabled={!ready || !active || syncing}>
           <RefreshCw size={13} aria-hidden="true" /> {syncing ? "Synchronisation…" : "Synchroniser maintenant"}
         </button>
+        {ready && !active && (
+          <button className="button button--secondary button--sm" onClick={activate}>
+            Utiliser cet annuaire
+          </button>
+        )}
         {info.remote && (
           <button className="button button--secondary button--sm" onClick={() => setOpen(!open)} aria-expanded={open}>
             <Settings2 size={13} aria-hidden="true" /> {source.configured ? "Modifier la connexion" : "Configurer"}
@@ -184,12 +200,12 @@ export default function AdminDirectoryPage() {
   return (
     <div className="stack">
       <div>
-        <h1 className="page-title" style={{ marginBottom: 6 }}>
-          <FolderCog size={22} aria-hidden="true" /> Annuaire
-        </h1>
+        <h2 className="page-title" style={{ fontSize: 18, marginBottom: 6 }}>
+          <FolderCog size={18} aria-hidden="true" /> Annuaire
+        </h2>
         <p className="page-subtitle">
-          Récupérez vos utilisateurs et vos groupes (RH, Compta, SRE…) depuis votre annuaire : ils servent ensuite à
-          cibler les campagnes. L&apos;annuaire n&apos;est jamais modifié, et un utilisateur disparu est désactivé, jamais
+          D&apos;où viennent les utilisateurs et les groupes (RH, Compta, SRE…) : <strong>un seul annuaire est actif</strong>,
+          le seul qui se synchronise. Ils servent ensuite à cibler les campagnes. L&apos;annuaire n&apos;est jamais modifié, et un utilisateur disparu est désactivé, jamais
           supprimé.
         </p>
       </div>

@@ -23,11 +23,12 @@ from lcit_sign.models.campaign import Campaign, CampaignPreparer
 class World:
     app: object
     admin: TestClient
-    rh: TestClient  # owner of the HR campaign (PREPARER)
-    rh2: TestClient  # the co-preparer an operator adds (PREPARER)
-    legal: TestClient  # owner of the legal campaign (PREPARER)
+    rh: TestClient  # owner of the HR campaign (a plain SIGNER)
+    rh2: TestClient  # the colleague an operator makes preparer of it (a plain SIGNER)
+    legal: TestClient  # owner of the legal campaign (a plain SIGNER)
     operator: TestClient  # business administrator (OPERATOR)
-    bob: TestClient  # an ordinary person, no role at all
+    bob: TestClient  # an ordinary person: a SIGNER, asked to sign both campaigns
+    ghost: TestClient  # someone whose SIGNER role an administrator took away
     ids: dict[str, str]
     hr: str = ""
     hr_version: str = ""
@@ -54,13 +55,15 @@ def build(tmp_path, oidc) -> World:
 
     world = World(
         app=app, admin=admin,
-        rh=person("rh", "u-rh-1", "PREPARER"),
-        rh2=person("rh2", "u-compta-1", "PREPARER"),
-        legal=person("legal", "u-sales-1", "PREPARER"),
+        rh=person("rh", "u-rh-1"),
+        rh2=person("rh2", "u-compta-1"),
+        legal=person("legal", "u-sales-1"),
         operator=person("operator", "u-consultants-1", "OPERATOR"),
         bob=person("bob", "u-it-1"),
+        ghost=person("ghost", "u-compta-2"),
         ids=ids,
     )
+    assert admin.delete(f"/api/admin/users/{ids['ghost']}/roles/SIGNER").status_code == 200
     world.hr, world.hr_version = campaign_for(world.rh, ids["bob"], "Entretiens RH 2027")
     world.law, world.law_version = campaign_for(world.legal, ids["bob"], "NDA Juridique")
     return world
@@ -92,12 +95,17 @@ def sign(client: TestClient, version: str, campaign: str) -> str:
 # --- who can start a campaign ------------------------------------------------------------------
 
 
-def test_a_plain_user_cannot_start_a_campaign_but_a_preparer_can_and_owns_it(
+def test_a_signer_starts_and_owns_a_campaign_someone_without_the_role_cannot(
     tmp_path, mock_oidc_base_url
 ):
     w = build(tmp_path, mock_oidc_base_url)
-    assert w.bob.post("/api/campaigns", json={"name": "X"}).status_code == 403
-    assert w.bob.get("/api/campaigns").status_code == 403
+    assert w.ghost.post("/api/campaigns", json={"name": "X"}).status_code == 403
+    assert w.ghost.get("/api/campaigns").status_code == 403
+    own = w.bob.post("/api/campaigns", json={"name": "Celle de Bob"})
+    assert own.status_code == 201
+    assert own.json()["owner"]["id"] == w.ids["bob"]
+    # …and sees only that one, never the HR or legal campaigns he was merely asked to sign.
+    assert [c["name"] for c in w.bob.get("/api/campaigns").json()] == ["Celle de Bob"]
     shown = w.rh.get(f"/api/campaigns/{w.hr}").json()
     assert shown["owner"]["id"] == w.ids["rh"] and shown["created_by"]["id"] == w.ids["rh"]
     assert shown["access"] == {"operate": True, "content": True}
@@ -244,12 +252,13 @@ def test_an_operator_hands_a_campaign_over_and_the_history_stays(tmp_path, mock_
 def test_only_people_who_can_prepare_become_owner_or_preparer(tmp_path, mock_oidc_base_url):
     w = build(tmp_path, mock_oidc_base_url)
     for call in (
-        w.operator.post(f"/api/campaigns/{w.hr}/preparers", json={"user_id": w.ids["bob"]}),
-        w.operator.put(f"/api/campaigns/{w.hr}/owner", json={"user_id": w.ids["bob"]}),
+        w.operator.post(f"/api/campaigns/{w.hr}/preparers", json={"user_id": w.ids["ghost"]}),
+        w.operator.put(f"/api/campaigns/{w.hr}/owner", json={"user_id": w.ids["ghost"]}),
     ):
-        assert call.status_code == 422 and "Préparateur" in call.json()["detail"]
+        assert call.status_code == 422 and "Signataire" in call.json()["detail"]
+    # Bob is asked to sign it, which gives no say on how it runs.
     assert w.bob.post(f"/api/campaigns/{w.hr}/preparers", json={"user_id": w.ids["rh2"]}
-                      ).status_code == 403
+                      ).status_code in (403, 404)
     # Someone who already runs it is not added twice.
     assert w.operator.post(f"/api/campaigns/{w.hr}/preparers", json={"user_id": w.ids["rh"]}
                            ).status_code == 409
@@ -281,15 +290,17 @@ def test_a_campaign_from_before_owners_existed_stays_with_its_creator(tmp_path, 
     assert w.legal.get(f"/api/campaigns/{w.hr}").status_code == 404
 
 
-def test_the_person_asked_to_sign_still_needs_no_role_and_a_stranger_still_cannot(
+def test_the_person_asked_to_sign_needs_the_signer_role_and_a_stranger_still_cannot(
     tmp_path, mock_oidc_base_url
 ):
     w = build(tmp_path, mock_oidc_base_url)
-    assert w.bob.get("/api/auth/me").json()["roles"] == []
+    assert w.bob.get("/api/auth/me").json()["roles"] == ["SIGNER"]  # the default
     signature = sign(w.bob, w.hr_version, w.hr)
     assert w.bob.get(f"/api/signatures/{signature}/signed-pdf").status_code == 200  # their own
     # Someone not asked, with no SIGNER role, cannot sign a published document of their own accord.
     stranger = w.admin.post("/api/admin/users", json={"email": "z@corp.test"}).json()
-    assert stranger["roles"] == ["SIGNER"] or stranger["roles"] == []
+    assert stranger["roles"] == ["SIGNER"]  # signing is the default
+    legal_id = w.legal.get("/api/auth/me").json()["id"]
+    assert w.admin.delete(f"/api/admin/users/{legal_id}/roles/SIGNER").status_code == 200
     assert w.legal.post(f"/api/documents/versions/{w.hr_version}/sign",
                         json={"consent": True}).status_code == 403

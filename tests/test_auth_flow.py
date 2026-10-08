@@ -36,11 +36,13 @@ def make_app(
     return app
 
 
-def login_as(client: TestClient, mock_oidc_base_url: str, *, sub: str) -> httpx.Response:
+def login_as(
+    client: TestClient, mock_oidc_base_url: str, *, sub: str, path: str = "/api/auth/login"
+) -> httpx.Response:
     """Drive the full Authorization Code + PKCE dance against the real
     (locally running) mock OIDC provider, then hit our callback.
     """
-    login_response = client.get("/api/auth/login", follow_redirects=False)
+    login_response = client.get(path, follow_redirects=False)
     assert login_response.status_code == 302
     authorize_url = login_response.headers["location"]
     assert authorize_url.startswith(mock_oidc_base_url + "/authorize")
@@ -80,17 +82,17 @@ def test_full_login_flow_grants_bootstrap_admin(tmp_path, mock_oidc_base_url):
         assert me_response.status_code == 200
         body = me_response.json()
         assert body["email"] == BOOTSTRAP_ADMIN_EMAIL
-        assert body["roles"] == ["ADMIN"]
+        assert body["roles"] == ["ADMIN", "SIGNER"]
 
 
-def test_non_bootstrap_user_gets_no_roles_and_cannot_reach_admin_api(tmp_path, mock_oidc_base_url):
+def test_non_bootstrap_user_signs_by_default_and_not_admin(tmp_path, mock_oidc_base_url):
     app = make_app(tmp_path, mock_oidc_base_url)
     with TestClient(app) as client:
         Base.metadata.create_all(app.state.engine)
 
         login_as(client, mock_oidc_base_url, sub="u-rh-1")
         me_response = client.get("/api/auth/me")
-        assert me_response.json()["roles"] == []
+        assert me_response.json()["roles"] == ["SIGNER"]  # everyone can sign by default
 
         admin_response = client.get("/api/admin/audit")
         assert admin_response.status_code == 403

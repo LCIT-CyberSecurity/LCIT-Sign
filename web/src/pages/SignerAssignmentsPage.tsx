@@ -22,7 +22,7 @@ export default function SignerAssignmentsPage() {
   const [assignments, setAssignments] = useState<MyAssignment[] | null>(null);
   const [signatures, setSignatures] = useState<SignatureDetail[] | null>(null);
   const { user, hasRole } = useAuth();
-  const staff = hasRole("PREPARER") || hasRole("OPERATOR") || hasRole("ADMIN");
+  const staff = hasRole("SIGNER") || hasRole("OPERATOR") || hasRole("ADMIN");
 
   useEffect(() => {
     api.get<MyAssignment[]>("/me/assignments").then(setAssignments);
@@ -99,7 +99,6 @@ export default function SignerAssignmentsPage() {
                   <div className="card-title">{a.document_title}</div>
                   <div className="muted small">
                     Version {a.version_label} — {a.campaign_name}
-                    {a.signature_method === "DOCUSIGN" ? " — signature eIDAS (DocuSign)" : ""}
                   </div>
                 </div>
                 <div className="card-meta">

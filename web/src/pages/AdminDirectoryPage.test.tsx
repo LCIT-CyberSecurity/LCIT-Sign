@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import AdminDirectoryPage, { scheduleLabel } from "./AdminDirectoryPage";
 import { api } from "../api/client";
 
@@ -16,9 +17,9 @@ const spec = (label: string) => ({
 });
 
 const sources = [
-  { source: "local", configured: true, fields: {}, sync_interval_minutes: null },
+  { source: "local", active: false, configured: true, fields: {}, sync_interval_minutes: null },
   { source: "entra", configured: false, fields: {}, sync_interval_minutes: null, spec: spec("Microsoft Entra ID") },
-  { source: "google", configured: true, fields: { admin_email: "a@corp.test" }, sync_interval_minutes: 60, spec: spec("Google Workspace") },
+  { source: "google", active: true, configured: true, fields: { admin_email: "a@corp.test" }, sync_interval_minutes: 60, spec: spec("Google Workspace") },
   { source: "ldap", configured: false, fields: {}, sync_interval_minutes: null, spec: spec("LDAP / Active Directory") },
 ];
 
@@ -38,16 +39,16 @@ describe("AdminDirectoryPage", () => {
   it("shows every source as its own card with its state — not a one-entry selector", async () => {
     render(<AdminDirectoryPage />);
     const entra = await screen.findByTestId("source-entra");
-    expect(within(entra).getByTestId("source-state")).toHaveTextContent("Non configurée");
+    expect(within(entra).getByTestId("source-state")).toHaveTextContent("Non configuré");
     expect(within(entra).getByRole("button", { name: /Configurer/ })).toBeInTheDocument();
     expect(within(entra).getByRole("button", { name: /Synchroniser/ })).toBeDisabled();
 
     const google = screen.getByTestId("source-google");
-    expect(within(google).getByTestId("source-state")).toHaveTextContent("Configurée");
+    expect(within(google).getByTestId("source-state")).toHaveTextContent("Actif");
     expect(within(google).getByRole("button", { name: /Synchroniser/ })).toBeEnabled();
     expect(within(google).getByText(/3 ajouté\(s\), 7 mis à jour, 1 désactivé\(s\)/)).toBeInTheDocument();
 
-    expect(within(screen.getByTestId("source-local")).getByTestId("source-state")).toHaveTextContent("Toujours disponible");
+    expect(within(screen.getByTestId("source-local")).getByTestId("source-state")).toHaveTextContent("Inactif");
   });
 
   it("offers LDAP like the others, titled and described by the connector itself", async () => {
@@ -55,8 +56,18 @@ describe("AdminDirectoryPage", () => {
     const ldap = await screen.findByTestId("source-ldap");
     expect(ldap).toHaveTextContent("LDAP / Active Directory");
     expect(ldap).toHaveTextContent("Lit les utilisateurs de LDAP / Active Directory.");
-    expect(within(ldap).getByTestId("source-state")).toHaveTextContent("Non configurée");
+    expect(within(ldap).getByTestId("source-state")).toHaveTextContent("Non configuré");
     expect(within(ldap).getByRole("button", { name: /Configurer/ })).toBeInTheDocument();
+  });
+
+  it("one directory is active: the others cannot be synced, but can be switched to", async () => {
+    vi.mocked(api.post).mockResolvedValue({});
+    render(<AdminDirectoryPage />);
+    const local = await screen.findByTestId("source-local");
+    expect(within(local).getByRole("button", { name: /Synchroniser/ })).toBeDisabled();
+    expect(within(screen.getByTestId("source-google")).queryByRole("button", { name: "Utiliser cet annuaire" })).toBeNull();
+    await userEvent.setup().click(within(local).getByRole("button", { name: "Utiliser cet annuaire" }));
+    expect(api.post).toHaveBeenCalledWith("/admin/directory/sources/local/activate");
   });
 
   it("lists the synchronised groups", async () => {
