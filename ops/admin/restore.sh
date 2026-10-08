@@ -7,7 +7,7 @@
 #
 # Without --yes it asks you to type RESTORE. The checksums are always verified first.
 # Other stack: LCIT_SIGN_PROJECT (Compose project, default lcit-sign), LCIT_SIGN_DATA_VOLUME
-# (default lcit-sign-data).
+# (default lcit-sign-data), LCIT_SIGN_DB_NAME (default lcit_sign).
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
@@ -16,6 +16,7 @@ ASSUME_YES="no"
 [[ "${2:-}" == "--yes" ]] && ASSUME_YES="yes"
 PROJECT="${LCIT_SIGN_PROJECT:-lcit-sign}"
 DATA_VOLUME="${LCIT_SIGN_DATA_VOLUME:-lcit-sign-data}"
+DB_NAME="${LCIT_SIGN_DB_NAME:-lcit_sign}"
 EXPECTED=(db.dump data.tar SHA256SUMS MANIFEST.txt)
 
 [[ -f "$ARCHIVE" ]] || { echo "No such backup: $ARCHIVE" >&2; exit 2; }
@@ -56,7 +57,7 @@ echo "==> Stopping the API"
 "${COMPOSE[@]}" stop api
 
 echo "==> Restoring PostgreSQL"
-"${COMPOSE[@]}" exec -T postgres pg_restore -U lcit_sign -d lcit_sign \
+"${COMPOSE[@]}" exec -T postgres pg_restore -U lcit_sign -d "$DB_NAME" \
     --clean --if-exists --no-owner <"$WORK/db.dump"
 
 echo "==> Restoring the storage volume ($DATA_VOLUME)"

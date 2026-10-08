@@ -3,8 +3,8 @@
 Runs inside the lcit-sign-api image (httpx and pypdf are already there), on
 the machine that hosts the Docker stack, e.g.:
 
-    docker run --rm --network host -v "$PWD/tests/UAT:/uat:ro" \
-        --entrypoint python lcit-sign-api:latest /uat/CrashTests-Sign/smoke.py
+    docker run --rm --network host -v "$PWD/tests/crashtest/uat:/uat:ro" \
+        --entrypoint python lcit-sign-api:latest /uat/smoke.py
 
 No secret lives here: identities are the mock OIDC provider's fictional
 CrashTest users.
@@ -23,7 +23,7 @@ from pypdf import PdfWriter
 
 BASE_URL = os.environ.get("LCIT_SIGN_BASE_URL", "http://localhost:4180")
 
-# The mock OIDC provider's identities (mock_oidc/app.py).
+# The mock OIDC provider's identities (tests/crashtest/mock_oidc/app.py).
 ADMIN = "u-direction-1"
 OPERATOR = "u-sales-1"
 SIGNERS = ("u-it-1", "u-rh-1", "u-compta-1", "u-compta-2", "u-compta-3", "u-compta-4")

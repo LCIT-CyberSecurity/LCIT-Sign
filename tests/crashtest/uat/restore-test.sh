@@ -36,7 +36,7 @@ BACKUP="$BACKUP_ROOT/unpacked"; mkdir -p "$BACKUP"
 tar -xjf "$ARCHIVE" -C "$BACKUP"
 ( cd "$BACKUP" && sha256sum -c SHA256SUMS >/dev/null ) && echo "archive extracted, checksums OK"
 
-LIVE_SIGNATURES="$(docker compose exec -T postgres psql -U lcit_sign -d lcit_sign -Atc \
+LIVE_SIGNATURES="$(docker compose -p "${LCIT_SIGN_PROJECT:-lcit-sign}" exec -T postgres psql -U lcit_sign -d "${LCIT_SIGN_DB_NAME:-lcit_sign}" -Atc \
     'select count(*) from signatures')"
 echo "live signatures: $LIVE_SIGNATURES"
 [[ "$LIVE_SIGNATURES" -gt 0 ]] || { echo "No signature to test: run the seed first."; exit 2; }

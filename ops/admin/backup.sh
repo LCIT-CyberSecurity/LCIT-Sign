@@ -14,14 +14,16 @@
 # verifiable without it (they need only the public keys, which are in the
 # database); signing again and reading stored credentials need it.
 #
-# Other stack: LCIT_SIGN_PROJECT (Compose project, default lcit-sign) and LCIT_SIGN_DATA_VOLUME
-# (default lcit-sign-data).
+# Other stack: LCIT_SIGN_PROJECT (Compose project, default lcit-sign), LCIT_SIGN_DATA_VOLUME
+# (default lcit-sign-data) and LCIT_SIGN_DB_NAME (default lcit_sign; the CrashTest one is
+# lcit_sign_crashtest).
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
 PROJECT="${LCIT_SIGN_PROJECT:-lcit-sign}"
 OUT_ROOT="${LCIT_SIGN_BACKUP_DIR:-$PWD/backups}"
 DATA_VOLUME="${LCIT_SIGN_DATA_VOLUME:-lcit-sign-data}"
+DB_NAME="${LCIT_SIGN_DB_NAME:-lcit_sign}"
 TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 ARCHIVE="$OUT_ROOT/lcit-sign-backup-$TIMESTAMP.tar.bz2"
 
@@ -34,7 +36,7 @@ cleanup() { rm -rf "$WORK"; }
 trap cleanup EXIT
 
 echo "==> PostgreSQL dump"
-docker compose -p "$PROJECT" exec -T postgres pg_dump -U lcit_sign -Fc lcit_sign >"$WORK/db.dump"
+docker compose -p "$PROJECT" exec -T postgres pg_dump -U lcit_sign -Fc "$DB_NAME" >"$WORK/db.dump"
 
 echo "==> Storage volume ($DATA_VOLUME)"
 docker run --rm -v "$DATA_VOLUME":/data:ro alpine tar -C /data -cf - . >"$WORK/data.tar"
