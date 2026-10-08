@@ -34,3 +34,4 @@ certs.backup/
 certificate-installer.log
 backups/
 secrets/
+compose.override.yaml

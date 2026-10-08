@@ -121,7 +121,12 @@ random_hex() {
         head -c "$1" /dev/urandom | od -An -tx1 | tr -d ' \n'; fi
 }
 
-dc() { docker compose -p "$PROJECT" -f "$ROOT/compose.yaml" "$@"; }
+# compose.override.yaml (site-specific, not versioned) is read when present, like plain `docker compose`.
+dc() {
+    local files=(-f "$ROOT/compose.yaml")
+    [ -f "$ROOT/compose.override.yaml" ] && files+=(-f "$ROOT/compose.override.yaml")
+    docker compose -p "$PROJECT" "${files[@]}" "$@"
+}
 
 prefix()     { local p; p="$(env_get LCIT_SIGN_PREFIX)"; printf '%s' "${p:-lcit-sign}"; }
 https_port() { local p; p="$(env_get LCIT_SIGN_HTTPS_PORT)"; printf '%s' "${p:-4443}"; }
