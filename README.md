@@ -40,33 +40,62 @@ and qualified timestamps are out of scope.
 
 ```bash
 git clone https://github.com/LCIT-CyberSecurity/LCIT-Sign.git && cd LCIT-Sign
-cp .env.example .env            # set LCIT_SIGN_DB_PASSWORD, and for production the values below
+cp .env.example .env            # then edit it, see below
 mkdir -p -m 700 certs           # before the first start (otherwise Docker creates it as root)
-docker compose up -d --build    # builds and starts the stack, applies the database migrations
+docker compose up -d --build    # builds the images, starts the stack, applies the database migrations
 docker compose ps               # all services should become "healthy"
 ```
 
-The UI is then on `https://<host>:4443` (self-signed certificate until you install yours with
-`scripts/certificate-installer.sh`) and on `http://127.0.0.1:4180` for local use. Health check: `/api/health`.
+The stack has four containers: `postgres` (database), `api` (FastAPI backend), `webui` (nginx: HTTPS, the web
+interface and the `/api` proxy) and `converter` (isolated Word / LibreOffice to PDF conversion). Data lives in two
+Docker volumes (database, stored documents and signed files). The UI is on `https://<host>:4443` (self-signed
+certificate until you install yours with `scripts/certificate-installer.sh`) and on `http://127.0.0.1:4180`; health
+check at `/api/health`.
 
-For production, set in `.env`:
+### The `.env` file
+
+`.env` holds the settings of your installation and **must never be committed**. It is read by Docker Compose; unset
+variables fall back to development defaults.
+
+| Variable | Meaning |
+|---|---|
+| `LCIT_SIGN_DB_PASSWORD` | Password of the PostgreSQL user. Set your own |
+| `LCIT_SIGN_ENVIRONMENT` | `development` (default) or `production`. Production enforces the secret checks below |
+| `LCIT_SIGN_PUBLIC_BASE_URL` | The URL users reach LCIT Sign at (e.g. `https://sign.example.org`); used for sign-in redirects and e-mail links |
+| `LCIT_SIGN_COOKIE_SECURE` | `true` behind HTTPS (required in production), `false` only for plain-HTTP local tests |
+| `LCIT_SIGN_SESSION_SECRET` | Random secret that signs the short-lived sign-in cookie |
+| `LCIT_SIGN_MASTER_KEY` | Random secret from which the signing keys are derived and that encrypts the credentials saved in the UI. Back it up and **never change it** afterwards: signing would be refused and stored credentials unreadable |
+| `LCIT_SIGN_FQDN`, `LCIT_SIGN_HTTPS_PORT`, `LCIT_SIGN_CERT_DIR` | Host name for the fallback certificate, HTTPS port (default 4443), folder of `tls.crt` / `tls.key` (default `./certs`) |
+| `LCIT_SIGN_OIDC_ISSUER`, `_CLIENT_ID`, `_CLIENT_SECRET` | Optional: define the SSO from the environment (all three). Leave empty to configure it later in the UI |
+| `LCIT_SIGN_BOOTSTRAP_ADMIN` | Optional e-mail given the ADMIN role at its SSO sign-in. Leave empty on a normal installation |
+| `LCIT_SIGN_LOG_LEVEL` | Log level (default `INFO`) |
+| `LCIT_SIGN_*_FILE` | For `MASTER_KEY`, `SESSION_SECRET` and `OIDC_CLIENT_SECRET`: path of a file (Docker / Kubernetes secret) holding the value instead of the variable |
+
+Mail, the directory and the SSO providers are **not** set in `.env`: they are entered in the UI and stored encrypted.
+
+### Production
 
 ```bash
 LCIT_SIGN_ENVIRONMENT=production
 LCIT_SIGN_PUBLIC_BASE_URL=https://sign.example.org
 LCIT_SIGN_COOKIE_SECURE=true
 LCIT_SIGN_SESSION_SECRET=$(openssl rand -hex 32)
-LCIT_SIGN_MASTER_KEY=$(openssl rand -hex 32)     # keep it safe: it protects stored credentials and signing keys
+LCIT_SIGN_MASTER_KEY=$(openssl rand -hex 32)
 ```
 
-In production the app refuses to start if either secret is empty, a development value or shorter than 32 characters, or
-if the cookie is not `Secure`. Secrets can also be given as files (`LCIT_SIGN_*_FILE`).
+(write the generated values into `.env` rather than relying on the shell). In production the app refuses to start if
+either secret is empty, a development value or shorter than 32 characters, or if the cookie is not `Secure`.
 
-**First access.** A fresh installation contains only the local account `admin`, with the initial password
-`SecretPassword`, which must be changed at first sign-in. There is no SSO, no directory and no sample data. Sign in
-locally, then configure *Administration → Identities & access* (SSO, directory) and *Email*.
+### First access
 
-Update: `git pull && docker compose up -d --build`. Backup and restore: `scripts/backup.sh`, `scripts/restore.sh`.
+A fresh installation contains only the local account `admin` with the initial password `SecretPassword`, which must be
+changed at first sign-in. There is no SSO, no directory and no sample data. Sign in locally, then configure
+*Administration → Identities & access* (SSO, directory) and *Email*; the [user guide](docs/user-guide.md) walks through it.
+
+### Update, backup
+
+Update: `git pull && docker compose up -d --build` (migrations run at start). Backup and restore:
+`scripts/backup.sh`, `scripts/restore.sh`.
 
 ## Demo and test environment
 
