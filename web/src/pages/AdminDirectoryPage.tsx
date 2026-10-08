@@ -210,6 +210,12 @@ export default function AdminDirectoryPage() {
         </p>
       </div>
 
+      {sources.length > 0 && !sources.some((s) => s.active) && (
+        <p className="muted" data-testid="no-directory">
+          Aucun annuaire configuré. Choisissez ci-dessous Microsoft Entra ID, Google Workspace ou LDAP / OpenLDAP.
+        </p>
+      )}
+
       <div className="source-grid">
         {[...sources]
           .sort((x, y) => Number(x.source === "local") - Number(y.source === "local"))

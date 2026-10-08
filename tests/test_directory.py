@@ -31,7 +31,9 @@ def find_group_id(admin: TestClient, name: str) -> str:
 
 
 def test_sync_creates_groups_and_users(tmp_path, mock_oidc_base_url):
-    app, admin, operator, signer1, signer2 = setup_campaign_fixture(tmp_path, mock_oidc_base_url)
+    app, admin, operator, signer1, signer2 = setup_campaign_fixture(
+        tmp_path, mock_oidc_base_url, crashtest=True
+    )
     run = sync_directory(admin)
     assert run["status"] == "SUCCESS"
     assert run["groups_added"] == 6
@@ -46,7 +48,9 @@ def test_sync_creates_groups_and_users(tmp_path, mock_oidc_base_url):
 
 
 def test_sync_is_idempotent(tmp_path, mock_oidc_base_url):
-    app, admin, operator, signer1, signer2 = setup_campaign_fixture(tmp_path, mock_oidc_base_url)
+    app, admin, operator, signer1, signer2 = setup_campaign_fixture(
+        tmp_path, mock_oidc_base_url, crashtest=True
+    )
     sync_directory(admin)
     second_run = sync_directory(admin)
     assert second_run["groups_added"] == 0
@@ -56,7 +60,9 @@ def test_sync_is_idempotent(tmp_path, mock_oidc_base_url):
 
 
 def test_group_members_listing(tmp_path, mock_oidc_base_url):
-    app, admin, operator, signer1, signer2 = setup_campaign_fixture(tmp_path, mock_oidc_base_url)
+    app, admin, operator, signer1, signer2 = setup_campaign_fixture(
+        tmp_path, mock_oidc_base_url, crashtest=True
+    )
     sync_directory(admin)
     group_id = find_group_id(admin, "IT")
     members = admin.get(f"/api/admin/directory/groups/{group_id}/members").json()
@@ -70,13 +76,17 @@ def test_group_members_listing(tmp_path, mock_oidc_base_url):
 
 
 def test_non_admin_cannot_trigger_sync(tmp_path, mock_oidc_base_url):
-    app, admin, operator, signer1, signer2 = setup_campaign_fixture(tmp_path, mock_oidc_base_url)
+    app, admin, operator, signer1, signer2 = setup_campaign_fixture(
+        tmp_path, mock_oidc_base_url, crashtest=True
+    )
     response = operator.post("/api/admin/directory/sync")
     assert response.status_code == 403
 
 
 def test_campaign_can_target_a_group(tmp_path, mock_oidc_base_url):
-    app, admin, operator, signer1, signer2 = setup_campaign_fixture(tmp_path, mock_oidc_base_url)
+    app, admin, operator, signer1, signer2 = setup_campaign_fixture(
+        tmp_path, mock_oidc_base_url, crashtest=True
+    )
     sync_directory(admin)
     group_id = find_group_id(admin, "IT")
 
@@ -91,7 +101,9 @@ def test_campaign_can_target_a_group(tmp_path, mock_oidc_base_url):
 
 
 def test_campaign_can_combine_group_and_extra_users(tmp_path, mock_oidc_base_url):
-    app, admin, operator, signer1, signer2 = setup_campaign_fixture(tmp_path, mock_oidc_base_url)
+    app, admin, operator, signer1, signer2 = setup_campaign_fixture(
+        tmp_path, mock_oidc_base_url, crashtest=True
+    )
     sync_directory(admin)
     group_id = find_group_id(admin, "IT")  # 4 members — signer1 (u-it-1) is one of them
     extra_user_id = get_user_id(operator)  # operator is u-sales-1, not in IT: a true addition
@@ -108,7 +120,7 @@ def test_campaign_can_combine_group_and_extra_users(tmp_path, mock_oidc_base_url
 
 
 def test_sso_login_reconciles_with_directory_provisioned_user(tmp_path, mock_oidc_base_url):
-    app = make_app(tmp_path, mock_oidc_base_url, master_key=TEST_MASTER_KEY)
+    app = make_app(tmp_path, mock_oidc_base_url, master_key=TEST_MASTER_KEY, crashtest=True)
     admin = TestClient(app)
     admin.__enter__()
     Base.metadata.create_all(app.state.engine)
@@ -149,7 +161,7 @@ def test_directory_provisioned_user_can_still_be_claimed_by_a_later_login(
     """The reverse order: sync runs first, creating a directory-only row,
     then the real person logs in via SSO and should adopt that same row.
     """
-    app = make_app(tmp_path, mock_oidc_base_url, master_key=TEST_MASTER_KEY)
+    app = make_app(tmp_path, mock_oidc_base_url, master_key=TEST_MASTER_KEY, crashtest=True)
     bootstrap_admin_client = TestClient(app)
     bootstrap_admin_client.__enter__()
     Base.metadata.create_all(app.state.engine)

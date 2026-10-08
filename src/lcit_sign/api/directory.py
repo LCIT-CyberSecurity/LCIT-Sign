@@ -25,6 +25,7 @@ from lcit_sign.services.directory.base import DirectoryConnector, DirectoryConne
 from lcit_sign.services.directory.registry import (
     SPECS,
     active_source,
+    available_sources,
     build_remote_connector,
     make_active,
 )
@@ -64,7 +65,7 @@ def get_directory_http_client() -> Generator[httpx.Client]:
 
 
 def _config_payload(
-    source: str, config: DirectoryConnectorConfig | None, active: str = ""
+    source: str, config: DirectoryConnectorConfig | None, active: str | None = None
 ) -> dict[str, Any]:
     fields = json.loads(config.settings_json) if config else {}
     return {
@@ -78,18 +79,21 @@ def _config_payload(
 
 
 @router.get("/sources")
-def list_sources(db: DbSession = Depends(get_db), user: User = Depends(_admin)) -> list[Any]:
-    local = db.get(DirectoryConnectorConfig, "local")
-    active = active_source(db)
-    payloads: list[dict[str, Any]] = [
-        {
+def list_sources(
+    request: Request, db: DbSession = Depends(get_db), user: User = Depends(_admin)
+) -> list[Any]:
+    settings = request.app.state.settings
+    active = active_source(db, settings)
+    payloads: list[dict[str, Any]] = []
+    if "local" in available_sources(settings):  # CrashTest only
+        local = db.get(DirectoryConnectorConfig, "local")
+        payloads.append({
             "source": "local",
             "active": active == "local",
             "configured": True,
             "fields": {},
             "sync_interval_minutes": local.sync_interval_minutes if local else None,
-        }
-    ]
+        })
     for source, spec in SPECS.items():
         payloads.append(
             {
@@ -119,7 +123,7 @@ def put_source_config(
     user: User = Depends(_admin),
 ) -> dict[str, Any]:
     spec = SPECS.get(source)
-    if source != "local" and spec is None:
+    if source not in available_sources(request.app.state.settings):
         raise HTTPException(status_code=404, detail=f"unknown directory source {source!r}")
     # `local` has no credentials: its row only carries the sync schedule.
     fields = body.fields
@@ -161,16 +165,17 @@ def put_source_config(
     )
     db.commit()
     db.refresh(config)
-    return _config_payload(source, config, active_source(db))
+    return _config_payload(source, config, active_source(db, request.app.state.settings))
 
 
 @router.post("/sources/{source}/activate")
 def activate_source(
-    source: str, db: DbSession = Depends(get_db), user: User = Depends(_admin)
+    source: str, request: Request, db: DbSession = Depends(get_db), user: User = Depends(_admin)
 ) -> dict[str, Any]:
     """Switch to another directory that is already configured (or back to the bundled one):
     only one is in use, so the others stop being synced."""
-    if source != "local" and source not in SPECS:
+    settings = request.app.state.settings
+    if source not in available_sources(settings):
         raise HTTPException(status_code=404, detail=f"unknown directory source {source!r}")
     config = db.get(DirectoryConnectorConfig, source)
     if source != "local" and (config is None or not config.encrypted_secret):
@@ -181,7 +186,7 @@ def activate_source(
         target_type="directory_connector", target_id=source,
     )
     db.commit()
-    return {"source": source, "active": active_source(db)}
+    return {"source": source, "active": active_source(db, settings)}
 
 
 @router.delete("/sources/{source}/config", status_code=204)
@@ -202,14 +207,19 @@ def delete_source_config(
 @router.post("/sync")
 def trigger_sync(
     request: Request,
-    source: str = "local",
+    source: str | None = None,
     db: DbSession = Depends(get_db),
     http_client: httpx.Client = Depends(get_directory_http_client),
     user: User = Depends(_admin),
 ) -> dict[str, Any]:
     connector: DirectoryConnector
-    active = active_source(db)
-    if (source == "local" or source in SPECS) and source != active:
+    active = active_source(db, request.app.state.settings)
+    if source is not None and source not in available_sources(request.app.state.settings):
+        raise HTTPException(status_code=404, detail=f"unknown directory source {source!r}")
+    if active is None:
+        raise HTTPException(status_code=409, detail="Aucun annuaire configuré.")
+    source = source or active
+    if source != active:
         raise HTTPException(
             status_code=409,
             detail=f"Un seul annuaire est actif à la fois : {active!r}. "

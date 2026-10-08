@@ -1,14 +1,14 @@
 """The built-in system account.
 
 Outside SSO there must still be a way in when the identity provider is down or
-not yet configured: one local administrator, enabled by default. Its password
-is never in the code or the repository — it comes from a secret
-(LCIT_SIGN_LOCAL_ADMIN_PASSWORD[_FILE]) and is stored only as a scrypt hash.
-With no password configured the account exists but cannot log in. In
-production the application refuses to start with a weak or well-known
-password, and the account can be switched off once a real administrator
-exists (LCIT_SIGN_LOCAL_AUTH_ENABLED=false). Nothing else in the application
-ever asks anyone for a password.
+not yet configured: one local administrator, enabled by default. A fresh
+installation starts it with the documented initial password "SecretPassword"
+(DEPLOYMENT_DEFAULT_PASSWORD, public by design), flagged "to change": the
+application reminds the administrator at every sign-in until they pick a new,
+strong one. A deployment may start it with another password through
+LCIT_SIGN_LOCAL_ADMIN_PASSWORD[_FILE]. Only a scrypt hash is stored, sign-in
+attempts are throttled, and the account can be switched off once a real
+administrator exists (LCIT_SIGN_LOCAL_AUTH_ENABLED=false).
 """
 from __future__ import annotations
 

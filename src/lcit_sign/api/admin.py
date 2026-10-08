@@ -314,6 +314,10 @@ def revoke_role(
         select(UserRole).where(UserRole.user_id == target.id, UserRole.role == role)
     ).scalar_one_or_none()
     if existing is not None:
+        if role == Role.ADMIN and target.active and _admin_count(db) <= 1:
+            raise HTTPException(
+                409, "C'est le dernier administrateur actif : son rôle ne peut pas être retiré"
+            )
         db.delete(existing)
         append_audit_event(
             db, action="USER_ROLE_CHANGED", actor_id=user.id,

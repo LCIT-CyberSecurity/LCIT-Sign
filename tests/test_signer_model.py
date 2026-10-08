@@ -54,7 +54,7 @@ def test_a_new_sso_user_is_active_and_a_signer_at_once(tmp_path, mock_oidc_base_
 def test_a_directory_import_makes_signers_and_a_resync_never_gives_the_role_back(  # B, M
     tmp_path, mock_oidc_base_url
 ):
-    app = make_app(tmp_path, mock_oidc_base_url, master_key=TEST_MASTER_KEY)
+    app = make_app(tmp_path, mock_oidc_base_url, master_key=TEST_MASTER_KEY, crashtest=True)
     with TestClient(app) as admin:
         Base.metadata.create_all(app.state.engine)
         login_as(admin, mock_oidc_base_url, sub="u-direction-1")
@@ -259,7 +259,7 @@ def test_an_operator_supervises_every_campaign_but_reads_none_until_made_prepare
 
 
 def test_one_directory_is_active_and_only_it_is_synced(tmp_path, mock_oidc_base_url):
-    app = make_app(tmp_path, mock_oidc_base_url, master_key=TEST_MASTER_KEY)
+    app = make_app(tmp_path, mock_oidc_base_url, master_key=TEST_MASTER_KEY, crashtest=True)
 
     def client():
         with httpx.Client(transport=httpx.MockTransport(_entra_handler)) as c:

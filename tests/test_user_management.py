@@ -49,7 +49,9 @@ def test_an_admin_adds_someone_by_email_and_sso_adopts_that_entry(tmp_path, mock
 
 
 def test_disabling_ends_sessions_blocks_login_and_survives_a_sync(tmp_path, mock_oidc_base_url):
-    app, admin, operator, signer1, signer2 = setup_campaign_fixture(tmp_path, mock_oidc_base_url)
+    app, admin, operator, signer1, signer2 = setup_campaign_fixture(
+        tmp_path, mock_oidc_base_url, crashtest=True
+    )
     sync_directory(admin)
     erwan = get_user_id(signer1)
     assert signer1.get("/api/auth/me").status_code == 200
@@ -96,7 +98,9 @@ def test_someone_with_history_is_disabled_never_deleted(tmp_path, mock_oidc_base
 def test_a_user_with_no_trace_is_deleted_for_good_but_directory_people_are_not(
     tmp_path, mock_oidc_base_url
 ):
-    app, admin, operator, signer1, signer2 = setup_campaign_fixture(tmp_path, mock_oidc_base_url)
+    app, admin, operator, signer1, signer2 = setup_campaign_fixture(
+        tmp_path, mock_oidc_base_url, crashtest=True
+    )
     manual = admin.post("/api/admin/users", json={"email": "temporaire@lcit-test.local"}).json()
     assert admin.delete(f"/api/admin/users/{manual['id']}").status_code == 200
     remaining = admin.get("/api/admin/users").json()

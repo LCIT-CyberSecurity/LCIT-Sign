@@ -8,6 +8,7 @@ import httpx
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session as DbSession
 
+from lcit_sign.config import Settings
 from lcit_sign.models.directory import DirectoryConnectorConfig
 from lcit_sign.services.crypto import decrypt_secret
 from lcit_sign.services.directory import entra, google, ldap
@@ -46,15 +47,25 @@ def build_remote_connector(
     return spec.build(client, fields, secret)
 
 
-def active_source(db: DbSession) -> str:
-    """The one directory in use: the remote connector marked active, else the bundled fictional
-    one ("local"). Only this source is synced, by hand or on schedule."""
+DEMO_SOURCE = "local"  # the fictional directory: CrashTest only (settings.crashtest)
+
+
+def available_sources(settings: Settings) -> list[str]:
+    """The sources an installation can use: the real connectors, plus the demonstration directory
+    on the CrashTest stack only."""
+    return [*([DEMO_SOURCE] if settings.crashtest else []), *SPECS]
+
+
+def active_source(db: DbSession, settings: Settings) -> str | None:
+    """The one directory in use: the remote connector marked active, else the fictional one on
+    CrashTest, else None (a fresh installation has no directory). Only this source is synced,
+    by hand or on schedule."""
     found = db.execute(
         select(DirectoryConnectorConfig.source).where(
             DirectoryConnectorConfig.active.is_(True), DirectoryConnectorConfig.source != "local"
         )
     ).scalars().first()
-    return found or "local"
+    return found or (DEMO_SOURCE if settings.crashtest else None)
 
 
 def make_active(db: DbSession, source: str) -> None:
@@ -66,5 +77,5 @@ def make_active(db: DbSession, source: str) -> None:
     )
     config = db.get(DirectoryConnectorConfig, source)
     if config is not None:
-        config.active = source != "local"
-    # "local" is what applies when no remote connector is active: it needs no flag of its own.
+        config.active = source != DEMO_SOURCE
+    # The demonstration directory is what applies when no remote connector is active: no flag.

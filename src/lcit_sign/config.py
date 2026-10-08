@@ -7,6 +7,17 @@ from typing import Literal
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Values shipped for development, CrashTest or as examples: public, so refused in production.
+_PLACEHOLDER = "change-me-to-a-long-random-value"
+DEV_SESSION_SECRETS = frozenset({
+    "", "insecure-dev-secret-change-me", "dev-only-insecure-secret-change-me",
+    "crashtest-only-session-secret", _PLACEHOLDER,
+})
+DEV_MASTER_KEYS = frozenset({
+    "", "dev-only-insecure-master-key-change-me", "crashtest-only-master-key-not-a-secret",
+    _PLACEHOLDER,
+})
+
 
 class Settings(BaseSettings):
     """Runtime configuration, sourced only from the environment.
@@ -47,12 +58,12 @@ class Settings(BaseSettings):
     public_base_url: str = "http://localhost:8000"
 
     # The built-in system account (spec: SSO is the only way in for people; this is
-    # the one exception). On by default; password from a secret, never a default.
+    # the one exception). On by default.
     local_auth_enabled: bool = True
     local_admin_username: str = "admin"
-    # Initial password of the built-in account. Empty means the documented deployment
-    # default (to be changed by the local administrator, who is reminded at every
-    # sign-in until they do). Set it to deploy with something else.
+    # Initial password of the built-in account. Empty means the documented, public initial
+    # password "SecretPassword" (the local administrator must change it: they are reminded at
+    # every sign-in until they do). Set it to deploy with something else.
     local_admin_password: str = ""  # noqa: S105
 
     # Email (case-insensitive) granted ADMIN on every login while set.
@@ -99,6 +110,23 @@ class Settings(BaseSettings):
             path = getattr(self, f"{name}_file")
             if path:
                 setattr(self, name, Path(path).read_text(encoding="utf-8").strip())
+        return self
+
+    @model_validator(mode="after")
+    def _production_needs_real_secrets(self) -> Settings:
+        """Production refuses the development values of the session secret and the master key,
+        and a cookie that is not Secure. Development, test and CrashTest keep them."""
+        if self.environment != "production":
+            return self
+        problems = []
+        if self.session_secret in DEV_SESSION_SECRETS:
+            problems.append("LCIT_SIGN_SESSION_SECRET is empty or a development value")
+        if self.master_key in DEV_MASTER_KEYS:
+            problems.append("LCIT_SIGN_MASTER_KEY is empty or a development value")
+        if not self.cookie_secure:
+            problems.append("LCIT_SIGN_COOKIE_SECURE must be true")
+        if problems:
+            raise ValueError("Refusing to start in production: " + "; ".join(problems))
         return self
 
 

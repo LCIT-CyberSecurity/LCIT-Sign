@@ -239,10 +239,11 @@ def process_directory_syncs(
     upstream is retried at the normal cadence, not in a tight loop."""
     now = now or datetime.now(UTC)
     ran = 0
+    active = active_source(db, settings)
     configs = db.execute(
         select(DirectoryConnectorConfig).where(
             DirectoryConnectorConfig.sync_interval_minutes.is_not(None),
-            DirectoryConnectorConfig.source == active_source(db),
+            DirectoryConnectorConfig.source == active,
         )
     ).scalars()
     for config in list(configs):

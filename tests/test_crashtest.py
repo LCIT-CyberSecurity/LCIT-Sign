@@ -46,7 +46,10 @@ def test_the_dataset_loads_on_the_crashtest_stack():
     ("over", "why"),
     [
         ({"crashtest": False}, "LCIT_SIGN_CRASHTEST"),
-        ({"environment": "production"}, "production"),
+        (
+            {"environment": "production", "session_secret": "s" * 40, "master_key": "m" * 40},
+            "production",
+        ),
         ({"database_url": "postgresql+psycopg://u:p@db:5432/lcit_sign"}, "_crashtest"),
         ({"database_url": "postgresql+psycopg://u:p@db/lcit_sign_crashtest_old"}, "_crashtest"),
         ({"crashtest": False, "database_url": "sqlite:///x.db"}, "LCIT_SIGN_CRASHTEST"),

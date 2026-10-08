@@ -54,7 +54,7 @@ La page d'accueil regroupe tout ce qui vous concerne :
 Vous voyez alors **Document signé**, avec un identifiant du type `SIG-3F9A12C0B7D4`, et vous pouvez
 télécharger le PDF signé et le certificat. Vous recevez aussi une confirmation par e-mail.
 
-Toute personne à qui une signature a été demandée peut signer : aucun rôle particulier n'est nécessaire.
+Pour signer, il faut une demande en attente **et** le rôle **Signataire**, donné par défaut à tout compte actif ; sans ce rôle, la signature est refusée.
 
 ### Plusieurs documents d'une même demande : tout signer en un clic
 
@@ -73,7 +73,7 @@ vérification l'indiquerait.
 
 ## 3. Faire signer un document
 
-Menu **Faire signer** (opérateurs et administrateurs).
+Menu **Faire signer** : tout utilisateur standard (rôle **Signataire**) peut faire signer ses propres documents, y compris en se désignant lui-même.
 
 On y démarre par un **nom de demande** (« PSSI 2026 »), puis cinq écrans. Tout est enregistré au fur et à
 mesure : on peut quitter et reprendre plus tard depuis la liste **En préparation**. Une demande en
@@ -214,7 +214,8 @@ Liste des personnes, d'où elles viennent (annuaire, ajout manuel, SSO), leurs r
 | Rôle | Droits |
 |---|---|
 | **Signataire** | Rôle de l'utilisateur standard, donné **par défaut à tout compte actif** : préparer des documents, créer et conduire des campagnes (les siennes, et celles dont il est préparateur), se choisir ou choisir d'autres signataires, et **signer**. Sans ce rôle, aucune signature n'est acceptée, même avec une demande en attente |
-| **Opérateur** | Administrateur métier : voir toutes les campagnes, changer propriétaire et préparateurs ; pas le contenu confidentiel |
+| **Préparateur de campagne** (≠ rôle) | Droit ponctuel sur **une** campagne : en lire le contenu et la conduire avec son propriétaire |
+| **Opérateur** | Supervision globale : voir toutes les campagnes, changer propriétaire et préparateurs ; **pas** le contenu confidentiel sauf s'il s'ajoute comme préparateur (audité) |
 | **Administrateur** | Tout ce qui est administratif : utilisateurs, annuaire, e-mail, clés, audit ; accès complet |
 
 On peut **ajouter** une personne à la main en choisissant sa **méthode d'authentification** : **SSO** (aucun
@@ -244,8 +245,9 @@ viennent personnes et groupes). Les deux sont indépendants, même si Microsoft 
 
 #### Annuaire : les sources
 
-Choisissez la **source** des personnes et des équipes : *local* (démonstration), **Microsoft Entra ID**,
-**Google Workspace** ou **LDAP / Active Directory**. Chaque formulaire a une **bulle d'aide** et un
+Choisissez la **source** des personnes et des équipes : **Microsoft Entra ID**,
+**Google Workspace** ou **LDAP / Active Directory**. Une installation neuve n'a **aucun annuaire** (la page
+dit « Aucun annuaire configuré ») ; l'annuaire de démonstration n'existe que dans CrashTest. Chaque formulaire a une **bulle d'aide** et un
 exemple sur chaque champ, et une section « Comment préparer … » pas à pas. Les secrets sont saisis ici,
 chiffrés, et **jamais réaffichés**.
 
@@ -286,7 +288,8 @@ Voir le [README](../README.md) pour installer. À la première mise en route :
 1. **Se connecter avec le compte système local** (identifiant `admin`, par « Connexion locale »). Son mot
    de passe initial est `SecretPassword` : l'application demande de **le changer tout de suite** (mot de
    passe fort exigé) et le rappelle à chaque connexion tant que ce n'est pas fait. Une installation neuve
-   ne contient **que ce compte** (aucune personne fictive).
+   ne contient **que ce compte** : connexion locale seulement, aucun SSO, aucun annuaire, aucune personne ni
+   groupe fictif.
 2. **Configurer le SSO** (variables d'environnement, voir [`entra-sso-test.md`](entra-sso-test.md)) : la page
    de connexion affiche alors le bouton de votre fournisseur. Les autres personnes se connectent par SSO,
    ou avec un compte local que vous leur créez.
@@ -295,7 +298,7 @@ Voir le [README](../README.md) pour installer. À la première mise en route :
 
 ## Questions fréquentes
 
-**Je ne vois pas le menu « Faire signer ».** Il faut le rôle opérateur ou administrateur.
+**Je ne vois pas le menu « Faire signer ».** Il faut le rôle **Signataire**, donné par défaut à tout compte actif : si votre compte l'a perdu, un administrateur peut vous le redonner (Administration → Utilisateurs).
 
 **Je n'ai pas reçu l'e-mail « à signer ».** Vérifiez l'e-mail dans **Administration → E-mail** (test
 d'envoi), et que la demande n'est pas programmée à une date future. Le document est toujours dans **Mes

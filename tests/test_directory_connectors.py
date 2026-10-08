@@ -93,7 +93,8 @@ def test_sources_listing(tmp_path, mock_oidc_base_url):
     _configure_entra(admin)
     sources = {s["source"]: s["configured"] for s in
                admin.get("/api/admin/directory/sources").json()}
-    assert sources == {"local": True, "entra": True, "google": False, "ldap": False}
+    # A normal installation: the real connectors only (the demonstration directory is CrashTest's).
+    assert sources == {"entra": True, "google": False, "ldap": False}
 
 
 def test_entra_sync(tmp_path, mock_oidc_base_url):
@@ -159,7 +160,7 @@ def test_removed_upstream_user_is_deactivated_and_group_deactivated(tmp_path, mo
 
 
 def test_unconfigured_and_unknown_sources(tmp_path, mock_oidc_base_url):
-    app, admin, *_ = setup_campaign_fixture(tmp_path, mock_oidc_base_url)
+    app, admin, *_ = setup_campaign_fixture(tmp_path, mock_oidc_base_url, crashtest=True)
     assert admin.post("/api/admin/directory/sync?source=entra").status_code == 409
     assert admin.post("/api/admin/directory/sync?source=nope").status_code == 404
     assert admin.post("/api/admin/directory/sync").json()["source"] == "local"

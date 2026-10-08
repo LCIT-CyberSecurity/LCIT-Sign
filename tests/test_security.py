@@ -164,7 +164,7 @@ def test_uploaded_filename_cannot_traverse_the_filesystem(tmp_path, mock_oidc_ba
 
 
 def test_group_change_after_launch_does_not_alter_the_campaign(tmp_path, mock_oidc_base_url):
-    app, admin, operator, *_ = setup_campaign_fixture(tmp_path, mock_oidc_base_url)
+    app, admin, operator, *_ = setup_campaign_fixture(tmp_path, mock_oidc_base_url, crashtest=True)
     sync_directory(admin)
     group_id = find_group_id(admin, "IT")
     version_id = _publish(operator)
