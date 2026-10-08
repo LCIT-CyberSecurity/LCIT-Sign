@@ -218,14 +218,13 @@ configure_production() {
     env_set LCIT_SIGN_PUBLIC_BASE_URL "https://$fqdn:$(https_port)"
 }
 
-prepare_certs() { mkdir -p -m 700 "$ROOT/certs"; }
+prepare_certs() { mkdir -p "$ROOT/certs" && chmod 700 "$ROOT/certs"; }
 check_compose() { dc config -q; }
 build_images()  { dc build; }
 start_stack()   { dc up -d --wait --wait-timeout 300; }
 
 api_health() {
-    local i
-    for i in $(seq 1 40); do
+    for _ in $(seq 1 40); do
         if dc exec -T api python -c \
             "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=2)" \
             >/dev/null 2>&1; then return 0; fi

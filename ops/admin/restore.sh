@@ -16,7 +16,7 @@ ASSUME_YES="no"
 [[ "${2:-}" == "--yes" ]] && ASSUME_YES="yes"
 PROJECT="${LCIT_SIGN_PROJECT:-lcit-sign}"
 DATA_VOLUME="${LCIT_SIGN_DATA_VOLUME:-lcit-sign-data}"
-EXPECTED="db.dump data.tar SHA256SUMS MANIFEST.txt"
+EXPECTED=(db.dump data.tar SHA256SUMS MANIFEST.txt)
 
 [[ -f "$ARCHIVE" ]] || { echo "No such backup: $ARCHIVE" >&2; exit 2; }
 ARCHIVE="$(cd "$(dirname "$ARCHIVE")" && pwd)/$(basename "$ARCHIVE")"
@@ -35,17 +35,19 @@ trap cleanup EXIT
 
 echo "==> Reading the archive"
 members="$(tar -tjf "$ARCHIVE" | sort | tr '\n' ' ')"
-wanted="$(printf '%s\n' $EXPECTED | sort | tr '\n' ' ')"
+wanted="$(printf '%s\n' "${EXPECTED[@]}" | sort | tr '\n' ' ')"
 [[ "$members" == "$wanted" ]] \
     || { echo "Unexpected archive content: $members(expected: $wanted)" >&2; exit 1; }
 tar -xjf "$ARCHIVE" -C "$WORK"
-for f in $EXPECTED; do
+for f in "${EXPECTED[@]}"; do
     [[ -f "$WORK/$f" ]] || { echo "Missing in the archive: $f" >&2; exit 1; }
 done
 
 echo "==> Verifying checksums"
-grep -q ' db.dump$' "$WORK/SHA256SUMS" && grep -q ' data.tar$' "$WORK/SHA256SUMS" \
-    || { echo "SHA256SUMS does not cover db.dump and data.tar" >&2; exit 1; }
+if ! grep -q ' db.dump$' "$WORK/SHA256SUMS" || ! grep -q ' data.tar$' "$WORK/SHA256SUMS"; then
+    echo "SHA256SUMS does not cover db.dump and data.tar" >&2
+    exit 1
+fi
 ( cd "$WORK" && sha256sum -c SHA256SUMS )
 
 COMPOSE=(docker compose -p "$PROJECT")
