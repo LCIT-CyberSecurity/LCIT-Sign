@@ -21,7 +21,7 @@ cleanup() {
     docker rm -f "$PG" >/dev/null 2>&1 || true
     docker volume rm "$VOL" >/dev/null 2>&1 || true
     docker network rm "$NET" >/dev/null 2>&1 || true
-    docker run --rm -v "$BACKUP_ROOT":/b alpine rm -rf /b/lcit-sign-* >/dev/null 2>&1 || true
+    docker run --rm -v "$BACKUP_ROOT":/b alpine rm -rf /b/lcit-sign-backup-* /b/unpacked >/dev/null 2>&1 || true
     rmdir "$BACKUP_ROOT" 2>/dev/null || true
 }
 trap cleanup EXIT
@@ -29,9 +29,12 @@ trap cleanup EXIT
 step() { printf '\n==> %s\n' "$*"; }
 
 step "1. Backup of the live stack"
-LCIT_SIGN_BACKUP_DIR="$BACKUP_ROOT" scripts/backup.sh >/dev/null
-BACKUP="$(find "$BACKUP_ROOT" -mindepth 1 -maxdepth 1 -name 'lcit-sign-*' | head -1)"
-( cd "$BACKUP" && sha256sum -c SHA256SUMS >/dev/null ) && echo "checksums OK"
+LCIT_SIGN_BACKUP_DIR="$BACKUP_ROOT" ops/admin/backup.sh >/dev/null
+ARCHIVE="$(find "$BACKUP_ROOT" -mindepth 1 -maxdepth 1 -name 'lcit-sign-backup-*.tar.bz2' | head -1)"
+[[ -n "$ARCHIVE" ]] || { echo "FAIL: no archive was written"; exit 1; }
+BACKUP="$BACKUP_ROOT/unpacked"; mkdir -p "$BACKUP"
+tar -xjf "$ARCHIVE" -C "$BACKUP"
+( cd "$BACKUP" && sha256sum -c SHA256SUMS >/dev/null ) && echo "archive extracted, checksums OK"
 
 LIVE_SIGNATURES="$(docker compose exec -T postgres psql -U lcit_sign -d lcit_sign -Atc \
     'select count(*) from signatures')"
