@@ -49,6 +49,7 @@ def test_a_fresh_non_production_deployment_has_the_default_admin_which_must_be_c
 def test_the_default_admin_works_in_production_too_and_is_flagged(tmp_path, mock_oidc_base_url):
     app, client = started(
         tmp_path, mock_oidc_base_url, environment="production", cookie_secure=True,
+        session_secret="a-real-session-secret-for-this-test-0123456789",
         master_key="a-real-master-key-for-this-test-0123456789",
     )
     client.base_url = "https://testserver"  # the cookie is Secure

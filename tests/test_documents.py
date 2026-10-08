@@ -344,6 +344,9 @@ def test_a_signed_version_cannot_be_deleted_only_archived(tmp_path, mock_oidc_ba
         tmp_path, mock_oidc_base_url, master_key="test-master-key-not-for-production-use"
     )
     document_id, version_id = _upload(operator, "Signé", publish=True)
+    from test_signatures import ask_for_signature
+
+    ask_for_signature(operator, version_id, signer.get("/api/auth/me").json()["id"])
     assert signer.post(
         f"/api/documents/versions/{version_id}/sign", json={"consent": True}
     ).status_code == 201
@@ -354,8 +357,10 @@ def test_a_signed_version_cannot_be_deleted_only_archived(tmp_path, mock_oidc_ba
     refused = operator.delete(f"/api/documents/versions/{version_id}")
     assert refused.status_code == 409 and "Archivez" in refused.text
     assert operator.delete(f"/api/documents/{document_id}").status_code == 409
-    # The document and its proof are intact; archiving is the way out.
-    assert operator.post(f"/api/documents/versions/{version_id}/archive").status_code == 200
+    # The document and its proof are intact; while its campaign is open it cannot even be
+    # archived, and it never gets deleted.
+    assert operator.post(f"/api/documents/versions/{version_id}/archive").status_code == 409
+    assert operator.get(f"/api/documents/{document_id}").status_code == 200
 
 
 def test_a_version_used_by_a_campaign_cannot_be_deleted_until_removed_from_it(

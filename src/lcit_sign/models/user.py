@@ -11,7 +11,7 @@ from lcit_sign.database import Base
 
 
 class Role(enum.StrEnum):
-    """What someone may do besides signing what they were asked to sign (which needs no role).
+    """What someone may do. Signing needs SIGNER AND an active signature request (assignment).
 
     SIGNER      the standard user: prepares documents, runs signature campaigns (those one owns,
                 or is a preparer of) and signs what is asked of them. Everyone active has it by

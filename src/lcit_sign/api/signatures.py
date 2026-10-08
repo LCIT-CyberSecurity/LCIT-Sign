@@ -56,8 +56,8 @@ CERTIFICATES_BUCKET = "certificates"
 EVIDENCE_SUFFIX = ".json"
 IDENTITY_PROVIDER = "oidc"  # only a generic OIDC provider exists today
 
-# Anyone signed in may sign what they were asked to sign: no role is needed, the request is
-# addressed to the person (checked in perform_signature). Signing unasked still needs SIGNER.
+# Signing needs an active account, the SIGNER role AND an active request addressed to the
+# person (a SignatureAssignment): both are checked in perform_signature.
 _sign = get_current_user
 
 
@@ -223,8 +223,9 @@ def perform_signature(
     `dry_run` it stops after checking everything that can refuse (inputs included) and
     returns None. `only_campaign` restricts which campaign's assignment is answered.
     Raises HTTPException."""
-    # Signing is for signers: an assignment alone is not enough, the role is checked here,
-    # server-side, whatever the interface shows.
+    # Signing needs BOTH the SIGNER role and an active signature request (assignment): the role
+    # alone is not enough, nor is a request without the role. Checked here, server-side,
+    # whatever the interface shows.
     if Role.SIGNER not in user_roles(db, user):
         raise HTTPException(403, "Insufficient role")
     version = db.get(DocumentVersion, version_id)
@@ -234,8 +235,8 @@ def perform_signature(
         raise HTTPException(409, "Only a published version can be signed")
 
     # The campaign this signature answers: the oldest outstanding assignment
-    # for this user and version (spec §125 — "dans quelle campagne"). With
-    # none, the signature is campaign-less and can only happen once.
+    # for this user and version (spec §125 — "dans quelle campagne"). With none, there is
+    # nothing to sign: there is no unasked signature.
     pending_assignments = list(
         db.execute(
             select(SignatureAssignment)
@@ -276,9 +277,8 @@ def perform_signature(
         ).first()
         if ended is not None:
             raise HTTPException(409, "Cette campagne n'est plus ouverte à la signature")
-    if only_campaign and not pending_assignments:
-        # Never fall through to a campaign-less signature when a campaign was asked for.
-        raise HTTPException(409, "Rien à signer pour cette campagne")
+    if not pending_assignments:
+        raise HTTPException(409, "Aucune demande de signature active pour ce document")
     if len({a.campaign_id for a in pending_assignments}) > 1:
         # The same version is asked of this person by several campaigns and nothing says which one
         # is being signed: a signature answers one campaign only, so never guess.
@@ -287,18 +287,16 @@ def perform_signature(
             "Ce document vous est demandé par plusieurs campagnes : ouvrez-le depuis la "
             "demande de signature voulue pour préciser laquelle vous signez.",
         )
-    campaign_id = pending_assignments[0].campaign_id if pending_assignments else None
-    role = pending_assignments[0].role if pending_assignments else 1
-    # With an outstanding assignment, only a signature for that same
-    # campaign counts as "already signed" (a renewal asks again). Without
-    # one, any earlier signature of this version means there is nothing
-    # left to ask.
-    already_signed_query = select(Signature.id).where(
-        Signature.user_id == user.id, Signature.document_version_id == version.id
-    )
-    if campaign_id is not None:
-        already_signed_query = already_signed_query.where(Signature.campaign_id == campaign_id)
-    already_signed = db.execute(already_signed_query).first()
+    campaign_id = pending_assignments[0].campaign_id
+    role = pending_assignments[0].role
+    # Only a signature for that same campaign counts as "already signed" (a renewal asks again).
+    already_signed = db.execute(
+        select(Signature.id).where(
+            Signature.user_id == user.id,
+            Signature.document_version_id == version.id,
+            Signature.campaign_id == campaign_id,
+        )
+    ).first()
     if already_signed is not None:
         raise HTTPException(409, "You have already signed this document version")
 

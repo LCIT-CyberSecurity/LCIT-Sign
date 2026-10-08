@@ -8,6 +8,7 @@ from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Values shipped for development, CrashTest or as examples: public, so refused in production.
+MIN_SECRET = 32  # production only: shortest accepted session secret / master key
 _PLACEHOLDER = "change-me-to-a-long-random-value"
 DEV_SESSION_SECRETS = frozenset({
     "", "insecure-dev-secret-change-me", "dev-only-insecure-secret-change-me",
@@ -119,10 +120,14 @@ class Settings(BaseSettings):
         if self.environment != "production":
             return self
         problems = []
-        if self.session_secret in DEV_SESSION_SECRETS:
-            problems.append("LCIT_SIGN_SESSION_SECRET is empty or a development value")
-        if self.master_key in DEV_MASTER_KEYS:
-            problems.append("LCIT_SIGN_MASTER_KEY is empty or a development value")
+        if self.session_secret in DEV_SESSION_SECRETS or len(self.session_secret) < MIN_SECRET:
+            problems.append(
+                f"LCIT_SIGN_SESSION_SECRET is empty, short (< {MIN_SECRET}) or a development value"
+            )
+        if self.master_key in DEV_MASTER_KEYS or len(self.master_key) < MIN_SECRET:
+            problems.append(
+                f"LCIT_SIGN_MASTER_KEY is empty, short (< {MIN_SECRET}) or a development value"
+            )
         if not self.cookie_secure:
             problems.append("LCIT_SIGN_COOKIE_SECURE must be true")
         if problems:

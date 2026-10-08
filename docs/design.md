@@ -126,10 +126,10 @@ hold `SIGNER`, `OPERATOR` or `ADMIN`. Library documents follow the same idea (`c
 the uploader, a preparer of a campaign using it, or an administrator read the file; an operator sees
 that it exists. Campaigns from before this model keep their creator as owner (migration 0020).
 
-**Being asked is enough.** Any active, signed-in person who holds a `SignatureAssignment`
-can see it and sign it, whatever their roles (an administrator or an operator can also be
-a designated signer). `SIGNER` is only required to sign a document nobody asked them to sign
-(a campaign-less signature). Someone who was not asked and lacks `SIGNER` gets a 403.
+**Signing needs both.** An active account, the `SIGNER` role **and** a valid
+`SignatureAssignment` (`PENDING` or `VIEWED`): `SIGNER` alone is not enough (409 « Aucune demande de
+signature active »), and an assignment without `SIGNER` gets a 403. There is no signature without a
+request: someone who wants to sign their own document creates a campaign and designates themselves.
 
 Routes are guarded by `require_roles(...)` in `deps.py`. Roles are granted by
 an ADMIN. `LCIT_SIGN_BOOTSTRAP_ADMIN` gives ADMIN to one email on login so
@@ -169,8 +169,7 @@ taken over.
 - A `Document` is the logical object ("IT charter"). Content lives in
   `DocumentVersion` rows: `DRAFT` → `PUBLISHED` → `SUPERSEDED` (when a newer version replaces it) or `ARCHIVED`.
 - Uploads must be PDFs: magic-bytes check, size limit
-  (`LCIT_SIGN_MAX_UPLOAD_SIZE_MB`, default 25), and **rejection of PDFs with
-  active content** (`/JavaScript`, `/JS`, `/OpenAction`, `/AA`).
+  (`LCIT_SIGN_MAX_UPLOAD_SIZE_MB`, default 25).
 - Each version's SHA-256 is computed at upload and stored.
 - Files are saved on disk under the version's own UUID. The uploaded file name
   is display metadata only and is never used to build a path, which removes
@@ -212,9 +211,8 @@ This is the core of the product.
 
 ### What happens when a signer signs
 
-1. The signer must have been asked (an outstanding assignment) or hold `SIGNER`
-   for a signature of their own accord, the version must be `PUBLISHED`, and the
-   consent box must be ticked.
+1. The signer must hold `SIGNER` **and** have an outstanding assignment, the version
+   must be `PUBLISHED`, and the consent box must be ticked.
 2. The platform appends **one attestation page** to the original PDF: a
    sober metadata block plus a cursive rendering of the signer's
    authenticated display name. Original pages are copied unchanged.
@@ -649,7 +647,7 @@ A single-page React app, role-aware:
   LDAP: forms drawn from each connector's description, with help bubbles and a step-by-step
   guide).
 
-The user guide is [guide-utilisateur.md](guide-utilisateur.md).
+The user guide is [user-guide.md](user-guide.md).
 
 Secret fields are write-only: the forms send them and clear them, and show
 only whether a secret is set.
@@ -744,8 +742,7 @@ Deliberate deviations (design choices):
   PostgreSQL or logs), different mechanism. Consequence: the master key is the
   single secret to protect and back up.
 - **Signers read the document in the browser's native PDF viewer (an `<iframe>`).**
-  Only the element editor uses PDF.js. Uploads are validated and PDFs with
-  JavaScript/auto-actions are refused, but hyperlink opening (`noopener`, "you are
+  Only the element editor uses PDF.js. Uploads are validated, but hyperlink opening (`noopener`, "you are
   leaving LCIT Sign" notice, spec §24) is the browser's behaviour, not LCIT Sign's.
 - **SSO and security settings are environment-driven, not editable in the UI.**
   The `OIDC_CONFIGURATION_CHANGED` and `SECURITY_CONFIGURATION_CHANGED` audit

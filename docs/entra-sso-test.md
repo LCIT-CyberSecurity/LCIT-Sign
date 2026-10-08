@@ -1,74 +1,56 @@
-# Tester la connexion avec Microsoft Entra ID (compte LCIT)
+# Sign-in with Microsoft Entra ID
 
-Objectif : se connecter à LCIT Sign avec son compte Microsoft 365 existant, **sans créer de compte**,
-en ne donnant à l'application que le strict nécessaire (nom et e-mail de la personne qui se connecte).
-Rien n'est lu dans l'annuaire de l'entreprise, rien n'est écrit dans Microsoft 365.
+Goal: sign in to LCIT Sign with an existing Microsoft 365 account, **without creating an account**, giving the
+application only what it needs (the name and e-mail of the person signing in). Nothing is read from the company
+directory and nothing is written to Microsoft 365.
 
-## Le vocabulaire Microsoft, en clair
+## Microsoft vocabulary
 
-| Terme | Ce que c'est | Où le trouver |
+| Term | What it is | Where to find it |
 |---|---|---|
-| **ID de l'annuaire (locataire / tenant)** | L'identifiant de *votre* Microsoft 365 (LCIT). Un code du type `1b2c…`. Il dit à Microsoft « les comptes de LCIT ». | Entra → Vue d'ensemble → *ID de locataire* |
-| **ID de l'application (client)** | L'identifiant de la fiche « LCIT Sign » que vous créez dans Entra. C'est la carte d'identité de l'application. | Fiche de l'application → Vue d'ensemble → *ID de l'application (client)* |
-| **Secret client** | Le mot de passe de l'*application* (pas d'une personne). Il prouve à Microsoft que c'est bien LCIT Sign. Affiché **une seule fois** à la création. | Fiche → Certificats et secrets → *Nouveau secret client* → copier la **Valeur** |
+| **Directory (tenant) ID** | The identifier of *your* Microsoft 365 tenant (a code like `1b2c…`) | Entra → Overview → *Tenant ID* |
+| **Application (client) ID** | The identifier of the "LCIT Sign" registration you create in Entra | App registration → Overview → *Application (client) ID* |
+| **Client secret** | The password of the *application* (not of a person). Shown **once**, at creation | App registration → Certificates & secrets → *New client secret* → copy the **Value** |
 
-Ces trois valeurs ne sont pas secrètes de la même façon : les deux identifiants peuvent être partagés,
-**le secret ne doit jamais être collé dans un chat, un ticket ou Git**.
+The two identifiers can be shared; **the secret must never be pasted in a chat, a ticket or Git**.
 
-## Étapes (à faire par quelqu'un qui peut inscrire des applications dans Entra)
+## Steps (by someone allowed to register applications in Entra)
 
-1. **Entra admin center → Applications → Inscriptions d'applications → Nouvelle inscription**
-   - Nom : `LCIT Sign (test)`.
-   - Types de comptes : *Comptes dans cet annuaire organisationnel uniquement* (un seul locataire).
-   - URI de redirection : plateforme **Web**, valeur `http://localhost:4180/api/auth/callback`
-     (Microsoft accepte le HTTP uniquement pour `localhost`).
-2. Notez l'**ID de l'application (client)** et l'**ID de l'annuaire (locataire)**.
-3. **Certificats et secrets → Nouveau secret client** : durée courte (90 jours). Copiez la *Valeur*.
-4. **Autorisations d'API** : ne gardez que Microsoft Graph, déléguées : `openid`, `profile`, `email`
-   (vous pouvez retirer `User.Read`). N'ajoutez **aucune** autorisation d'application.
-5. **Applications d'entreprise → LCIT Sign (test) → Propriétés → Affectation requise : Oui**, puis
-   **Utilisateurs et groupes** : ajoutez uniquement vos comptes de test. Seuls eux pourront se connecter.
-6. (Facultatif) **Configuration des jetons → Ajouter une revendication facultative → ID → `email`**.
+1. **Entra admin center → Applications → App registrations → New registration**: name `LCIT Sign`, *accounts in this
+   organizational directory only*, redirect URI of type **Web**: `<public URL>/api/auth/callback`
+   (Microsoft accepts plain HTTP only for `localhost`).
+2. Note the **Application (client) ID** and the **Directory (tenant) ID**.
+3. **Certificates & secrets → New client secret** (short lifetime). Copy the *Value*.
+4. **API permissions**: keep only Microsoft Graph *delegated* `openid`, `profile`, `email`. Add **no** application permission.
+5. (Recommended) **Enterprise applications → LCIT Sign → Properties → Assignment required: Yes**, then add only the
+   users who may sign in.
+6. (Optional) **Token configuration → Add optional claim → ID → `email`**.
 
-## Côté LCIT Sign (sur la VM)
+## In LCIT Sign
 
-Le secret est déposé **par vous** dans un fichier, jamais dans le dépôt :
+Easiest: *Administration → Identités & accès → Connexion → Microsoft (Entra ID)*, enter the tenant ID, client ID and
+secret, **Enregistrer**. The secret is stored encrypted and never shown again; saving makes Entra the active SSO.
 
-```bash
-cd ~/Git/LCIT-Sign
-mkdir -p -m 700 secrets
-# colle le secret au prompt, puis Ctrl-D (rien n'est affiché ni gardé dans l'historique du shell)
-install -m 600 /dev/stdin secrets/oidc_client_secret
-```
-
-Dans le `.env` de la VM (ce fichier n'est pas versionné) :
+Alternatively, with environment variables (they then override the UI): put the secret in a file outside Git
+(`install -m 600 /dev/stdin secrets/oidc_client_secret`) and in `.env`:
 
 ```text
-LCIT_SIGN_OIDC_ISSUER=https://login.microsoftonline.com/<ID-DE-LANNUAIRE>/v2.0
-LCIT_SIGN_OIDC_CLIENT_ID=<ID-DE-LAPPLICATION>
+LCIT_SIGN_OIDC_ISSUER=https://login.microsoftonline.com/<TENANT-ID>/v2.0
+LCIT_SIGN_OIDC_CLIENT_ID=<APPLICATION-ID>
 LCIT_SIGN_OIDC_CLIENT_SECRET_FILE=/run/secrets/lcit-sign/oidc_client_secret
-LCIT_SIGN_PUBLIC_BASE_URL=http://localhost:4180
-LCIT_SIGN_COOKIE_SECURE=false
-LCIT_SIGN_BOOTSTRAP_ADMIN=<votre-adresse-mail>
+LCIT_SIGN_PUBLIC_BASE_URL=<public URL>
 ```
 
-(retirez du `.env` les deux lignes « mode navigateur » si elles y sont : `PUBLIC_BASE_URL=https://192.168.1.5:4443`
-et `COOKIE_SECURE=true`), puis `docker compose up -d --force-recreate api webui`.
+then `docker compose up -d --force-recreate api webui`.
 
-Depuis votre poste : `ssh -L 4180:127.0.0.1:4180 vm-integrations`, puis ouvrez `http://localhost:4180`
-et cliquez sur « Se connecter avec le SSO ».
+## What happens, and what does not
 
-## Ce qui se passe, et ce qui ne se passe pas
+- On first sign-in LCIT Sign creates a profile with the name and e-mail (no password). Every new active account is a
+  **SIGNER**; administrators are designated by an administrator (or `LCIT_SIGN_BOOTSTRAP_ADMIN` on a first install).
+- Sign-in does not read the directory: LCIT Sign only knows people who signed in at least once.
+- *Administration → Identités & accès → Annuaire → Microsoft Entra ID* is **another thing**: it *imports* users and groups,
+  with another app registration and directory read permissions an administrator must consent to.
 
-- Au premier passage, LCIT Sign crée un profil avec votre nom et votre e-mail (aucun mot de passe) ;
-  la personne indiquée dans `BOOTSTRAP_ADMIN` devient administrateur, les autres n'ont aucun droit
-  tant qu'un administrateur ne leur en donne pas.
-- LCIT Sign ne lit pas l'annuaire : il ne connaît que les personnes qui se sont connectées au moins une fois.
-- Le formulaire **Annuaire → Microsoft Entra ID** de l'application est **autre chose** : il sert à *importer*
-  tous les utilisateurs et groupes, avec une autre inscription d'application et des autorisations de lecture
-  de l'annuaire à faire approuver par un administrateur. Inutile pour tester la connexion.
+## Rolling back
 
-## Retour en arrière
-
-Supprimer le secret ou l'application dans Entra coupe immédiatement l'accès ; remettre les anciennes
-valeurs dans `.env` rétablit le faux SSO de test.
+Deleting the secret or the application in Entra cuts access at once.
