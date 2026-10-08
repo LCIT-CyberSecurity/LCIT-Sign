@@ -160,7 +160,7 @@ def test_add_months_clamps_to_month_end():
 
 
 def test_scheduled_directory_sync_runs_when_due(tmp_path, mock_oidc_base_url):
-    app, admin, *_ = setup_campaign_fixture(tmp_path, mock_oidc_base_url)
+    app, admin, *_ = setup_campaign_fixture(tmp_path, mock_oidc_base_url, crashtest=True)
     put = admin.put(
         "/api/admin/directory/sources/local/config", json={"sync_interval_minutes": 60}
     )
@@ -203,7 +203,11 @@ def test_diagnostics_reports_components_without_secrets(tmp_path, mock_oidc_base
 def test_dashboard_and_assignment_filters(tmp_path, mock_oidc_base_url):
     from test_directory import find_group_id, sync_directory
 
-    app, admin, operator, signer1, signer2 = setup_campaign_fixture(tmp_path, mock_oidc_base_url)
+    app, admin, operator, signer1, signer2 = setup_campaign_fixture(
+
+        tmp_path, mock_oidc_base_url, crashtest=True
+
+    )
     sync_directory(admin)
     it_group = find_group_id(admin, "IT")
     _, version_id = publish_a_document(operator)

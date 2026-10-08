@@ -81,14 +81,26 @@ docker compose up -d --build
 - **Premier accès** : un compte administrateur système local existe pour amorcer la plateforme (identifiant
   `admin`). Son mot de passe initial est `SecretPassword` ; il est **à changer dès la première connexion**
   (l'application le rappelle à chaque connexion, et la page Diagnostic le signale tant que ce n'est
-  pas fait). Une installation neuve ne contient **que ce compte** : aucune personne fictive, aucun SSO de
-  test.
+  pas fait). Une installation neuve ne contient **que ce compte** : connexion locale seulement, aucun SSO,
+  aucun annuaire, aucune personne, aucun groupe ni campagne fictifs. L'administrateur configure ensuite le
+  SSO, l'annuaire et l'e-mail dans Administration (Identités & accès). En production
+  (`LCIT_SIGN_ENVIRONMENT=production`), l'application refuse de démarrer avec une clé de session ou une clé
+  maître vide ou de développement, ou un cookie non `Secure`.
 - **Brancher le vrai SSO** : renseigner `LCIT_SIGN_OIDC_ISSUER`, `..._CLIENT_ID` et `..._CLIENT_SECRET` dans
   `.env` (Microsoft Entra ID, Google ou tout fournisseur OpenID Connect). La page de connexion affiche alors
   « Continuer avec Microsoft », « Continuer avec Google » ou « Continuer avec le SSO », et garde une
   « Connexion locale » discrète. Sans SSO, la connexion locale est la page de connexion.
 - **Comptes locaux** : dans Administration → Utilisateurs, choisir « Compte local » pour créer une personne
   avec un mot de passe (obligatoire, haché, à changer à sa première connexion) au lieu du SSO.
+
+### Rôles
+
+| Rôle | Pour qui |
+|---|---|
+| **Signataire** | l'utilisateur standard, donné à tout compte actif : prépare, envoie, suit et signe ses propres demandes |
+| **Préparateur de campagne** | droit ponctuel sur UNE campagne (collaboration), pas un rôle global |
+| **Opérateur** | supervision globale ; pas d'accès automatique au contenu confidentiel |
+| **Administrateur** | administration technique de LCIT Sign |
 
 ### Environnement CrashTest (tests et démonstration)
 
@@ -97,7 +109,7 @@ docker compose up -d --build
 ./crashtest/reset.sh     # détruit uniquement les volumes CrashTest et recharge le jeu de données
 ```
 
-CrashTest est le **seul** endroit où existe le Mock SSO. Les comptes fictifs ont pour mot de passe leur
+CrashTest est le **seul** endroit où existent le Mock SSO, le faux annuaire, Alice, Bob et les autres personnes, groupes et campagnes fictifs (le compte `admin` / `SecretPassword` y existe aussi). Les comptes fictifs ont pour mot de passe leur
 **prénom en minuscules** (`bob.dupont@lcit-test.local` / `bob`) et peuvent aussi se connecter en un clic par
 le SSO de test. Le jeu de données refuse de se charger hors d'une pile CrashTest. Détails :
 [`crashtest/README.md`](crashtest/README.md).

@@ -121,7 +121,7 @@ def test_on_first_sign_in_they_become_the_person_who_was_added(tmp_path, mock_oi
 
 
 def test_a_directory_sync_leaves_outsiders_alone(tmp_path, mock_oidc_base_url):
-    app, admin, operator, *_ = setup_campaign_fixture(tmp_path, mock_oidc_base_url)
+    app, admin, operator, *_ = setup_campaign_fixture(tmp_path, mock_oidc_base_url, crashtest=True)
     added = operator.post(URL, json={"email": "jean@partenaire.com"}).json()
     assert admin.post("/api/admin/directory/sync?source=local").json()["status"] == "SUCCESS"
     users = {u["id"]: u for u in admin.get("/api/admin/users").json()}

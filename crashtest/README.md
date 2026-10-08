@@ -1,6 +1,6 @@
 # CrashTest
 
-Une **pile séparée** pour tester et démontrer LCIT Sign : son propre projet Docker, sa propre base
+Le **seul** environnement qui contient le faux annuaire, Alice, Bob et les autres personnes fictives, leurs groupes et campagnes, et le Mock SSO (une installation normale n'a rien de cela). Une **pile séparée** pour tester et démontrer LCIT Sign : son propre projet Docker, sa propre base
 PostgreSQL (`lcit_sign_crashtest`), ses propres volumes, le **Mock SSO** et des comptes fictifs. Elle ne
 touche jamais à une installation normale.
 

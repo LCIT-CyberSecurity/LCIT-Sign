@@ -41,7 +41,7 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      LCIT_SIGN_ENVIRONMENT: development
+      LCIT_SIGN_ENVIRONMENT: ${LCIT_SIGN_ENVIRONMENT:-development}
       LCIT_SIGN_DATABASE_URL: postgresql+psycopg://lcit_sign:${LCIT_SIGN_DB_PASSWORD:-lcit_sign}@postgres:5432/lcit_sign
       LCIT_SIGN_LOG_LEVEL: INFO
       # Only the throwaway test stack turns this off (a browser suite signs in dozens of times).

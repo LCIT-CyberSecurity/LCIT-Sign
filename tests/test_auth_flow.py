@@ -20,7 +20,7 @@ def make_app(
     settings = Settings(
         database_url=f"sqlite:///{tmp_path}/test.db",
         session_secret="test-session-secret",
-        cookie_secure=False,
+        cookie_secure=overrides.pop("cookie_secure", False),
         public_base_url="http://testserver",
         oidc_issuer=mock_oidc_base_url,
         oidc_client_id="test-client",

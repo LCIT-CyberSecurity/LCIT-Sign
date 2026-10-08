@@ -13,7 +13,8 @@ in the repository today.
 
 **Goals**
 
-- SSO only (OpenID Connect). No local accounts, no passwords.
+- SSO (OpenID Connect) for people; a built-in local administrator (and optional local accounts) as the way in
+  when no SSO is set up. A fresh installation has no SSO, no directory and no fictional person.
 - Documents are versioned and **immutable once published**.
 - A visual signature backed by a **technical proof**
   (SHA-256 + Ed25519) that anyone with the public key can re-verify.
@@ -392,7 +393,7 @@ towards the upstream system.
 
 | Source | How it works |
 |---|---|
-| `local` | Built-in fictional organisation (24 users, 6 groups) for tests and demos |
+| `local` | Fictional organisation (24 users, 6 groups): **CrashTest only** (`LCIT_SIGN_CRASHTEST=true`); absent from a normal installation, which has no directory until an administrator configures one (`active_source` is `None`) |
 | `entra` | Microsoft Graph, app-only OAuth2 client credentials. Needs `User.Read.All`, `Group.Read.All`, `GroupMember.Read.All` application permissions with admin consent |
 | `google` | Admin SDK Directory API, service account with domain-wide delegation, impersonating an admin. Read-only scopes only |
 | `ldap` | LDAP / Active Directory with a read-only bind account. `ldaps://`, or `ldap://` only with StartTLS (the bind password never travels in clear); the server certificate is always verified; a disabled account (AD `userAccountControl`, 389 DS `nsAccountLock`) is read as inactive |

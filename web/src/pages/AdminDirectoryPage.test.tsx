@@ -51,6 +51,18 @@ describe("AdminDirectoryPage", () => {
     expect(within(screen.getByTestId("source-local")).getByTestId("source-state")).toHaveTextContent("Inactif");
   });
 
+  it("on a fresh installation says no directory is configured and shows no demonstration directory", async () => {
+    vi.mocked(api.get).mockImplementation(async (path: string) => {
+      if (path.endsWith("/sources")) return sources.filter((s) => s.source !== "local").map((s) => ({ ...s, active: false }));
+      return [];
+    });
+    render(<AdminDirectoryPage />);
+    expect(await screen.findByTestId("no-directory")).toHaveTextContent("Aucun annuaire configuré");
+    expect(screen.queryByTestId("source-local")).not.toBeInTheDocument();
+    expect(screen.queryByText("Annuaire de démonstration")).not.toBeInTheDocument();
+    for (const s of ["entra", "google", "ldap"]) expect(screen.getByTestId(`source-${s}`)).toBeInTheDocument();
+  });
+
   it("offers LDAP like the others, titled and described by the connector itself", async () => {
     render(<AdminDirectoryPage />);
     const ldap = await screen.findByTestId("source-ldap");
