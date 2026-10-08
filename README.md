@@ -1,159 +1,83 @@
 # LCIT Sign
 
-**Faites signer vos documents en quelques clics — avec une preuve que personne ne peut contester.**
+Internal e-signature and acknowledgement app (IT charter, security policies, house rules, amendments…).
+Upload a document, say who signs and in what order, place the elements on the page, send. Everyone
+signs from their own desk with their company account, and every signature comes with a proof anyone
+can verify.
 
-LCIT Sign est l'application interne de signature et d'attestation de prise de connaissance
-(charte informatique, PSSI, règlement intérieur, avenants, procédures…). Elle remplace les
-relances par e-mail et les tableaux de suivi : on dépose un document, on dit qui signe et dans quel
-ordre, on place les éléments sur la page, on envoie. Chacun signe depuis son poste, avec son compte
-d'entreprise.
+## Features
 
-## Pourquoi LCIT Sign
+- **Single sign-on.** Microsoft Entra ID, Google or a generic OpenID Connect provider (one active at
+  a time), plus a local sign-in. People and teams come from one directory (Entra ID, Google Workspace,
+  LDAP / Active Directory).
+- **Verifiable proof.** Each signature seals the signer's identity, consent, the document's SHA-256 and
+  the date with an Ed25519 key; the signed PDF, proof and certificate download in one click.
+- **Campaigns.** Several signers in order, mail merge for a team, external people by e-mail,
+  deferred start, reminders, periodic renewal, signed campaign report.
+- **Prepare in the browser.** Place signature, date, name, e-mail, logo or fill-in fields on the page.
+  Word / LibreOffice files are converted to PDF in an isolated container.
+- **Mail.** SMTP, Microsoft Graph or Gmail. Credentials are entered in the UI and stored encrypted
+  (AES-256-GCM), never in a configuration file.
+- **Security.** Chained audit log, no private key stored (signing keys are derived from the master key),
+  HTTPS, rate limiting, backup / restore. The repository contains **no secret**.
 
-- **Aucun mot de passe de plus.** Connexion unique avec le compte de l'entreprise (SSO OpenID
-  Connect : Microsoft Entra ID, Google, LDAP/Active Directory…). Personne ne crée de compte.
-- **Un parcours qui se comprend sans formation.** « Faire signer » se fait en cinq écrans :
-  signataires, documents, préparation, vérification, documents signés.
-- **Une preuve solide, vérifiable à tout moment.** Chaque signature fige l'identité du signataire,
-  son consentement, l'empreinte du document (SHA-256) et la date, puis les scelle avec une clé de
-  signature (Ed25519). Le document signé, la preuve et le certificat se téléchargent en un clic.
-- **Du sur-mesure sans effort.** Placez la signature, la date, le nom, l'e-mail, le logo ou un
-  champ à remplir à l'endroit voulu, comme sur les outils du marché, directement dans le navigateur.
-- **Plusieurs signataires, dans l'ordre.** Le RSSI signe d'abord, puis chaque collaborateur reçoit
-  sa copie qui porte déjà la signature précédente. Un publipostage pour toute une équipe.
-- **Un suivi sans tableur.** Qui a signé, qui doit encore signer, relances en un clic ou
-  automatiques, renouvellement périodique, procès-verbal signé de la campagne.
-- **Les personnes extérieures aussi.** Ajoutez un prestataire par son adresse e-mail : il est
-  indiqué comme externe et n'est jamais touché par une synchronisation d'annuaire.
-- **Vos annuaires, vos messageries.** Équipes lues depuis Entra ID, Google Workspace ou LDAP ;
-  e-mails envoyés par SMTP, Microsoft Graph ou Gmail. Les identifiants sont saisis dans l'interface
-  et chiffrés (AES-256-GCM), jamais dans un fichier de configuration.
-- **Word et LibreOffice acceptés.** Les documents Office sont convertis en PDF dans un conteneur
-  isolé (sans réseau, sans accès à vos données).
+> The signature is a *simple* electronic signature under eIDAS backed by a strong technical proof, not an
+> advanced or qualified one. Out of scope: qualified signatures and timestamps, per-person private keys,
+> biometric signatures, S3/MinIO storage.
 
-## En un coup d'œil
+## Roles
 
-| Pour… | On fait… |
+| Role | Who / what |
 |---|---|
-| Signer ce qu'on m'a demandé | **Mes signatures** : à signer, à venir, signés — un clic pour ouvrir ou télécharger le PDF signé |
-| Faire signer un document | **Faire signer** : 1 signataires et planning · 2 documents · 3 préparer · 4 vérifier et envoyer · 5 documents signés |
-| Suivre, relancer, récupérer | **Suivi** : campagnes, documents signés (export ZIP), relances, ajout de personnes ou de documents en cours de route |
-| Gérer la plateforme | **Administration** : utilisateurs et rôles, logo, identités & accès (un SSO, un annuaire, connexion locale), e-mail, clés de signature, audit, diagnostic |
+| **SIGNER** | The standard user, given to every active account: prepares, sends, follows and signs their own requests. Signing needs this role **and** an active signature request |
+| **Campaign preparer** | One-off right on a single campaign (collaboration); not a global role |
+| **OPERATOR** | Global supervision; no automatic access to confidential content |
+| **ADMIN** | Technical administration of LCIT Sign |
 
-Le guide complet est dans [`docs/guide-utilisateur.md`](docs/guide-utilisateur.md).
-
-## Sécurité en bref
-
-- SSO uniquement ; les sessions ne stockent que l'empreinte du jeton (une base volée ne rejoue pas
-  une session).
-- Documents versionnés et **immuables** une fois publiés ; PDF avec JavaScript refusés ; fichiers
-  Office convertis en isolation.
-- Aucune clé privée en base ni sur disque : les clés de signature sont dérivées de la clé maître au
-  moment d'utiliser. Une signature est **refusée** si la clé maître ne correspond plus à la clé
-  enregistrée.
-- Journal d'audit chaîné, sauvegarde et test de restauration, HTTPS avec installateur de
-  certificat, limitation de débit, en-têtes de sécurité.
-- Public par conception : le dépôt ne contient **aucun secret**.
-
-> **Niveau de signature.** La signature de LCIT Sign est une signature électronique *simple* au sens
-> d'eIDAS, adossée à une preuve technique robuste. Ce n'est ni une signature avancée ni qualifiée ;
-> pour un contrat à fort enjeu, il faudra un prestataire qualifié.
-
-## Stack
-
-- Backend : Python 3.12, FastAPI, SQLAlchemy 2, Alembic, PostgreSQL
-- Frontend : Vite, React, Lucide React, CSS maison
-- Déploiement : Docker Compose (dev, intégration), Kubernetes (manifestes fournis)
-- Reverse proxy : nginx (HTTPS, en-têtes de sécurité, BFF)
-
-## Démarrage
+## Quick start
 
 ```bash
-cp .env.example .env
-# éditer .env (au minimum LCIT_SIGN_DB_PASSWORD)
-mkdir -p -m 700 certs        # avant le premier `up` (sinon Docker le crée en root)
+cp .env.example .env         # at least set LCIT_SIGN_DB_PASSWORD
+mkdir -p -m 700 certs        # before the first `up` (otherwise Docker creates it as root)
 docker compose up -d --build
 ```
 
-- Interface : http://127.0.0.1:4180 (dev) et https://127.0.0.1:4443 (certificat auto-signé tant qu'aucun n'est installé)
-- API : proxyée par nginx sous `/api`, santé sur `/api/health`
-- Certificat HTTPS : `scripts/certificate-installer.sh` · Sauvegarde / restauration : `scripts/backup.sh`, `scripts/restore.sh`
-- **Premier accès** : un compte administrateur système local existe pour amorcer la plateforme (identifiant
-  `admin`). Son mot de passe initial est `SecretPassword` ; il est **à changer dès la première connexion**
-  (l'application le rappelle à chaque connexion, et la page Diagnostic le signale tant que ce n'est
-  pas fait). Une installation neuve ne contient **que ce compte** : connexion locale seulement, aucun SSO,
-  aucun annuaire, aucune personne, aucun groupe ni campagne fictifs. L'administrateur configure ensuite le
-  SSO, l'annuaire et l'e-mail dans Administration (Identités & accès). En production
-  (`LCIT_SIGN_ENVIRONMENT=production`), l'application refuse de démarrer avec une clé de session ou une clé
-  maître vide ou de développement, ou un cookie non `Secure`.
-- **Brancher le vrai SSO** : renseigner `LCIT_SIGN_OIDC_ISSUER`, `..._CLIENT_ID` et `..._CLIENT_SECRET` dans
-  `.env` (Microsoft Entra ID, Google ou tout fournisseur OpenID Connect). La page de connexion affiche alors
-  « Continuer avec Microsoft », « Continuer avec Google » ou « Continuer avec le SSO », et garde une
-  « Connexion locale » discrète. Sans SSO, la connexion locale est la page de connexion.
-- **Comptes locaux** : dans Administration → Utilisateurs, choisir « Compte local » pour créer une personne
-  avec un mot de passe (obligatoire, haché, à changer à sa première connexion) au lieu du SSO.
+- UI: http://127.0.0.1:4180 (dev) and https://127.0.0.1:4443 (self-signed certificate until one is installed). API under `/api`, health at `/api/health`.
+- HTTPS certificate: `scripts/certificate-installer.sh`. Backup / restore: `scripts/backup.sh`, `scripts/restore.sh`.
+- **First access.** A fresh installation contains only the local system account `admin` with the
+  documented initial password `SecretPassword`, which must be changed at first sign-in (the app reminds
+  you until you do). Local sign-in only: no SSO, no directory, no fictional person, group or campaign.
+  The administrator then sets up the SSO, the directory and e-mail under *Administration → Identités & accès*.
+- **Production.** With `LCIT_SIGN_ENVIRONMENT=production` the app refuses to start if the session secret
+  or the master key is empty, a development value or shorter than 32 characters, or if the cookie is not `Secure`.
 
-### Rôles
-
-| Rôle | Pour qui |
-|---|---|
-| **Signataire** | l'utilisateur standard, donné à tout compte actif : prépare, envoie, suit et signe ses propres demandes |
-| **Préparateur de campagne** | droit ponctuel sur UNE campagne (collaboration), pas un rôle global |
-| **Opérateur** | supervision globale ; pas d'accès automatique au contenu confidentiel |
-| **Administrateur** | administration technique de LCIT Sign |
-
-### Environnement CrashTest (tests et démonstration)
+## CrashTest (tests and demo)
 
 ```bash
-./crashtest/start.sh     # pile séparée : base, volumes, SSO de test, comptes et campagnes fictifs
-./crashtest/reset.sh     # détruit uniquement les volumes CrashTest et recharge le jeu de données
+./crashtest/start.sh     # separate stack: own database and volumes, mock SSO, fictional people and campaigns
+./crashtest/reset.sh     # destroys only the CrashTest volumes and reloads the dataset
 ```
 
-CrashTest est le **seul** endroit où existent le Mock SSO, le faux annuaire, Alice, Bob et les autres personnes, groupes et campagnes fictifs (le compte `admin` / `SecretPassword` y existe aussi). Les comptes fictifs ont pour mot de passe leur
-**prénom en minuscules** (`bob.dupont@lcit-test.local` / `bob`) et peuvent aussi se connecter en un clic par
-le SSO de test. Le jeu de données refuse de se charger hors d'une pile CrashTest. Détails :
-[`crashtest/README.md`](crashtest/README.md).
+CrashTest is the **only** place with the mock SSO, the fictional directory, Alice, Bob and the other
+fictional people, groups and campaigns. See [`crashtest/README.md`](crashtest/README.md).
 
-## Développement et tests
+## Development
 
 ```bash
-# backend
-pip install -e '.[dev]'
-ruff check . && mypy src && pytest
-
-# frontend
-cd web && npm ci && npm run dev
-npm test && npm run build     # Vitest + React Testing Library, puis tsc -b + Vite
-
-# de bout en bout, dans un vrai navigateur, sur une pile jetable (Docker requis)
-scripts/e2e.sh
+pip install -e '.[dev]' && ruff check . && mypy src && pytest     # backend
+cd web && npm ci && npm test && npm run build                     # frontend
+scripts/e2e.sh                                                    # end to end, throwaway stack (Docker)
 ```
 
-Les tests tournent dans des conteneurs Docker sur la VM d'intégration (rien à installer sur le
-poste de développement) : voir `tests/UAT/CrashTests-Sign/README.md`.
-
-## État du projet
-
-Fonctionnel de bout en bout et utilisé en test réel : SSO, documents versionnés, éditeur
-d'éléments, signatures successives avec preuve et vérification, campagnes (groupes, publipostage,
-personnes extérieures, démarrage différé, relances, renouvellements), « tout signer en un clic »,
-documents signés (téléchargement, export ZIP), procès-verbaux signés, audit chaîné, annuaires
-(local, Entra ID, Google Workspace, LDAP), messageries (SMTP, Microsoft Graph, Gmail), logo
-d'entreprise, diagnostics, HTTPS, sauvegarde/restauration, manifestes Kubernetes.
-
-**Éprouvé sur un vrai tenant** : l'annuaire Entra ID et l'envoi par Microsoft Graph.
-**Pas encore éprouvé en réel** : Google Workspace (annuaire et Gmail) et LDAP — testés contre des
-simulations. Les écarts assumés et ce qui reste à faire sont dans [`docs/design.md`](docs/design.md) §18.
+Stack: Python 3.12, FastAPI, SQLAlchemy 2, Alembic, PostgreSQL · Vite, React · Docker Compose, Kubernetes
+manifests · nginx. Tests run in Docker containers on the integration VM (see `tests/UAT/CrashTests-Sign/README.md`).
 
 ## Documentation
 
-| Document | Pour qui |
+| Document | Content |
 |---|---|
-| [`docs/guide-utilisateur.md`](docs/guide-utilisateur.md) | Signataires, opérateurs, administrateurs : utiliser LCIT Sign |
-| [`docs/design.md`](docs/design.md) | Conception détaillée, modèle de sécurité, limites connues |
-| [`docs/entra-sso-test.md`](docs/entra-sso-test.md) | Brancher Entra ID |
-| [`docs/microsoft-graph-setup.md`](docs/microsoft-graph-setup.md) | Envoyer les e-mails avec Microsoft Graph |
-| [`docs/mock-sso-real-accounts.md`](docs/mock-sso-real-accounts.md) | SSO de test avec de vrais comptes |
-
-Hors périmètre : signature avancée ou qualifiée (eIDAS), horodatage qualifié, clé privée par
-collaborateur, signature biométrique, stockage S3/MinIO.
+| [`docs/user-guide.md`](docs/user-guide.md) | Using LCIT Sign (signers, operators, administrators) |
+| [`docs/design.md`](docs/design.md) | Design, security model, known limits |
+| [`docs/entra-sso-test.md`](docs/entra-sso-test.md) | Setting up Entra ID sign-in |
+| [`docs/microsoft-graph-setup.md`](docs/microsoft-graph-setup.md) | Sending mail with Microsoft Graph |
+| [`docs/mock-sso-real-accounts.md`](docs/mock-sso-real-accounts.md) | Mock SSO with real accounts |

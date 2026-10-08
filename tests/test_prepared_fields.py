@@ -6,7 +6,7 @@ from io import BytesIO
 from PIL import Image
 from pypdf import PdfReader, PdfWriter
 from sqlalchemy import select
-from test_signatures import setup_operator_and_signer
+from test_signatures import ask_for_signature, setup_operator_and_signer
 
 from lcit_sign.models.signature import Signature
 
@@ -111,6 +111,7 @@ def test_signing_stamps_automatic_and_typed_elements_and_the_proof_covers_them(
         ]},
     )
     operator.post(f"/api/documents/versions/{version_id}/publish")
+    ask_for_signature(operator, version_id, signer.get("/api/auth/me").json()["id"])
 
     form = signer.get(f"/api/documents/versions/{version_id}/signing-form").json()
     assert [f["label"] for f in form["inputs"]] == ["Fonction"]
@@ -163,6 +164,7 @@ def test_a_value_typed_once_fills_every_element_of_the_group_when_signing(
         ]},
     )
     operator.post(f"/api/documents/versions/{version_id}/publish")
+    ask_for_signature(operator, version_id, signer.get("/api/auth/me").json()["id"])
     inputs = signer.get(f"/api/documents/versions/{version_id}/signing-form").json()["inputs"]
     assert len(inputs) == 2
     signed = signer.post(
@@ -179,6 +181,7 @@ def test_a_document_without_prepared_elements_signs_exactly_as_before(tmp_path, 
     app, operator, signer, admin = setup(tmp_path, mock_oidc_base_url)
     version_id = upload(operator, pages=1)
     operator.post(f"/api/documents/versions/{version_id}/publish")
+    ask_for_signature(operator, version_id, signer.get("/api/auth/me").json()["id"])
     signed = signer.post(f"/api/documents/versions/{version_id}/sign", json={"consent": True})
     assert signed.status_code == 201
     evidence = signer.get(f"/api/signatures/{signed.json()['id']}/evidence").json()
@@ -208,6 +211,7 @@ def test_logo_element_needs_the_company_logo_before_publishing_and_is_stamped(
     assert signer.get("/api/branding/logo").headers["content-type"] == "image/png"
 
     assert operator.post(f"/api/documents/versions/{version_id}/publish").status_code == 200
+    ask_for_signature(operator, version_id, signer.get("/api/auth/me").json()["id"])
     signed = signer.post(f"/api/documents/versions/{version_id}/sign", json={"consent": True})
     assert signed.status_code == 201, signed.text
     raw = signer.get(f"/api/signatures/{signed.json()['id']}/signed-pdf").content

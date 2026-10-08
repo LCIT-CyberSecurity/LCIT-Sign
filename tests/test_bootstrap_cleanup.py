@@ -130,6 +130,24 @@ def test_production_refuses_to_start_with_development_values(over, why):
         Settings(environment="production", **{"cookie_secure": True, **SECRETS, **over})
 
 
+@pytest.mark.parametrize("field", ["session_secret", "master_key"])
+def test_production_refuses_short_secrets_and_accepts_32_characters(field):
+    secrets = dict(SECRETS)
+    for short in ("x", "y" * 31):
+        with pytest.raises(ValidationError, match="short"):
+            Settings(environment="production", cookie_secure=True, **{**secrets, field: short})
+    Settings(environment="production", cookie_secure=True, **{**secrets, field: "z" * 32})
+
+
+@pytest.mark.parametrize("environment", ["development", "test"])
+def test_short_secrets_are_fine_outside_production(environment):
+    Settings(environment=environment, session_secret="x", master_key="y", cookie_secure=False)
+
+
+def test_crashtest_may_use_short_secrets():
+    Settings(crashtest=True, session_secret="x", master_key="y", cookie_secure=False)
+
+
 def test_production_with_real_secrets_starts():
     Settings(environment="production", cookie_secure=True, **SECRETS)
 

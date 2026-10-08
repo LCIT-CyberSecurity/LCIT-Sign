@@ -83,7 +83,7 @@ def test_deactivated_user_cannot_log_in_but_keeps_signatures(tmp_path, mock_oidc
     app, operator, signer, admin = setup_operator_and_signer(
         tmp_path, mock_oidc_base_url, master_key=TEST_MASTER_KEY
     )
-    _, version_id, _ = publish_for_signing(operator)
+    _, version_id, _ = publish_for_signing(operator, ask=signer)
     signature_id = signer.post(
         f"/api/documents/versions/{version_id}/sign", json={"consent": True}
     ).json()["id"]
@@ -108,7 +108,7 @@ def test_tampered_original_pdf_fails_verification(tmp_path, mock_oidc_base_url):
     app, operator, signer, _ = setup_operator_and_signer(
         tmp_path, mock_oidc_base_url, master_key=TEST_MASTER_KEY
     )
-    _, version_id, _ = publish_for_signing(operator)
+    _, version_id, _ = publish_for_signing(operator, ask=signer)
     signature_id = signer.post(
         f"/api/documents/versions/{version_id}/sign", json={"consent": True}
     ).json()["id"]
@@ -124,7 +124,7 @@ def test_tampered_evidence_fails_verification(tmp_path, mock_oidc_base_url):
     app, operator, signer, _ = setup_operator_and_signer(
         tmp_path, mock_oidc_base_url, master_key=TEST_MASTER_KEY
     )
-    _, version_id, _ = publish_for_signing(operator)
+    _, version_id, _ = publish_for_signing(operator, ask=signer)
     signature_id = signer.post(
         f"/api/documents/versions/{version_id}/sign", json={"consent": True}
     ).json()["id"]
@@ -142,7 +142,7 @@ def test_rotation_keeps_old_signatures_valid(tmp_path, mock_oidc_base_url):
     app, operator, signer, admin = setup_operator_and_signer(
         tmp_path, mock_oidc_base_url, master_key=TEST_MASTER_KEY
     )
-    _, version_id, _ = publish_for_signing(operator)
+    _, version_id, _ = publish_for_signing(operator, ask=signer)
     signature_id = signer.post(
         f"/api/documents/versions/{version_id}/sign", json={"consent": True}
     ).json()["id"]
@@ -300,7 +300,7 @@ def test_verify_all_cli_detects_tampering(tmp_path, mock_oidc_base_url, monkeypa
     app, operator, signer, _ = setup_operator_and_signer(
         tmp_path, mock_oidc_base_url, master_key=TEST_MASTER_KEY
     )
-    _, version_id, _ = publish_for_signing(operator)
+    _, version_id, _ = publish_for_signing(operator, ask=signer)
     signature_id = signer.post(
         f"/api/documents/versions/{version_id}/sign", json={"consent": True}
     ).json()["id"]
@@ -344,7 +344,7 @@ def test_revoking_a_key_untrusts_its_signatures_and_keeps_signing_possible(
     app, operator, signer, admin = setup_operator_and_signer(
         tmp_path, mock_oidc_base_url, master_key=TEST_MASTER_KEY
     )
-    _, version_id, _ = publish_for_signing(operator)
+    _, version_id, _ = publish_for_signing(operator, ask=signer)
     signature = signer.post(
         f"/api/documents/versions/{version_id}/sign", json={"consent": True}
     ).json()
