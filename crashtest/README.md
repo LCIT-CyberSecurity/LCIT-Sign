@@ -30,14 +30,14 @@ The identifier is the e-mail address, the **password is the first name in lowerc
 The local system account is still `admin` / `SecretPassword` (change it at first sign-in). These passwords are
 deliberately simple: the accounts are fictional and exist only in this stack. Only the hash is stored.
 
-The **mock SSO** is CrashTest's only entry point: "Continuer avec le SSO" leads to the mock, which offers the same
+The **mock SSO** is CrashTest's only entry point: "Continue with SSO" leads to the mock, which offers the same
 people in one click **and**, if you imported your configuration, the real Entra.
 
 ## Starting clean, with your real Entra
 
 ```bash
 git clone … && cd LCIT-Sign
-# 1. once, from a stack where Entra is configured (Administration > Identités & accès):
+# 1. once, from a stack where Entra is configured (Administration > Identities & access):
 ./scripts/connections.sh export --crashtest      # -> ~/.config/lcit-sign/connections.json (encrypted secrets, outside Git)
 # 2. every time you start from scratch, with the SAME master key as the export (LCIT_SIGN_MASTER_KEY):
 ./crashtest/reset.sh      # build, migrations, dataset, import of connections.json, mock SSO + Entra
@@ -45,15 +45,15 @@ git clone … && cd LCIT-Sign
 
 `start.sh` imports `connections.json`, then builds `~/.config/lcit-sign/mock-sso/mock-oidc-providers.json` (mode 600,
 outside Git, never printed) from the Entra/Google sign-in provider or, failing that, the Entra directory application:
-the mock reads this file to offer "Se connecter avec Microsoft Entra ID". On Microsoft's side the redirect URI
+the mock reads this file to offer "Sign in with Microsoft Entra ID". On Microsoft's side the redirect URI
 `<public URL>/mock-oidc/callback/entra` must be declared in the application.
 
 ## The data
 
-- **Entretiens RH 2027**: owner Alice, preparer Sophie, to be signed by Bob and Manon.
-- **NDA Juridique**: owner Claire, to be signed by Charlie.
-- **Campagne sécurité 2026**: the CISO (Erwan) and one other person have signed, the rest are asked.
-- **Politique mots de passe 2026**: recipients wait for the CISO's signature.
+- **HR interviews 2027** (*Entretiens RH 2027*): owner Alice, preparer Sophie, to be signed by Bob and Manon.
+- **Legal NDA** (*NDA Juridique*): owner Claire, to be signed by Charlie.
+- **Security campaign 2026** (*Campagne sécurité 2026*): the CISO (Erwan) and one other person have signed, the rest are asked.
+- **Password policy 2026** (*Politique mots de passe 2026*): recipients wait for the CISO's signature.
 
 To test rights: Alice sees the HR campaign, not the Legal one; Paul (operator) sees everything but not the confidential
 content unless he adds himself as preparer; Bob only sees what he is asked to sign.

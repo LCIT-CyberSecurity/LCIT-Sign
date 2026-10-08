@@ -1,6 +1,6 @@
 # User guide — LCIT Sign
 
-The interface is in French; button and menu names are quoted as they appear on screen.
+The interface is in French. Buttons and menus are named in English here, with the French label in parentheses the first time.
 
 | Profile | What they do | Chapters |
 |---|---|---|
@@ -14,11 +14,11 @@ One person may have several profiles. The left menu only shows what you may do.
 
 ## 1. Signing in
 
-1. Open LCIT Sign and click **Continuer avec Microsoft**, **Continuer avec Google** or **Continuer avec le SSO**
+1. Open LCIT Sign and click **Continue with Microsoft**, **Continue with Google** or **Continue with SSO** (*Continuer avec…*)
    (depending on your company), then pick your company account.
-2. You land on **Mes signatures**.
+2. You land on **My signatures** (*Mes signatures*).
 
-**Local sign-in** ("Connexion locale", identifier or e-mail + password) is for the system account and for people
+**Local sign-in** (*Connexion locale*, identifier or e-mail + password) is for the system account and for people
 an administrator gave a **local account**; they choose their own password at first sign-in. With no SSO
 configured, this form is the sign-in page. A session idle for one hour is closed: just sign in again.
 
@@ -26,22 +26,22 @@ configured, this form is the sign-in page. A session idle for one hour is closed
 
 ## 2. Signing a document
 
-**Mes signatures** lists *À signer* (what you are asked to sign, with the deadline), *À venir* (yours once
-someone else, e.g. the CISO, has signed; you get an e-mail then) and *Signés* (open or download the signed
+**My signatures** lists *To sign* (*À signer*: what you are asked to sign, with the deadline), *Upcoming* (*À venir*: yours once
+someone else, e.g. the CISO, has signed; you get an e-mail then) and *Signed* (*Signés*: open or download the signed
 PDF, see the proof and signers).
 
 To sign: open the document (it appears as you will sign it), fill the requested fields (marked *), tick the
-consent box, click **Signer**. You then see **Document signé** with an identifier like `SIG-3F9A12C0B7D4`, can
+consent box, click **Sign** (*Signer*). You then see **Document signed** (*Document signé*) with an identifier like `SIG-3F9A12C0B7D4`, can
 download the signed PDF and the certificate, and receive a confirmation e-mail.
 
 **Signing needs two things:** the **SIGNER** role (given to every active account by default; without it the
 signature is refused) **and** an active signature request addressed to you. There is no unasked signature:
 to sign your own document, create a campaign and designate yourself.
 
-When one request holds several documents for you, **Signer les N documents** signs them all with one consent;
+When one request holds several documents for you, **Sign the N documents** (*Signer les N documents*) signs them all with one consent;
 common questions are asked once.
 
-**Checking a signature.** *Preuve et signataires* shows who signed, in what order and when, the identity sealed
+**Checking a signature.** *Proof and signers* (*Preuve et signataires*) shows who signed, in what order and when, the identity sealed
 at signing time, the hashes of the original and signed documents and the sealing key. Any later change of the
 file would be reported.
 
@@ -49,46 +49,46 @@ file would be reported.
 
 ## 3. Requesting signatures
 
-Menu **Faire signer**: any standard user (SIGNER) can request signatures on their own documents, including
+Menu **Request signatures** (*Faire signer*): any standard user (SIGNER) can request signatures on their own documents, including
 their own. Start with a request name ("PSSI 2026"), then five screens. Everything is saved as you go; resume
-from *En préparation*; an unsent request can be deleted.
+from *In preparation* (*En préparation*); an unsent request can be deleted.
 
-1. **Signataires et planning.** Add *a specific person* (signs once for the whole request) or *each recipient* (a
+1. **Signers and schedule** (*Signataires et planning*). Add *a specific person* (signs once for the whole request) or *each recipient* (a
    list of people who each sign their own copy, built from directory groups, people, or everyone; always last).
    Signers go **in order**: position 2 is only asked after position 1, and gets a copy bearing the previous
    signature. An **external person** (first name, last name, e-mail) is flagged *external* and never touched by a
    directory sync. Optional planning: start date (a future date schedules the sending), deadline (30 days by
    default), reminders (none by default), renewal.
-2. **Documents.** Drop PDF or Word / LibreOffice files (converted to PDF), or pick from the library; a library
+2. **Documents**. Drop PDF or Word / LibreOffice files (converted to PDF), or pick from the library; a library
    document is a template and is never modified.
-3. **Préparer.** The editor: choose the signer, drag **signature**, **date**, **time**, **full name**, **first
+3. **Prepare** (*Préparer*). The editor: choose the signer, drag **signature**, **date**, **time**, **full name**, **first
    name**, **last name**, **e-mail**, **place**, **company logo** or a **text to fill in** onto the page; move and
-   resize with the mouse, fine-tune with the arrow keys, **Suppr** deletes. A fill-in field with a shared name is
+   resize with the mouse, fine-tune with the arrow keys, **Del** deletes. A fill-in field with a shared name is
    asked once across documents. Automatic elements come from the signer's **account** and the clock: nobody can
    sign under another identity.
-4. **Vérifier et envoyer.** A summary; anything missing is named precisely. **Envoyer pour signature** asks for
+4. **Review and send** (*Vérifier et envoyer*). A summary; anything missing is named precisely. **Send for signature** (*Envoyer pour signature*) asks for
    confirmation. A sent request can no longer be edited (cancel and recreate), except to add people or documents.
-5. **Documents signés.** Signed documents arrive as they come in, with their proof.
+5. **Signed documents** (*Documents signés*). Signed documents arrive as they come in, with their proof.
 
 ---
 
 ## 4. Follow-up
 
-Menu **Suivi**.
+Menu **Follow-up** (*Suivi*).
 
-- **Campagnes**: status (scheduled, sent, closed, cancelled, archived), dashboard and filters. Open a campaign to see
+- **Campaigns** (*Campagnes*): status (scheduled, sent, closed, cancelled, archived), dashboard and filters. Open a campaign to see
   who signed and who has not, **remind** one person or everyone, **add or remove people**, **add a document** to a
   running request, **download** signed PDFs or open proofs, **close**, **cancel** (nobody can sign any more, what is
   signed stays), **archive**, generate the signed **report** (PV), or **delete** (only a campaign that never produced
   a proof; otherwise it is kept and archived).
-- **Documents signés**: all signed documents for one or several campaigns, with search; **Exporter en ZIP**.
+- **Signed documents**: all signed documents for one or several campaigns, with search; **Export as ZIP**.
 
 ---
 
 ## 4a. Who sees what in a campaign
 
-Each campaign has an **owner** and possibly other **preparers** (a one-off right on that single campaign). "Créée
-par" shows the creator when it is someone else: history is never rewritten.
+Each campaign has an **owner** and possibly other **preparers** (a one-off right on that single campaign). "Created by"
+shows the creator when it is someone else: history is never rewritten.
 
 | | Owner or preparer | Signer of another campaign (or mere signer of this one) | Operator | Administrator |
 |---|---|---|---|---|
@@ -101,7 +101,7 @@ par" shows the creator when it is someone else: history is never rewritten.
 **Absence or departure.** An operator adds a colleague as preparer, then makes them owner; the previous owner stays
 preparer until removed; history, signatures and audit log are kept. **Exceptional access.** An operator who must read
 the content adds themselves as preparer of that campaign: it is **recorded in the audit log**. The campaign page has
-an *Propriétaire et préparateurs* card to do this.
+an *Owner and preparers* (*Propriétaire et préparateurs*) card to do this.
 
 ## 5. The document library
 
@@ -123,7 +123,7 @@ Menu **Administration** (administrators).
 | **OPERATOR** | Global supervision: see all campaigns, change owners and preparers; **no** confidential content unless added as preparer (audited) |
 | **ADMIN** | Everything administrative: users, directory, e-mail, keys, audit; full access |
 
-Add a person by hand with an authentication method: **SSO** (no password here) or **Compte local** (mandatory initial
+Add a person by hand with an authentication method: **SSO** (no password here) or **Local account** (mandatory initial
 password, changed at first sign-in, never displayed or logged). People can be **disabled** (and re-enabled) or
 **deleted**, except those who signed (their history is kept). The last active administrator can be neither disabled,
 deleted nor stripped of the ADMIN role. A role taken away by an administrator is never given back by a directory sync.
@@ -132,17 +132,17 @@ deleted nor stripped of the ADMIN role. A role taken away by an administrator is
 
 The company logo shows top left and on the sign-in page; replace it with an image file or go back to the LCIT logo.
 
-### Identités & accès
+### Identities & access (*Identités & accès*)
 
 One page, two independent sections, even when Microsoft Entra ID serves both:
 
-- **Connexion**: **one** SSO provider is active (Microsoft Entra ID, Google or a generic OIDC provider); the sign-in
-  page offers only it, plus the always-available **local sign-in**. Saving a provider activates it; "Utiliser ce
-  fournisseur" switches. If the server's `LCIT_SIGN_OIDC_*` variables are set they impose the SSO (the page says so).
-- **Annuaire**: **one** directory is active, the only one that syncs: **Microsoft Entra ID**, **Google Workspace** or
-  **LDAP / Active Directory**. A fresh installation has **no directory** ("Aucun annuaire configuré"); the demo
+- **Sign-in** (*Connexion*): **one** SSO provider is active (Microsoft Entra ID, Google or a generic OIDC provider); the sign-in
+  page offers only it, plus the always-available **local sign-in**. Saving a provider activates it; "Use this
+  provider" switches. If the server's `LCIT_SIGN_OIDC_*` variables are set they impose the SSO (the page says so).
+- **Directory** (*Annuaire*): **one** directory is active, the only one that syncs: **Microsoft Entra ID**, **Google Workspace** or
+  **LDAP / Active Directory**. A fresh installation has **no directory** ("No directory configured"); the demo
   directory exists only in CrashTest. Each form has help bubbles and examples; secrets are encrypted and **never
-  shown again**. The team name comes from directory groups, an attribute, or both. *Synchroniser maintenant* (or a
+  shown again**. The team name comes from directory groups, an attribute, or both. *Sync now* (or a
   schedule) runs a sync; someone who disappears from the directory is **disabled**, never deleted; people added by
   hand or external are never touched.
 
@@ -166,25 +166,25 @@ reminds you while the system account still has its initial password.
 
 See the [README](../README.md). On first start:
 
-1. Sign in with the local system account (`admin`, via "Connexion locale"), initial password `SecretPassword`: the app
+1. Sign in with the local system account (`admin`, via the local sign-in), initial password `SecretPassword`: the app
    asks you to **change it at once** (strong password required) and reminds you at every sign-in until you do. A fresh
    installation contains **only this account**: local sign-in, no SSO, no directory, no fictional person or group.
 2. Set up the SSO (see [`entra-sso-test.md`](entra-sso-test.md)); the sign-in page then shows your provider's button.
 3. Under **Administration**: connect the directory and e-mail, import the logo, give roles.
-4. Under **Faire signer**: a first test request with two colleagues.
+4. Under **Request signatures**: a first test request with two colleagues.
 
 ## FAQ
 
-**I do not see "Faire signer".** You need the SIGNER role, given by default to every active account; an administrator can
-give it back (*Administration → Utilisateurs*).
+**I do not see "Request signatures".** You need the SIGNER role, given by default to every active account; an administrator can
+give it back (*Administration → Users*).
 
-**I did not receive the "to sign" e-mail.** Check *Administration → E-mail* (send a test) and that the request is not
-scheduled for a future date. The document is always in *Mes signatures*.
+**I did not receive the "to sign" e-mail.** Check *Administration → Email* (send a test) and that the request is not
+scheduled for a future date. The document is always in *My signatures*.
 
-**"Ce document vous est demandé par plusieurs campagnes."** The same document is asked twice by two requests: open it from
-the wanted request (*À signer*); each request is signed separately.
+**"This document is requested by several campaigns."** The same document is asked twice by two requests: open it from
+the wanted request (*To sign*); each request is signed separately.
 
-**A signature is refused with "La clé maître du serveur ne correspond pas…".** The server master key was changed without
+**A signature is refused with "the server master key does not match…".** The server master key was changed without
 the signing key following: tell an administrator, who can renew the signing key. Nothing is signed until this is fixed.
 
 **Can I cancel a signature?** No, a signature is final. You can cancel the **request** for people who have not signed yet.

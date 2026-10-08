@@ -64,7 +64,7 @@ if the cookie is not `Secure`. Secrets can also be given as files (`LCIT_SIGN_*_
 
 **First access.** A fresh installation contains only the local account `admin`, with the initial password
 `SecretPassword`, which must be changed at first sign-in. There is no SSO, no directory and no sample data. Sign in
-locally, then configure *Administration → Identités & accès* (SSO, directory) and *Email*.
+locally, then configure *Administration → Identities & access* (SSO, directory) and *Email*.
 
 Update: `git pull && docker compose up -d --build`. Backup and restore: `scripts/backup.sh`, `scripts/restore.sh`.
 
