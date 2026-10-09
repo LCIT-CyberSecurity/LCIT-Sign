@@ -15,7 +15,7 @@ from lcit_sign.models.login_provider import LoginProvider
 from lcit_sign.models.user import Role, User
 from lcit_sign.services.audit import append_audit_event
 from lcit_sign.services.crypto import encrypt_secret
-from lcit_sign.services.sso import environment_sso
+from lcit_sign.services.sso import callback_path, environment_sso
 
 router = APIRouter(prefix="/admin/login-providers", tags=["login"])
 _admin = require_roles(Role.ADMIN)
@@ -32,9 +32,9 @@ class ProviderRequest(BaseModel):
     client_secret: str | None = Field(default=None, max_length=2000)
 
 
-def _redirect_uri(request: Request) -> str:
+def _redirect_uri(request: Request, provider: str) -> str:
     base: str = request.app.state.settings.public_base_url
-    return base.rstrip("/") + "/api/auth/callback"
+    return base.rstrip("/") + callback_path(provider)
 
 
 def _payload(provider: str, row: LoginProvider | None, request: Request) -> dict[str, Any]:
@@ -46,7 +46,7 @@ def _payload(provider: str, row: LoginProvider | None, request: Request) -> dict
         "tenant_id": (row.tenant_id or "") if row else "",
         "updated_at": row.updated_at.isoformat() if row and row.updated_at else None,
         # To register on the provider's side.
-        "redirect_uri": _redirect_uri(request),
+        "redirect_uri": _redirect_uri(request, provider),
     }
 
 

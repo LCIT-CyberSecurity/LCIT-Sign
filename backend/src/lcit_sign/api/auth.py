@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -35,14 +36,15 @@ from lcit_sign.services.local_auth import (
     change_password,
     check_credentials,
 )
-from lcit_sign.services.sso import SsoConfig, available_sso, resolve_sso
+from lcit_sign.services.sso import SsoConfig, available_sso, callback_path, resolve_sso
 
+logger = logging.getLogger(__name__)
 router = APIRouter(tags=["auth"])
 
 
-def _redirect_uri(request: Request) -> str:
+def _redirect_uri(request: Request, key: str) -> str:
     settings: Settings = request.app.state.settings
-    return settings.public_base_url.rstrip("/") + "/api/auth/callback"
+    return settings.public_base_url.rstrip("/") + callback_path(key)
 
 
 def _require_oidc_configured(
@@ -68,7 +70,7 @@ async def login(
             status.HTTP_503_SERVICE_UNAVAILABLE, "SSO provider unreachable"
         ) from exc
     auth_request = build_authorization_request(
-        metadata, client_id=sso.client_id, redirect_uri=_redirect_uri(request)
+        metadata, client_id=sso.client_id, redirect_uri=_redirect_uri(request, sso.key)
     )
 
     response = Response(status_code=status.HTTP_302_FOUND)
@@ -96,9 +98,12 @@ async def login(
 
 
 @router.get("/auth/callback")
+@router.get("/auth/callback/{provider}")
 async def callback(
     request: Request, code: str, state: str, db: DbSession = Depends(get_db)
 ) -> Response:
+    # The provider in the path only gives each one its own registered address: the signed login
+    # cookie, set at /auth/login, is what says which one this sign-in is for.
     settings: Settings = request.app.state.settings
 
     raw_flow_cookie = request.cookies.get(LOGIN_FLOW_COOKIE)
@@ -123,16 +128,17 @@ async def callback(
         claims = await exchange_code(
             metadata,
             code=code,
-            redirect_uri=_redirect_uri(request),
+            redirect_uri=_redirect_uri(request, sso.key),
             client_id=sso.client_id,
             client_secret=sso.client_secret,
             code_verifier=flow["code_verifier"],
             expected_nonce=flow["nonce"],
         )
-    except OidcError:
+    except OidcError as exc:
+        logger.warning("SSO sign-in failed (%s): %s", sso.key, exc)
         append_audit_event(
             db, action="LOGIN_FAILURE", result="FAILURE",
-            metadata={"reason": "oidc_exchange_failed"},
+            metadata={"reason": "oidc_exchange_failed", "detail": str(exc)[:500]},
             source_ip=request.client.host if request.client else None,
         )
         db.commit()

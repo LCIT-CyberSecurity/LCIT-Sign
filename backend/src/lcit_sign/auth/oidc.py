@@ -120,7 +120,7 @@ async def exchange_code(
             },
         )
         if token_response.status_code != 200:
-            raise OidcError("Token exchange failed")
+            raise OidcError(f"Token exchange failed: {_provider_error(token_response)}")
         token_data = token_response.json()
         id_token = token_data.get("id_token")
         if not id_token:
@@ -148,6 +148,16 @@ async def exchange_code(
         raise OidcError("ID token nonce does not match the login attempt")
 
     return identity_from_claims(dict(claims), default_issuer=metadata.issuer)
+
+
+def _provider_error(response: httpx.Response) -> str:
+    """The provider's own error (code and description, never a secret), for logs and audit."""
+    try:
+        body = response.json()
+    except ValueError:
+        return f"HTTP {response.status_code}"
+    description = " ".join(str(body.get("error_description", "")).split())[:300]
+    return f"HTTP {response.status_code} {body.get('error', '')}: {description}"
 
 
 def _looks_like_email(value: object) -> bool:

@@ -27,6 +27,13 @@ def entra_issuer(tenant: str) -> str:
     return f"https://login.microsoftonline.com/{tenant}/v2.0"
 
 
+def callback_path(key: str) -> str:
+    """The return address the provider is told: Microsoft Entra ID has its own (an Entra
+    application often already has /api/auth/callback registered as a single-page app, which Entra
+    refuses to mix with a secret); every other sign-in keeps the historical one."""
+    return "/api/auth/callback/entra" if key == "entra" else "/api/auth/callback"
+
+
 @dataclass(frozen=True)
 class SsoConfig:
     key: str  # entra | google | sso | test

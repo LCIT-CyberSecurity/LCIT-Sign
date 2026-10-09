@@ -48,7 +48,8 @@ def test_microsoft_and_google_are_stored_encrypted_and_only_one_is_active(
     put = admin.put("/api/admin/login-providers/entra", json={
         "client_id": CLIENT, "tenant_id": TENANT, "client_secret": "s3cret-value-xyz"})
     assert put.status_code == 200 and "s3cret" not in put.text
-    assert put.json()["redirect_uri"] == "http://testserver/api/auth/callback"
+    # Entra has its own return address; the others keep the historical one.
+    assert put.json()["redirect_uri"] == "http://testserver/api/auth/callback/entra"
     assert put.json()["active"] is True
     # Saving a second provider makes it the one in use; the first stays configured, inactive.
     assert admin.put("/api/admin/login-providers/google", json={
@@ -197,3 +198,22 @@ def test_the_mock_sso_gets_its_real_accounts_from_the_stored_connections(
         "client_secret": "login-secret-value"})
     assert exported()["entra"]["client_secret"] == "login-secret-value"  # the sign-in app wins
     get_settings.cache_clear()
+
+
+def test_each_provider_is_told_its_own_return_address():
+    from lcit_sign.services.sso import callback_path
+
+    assert callback_path("entra") == "/api/auth/callback/entra"
+    for key in ("google", "sso", "test"):
+        assert callback_path(key) == "/api/auth/callback"
+
+
+def test_the_providers_own_error_is_kept_for_the_logs():
+    import httpx
+
+    from lcit_sign.auth.oidc import _provider_error
+
+    body = {"error": "invalid_client", "error_description": "AADSTS700025: public\r\nclient"}
+    response = httpx.Response(401, json=body)
+    assert _provider_error(response) == "HTTP 401 invalid_client: AADSTS700025: public client"
+    assert _provider_error(httpx.Response(502, text="bad gateway")) == "HTTP 502"
