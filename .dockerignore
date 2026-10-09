@@ -1,0 +1,9 @@
+.git
+.env
+.env.*
+certs
+secrets
+backups
+**/node_modules
+**/dist
+**/__pycache__

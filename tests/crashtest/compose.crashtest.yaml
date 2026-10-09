@@ -1,0 +1,50 @@
+# The CrashTest stack, on top of compose.yaml (see tests/crashtest/start.sh): its own database
+# (whose name ends with _crashtest), the mock SSO wired as the SSO, and the flag that lets the
+# dataset be loaded. A real SSO (LCIT_SIGN_OIDC_* set in the environment) takes the place of the mock. Never used for a real installation.
+services:
+  postgres:
+    environment:
+      POSTGRES_DB: lcit_sign_crashtest
+
+  api:
+    environment:
+      LCIT_SIGN_CRASHTEST: "true"
+      LCIT_SIGN_DATABASE_URL: postgresql+psycopg://lcit_sign:${LCIT_SIGN_DB_PASSWORD:-crashtest-only-password}@postgres:5432/lcit_sign_crashtest
+      LCIT_SIGN_OIDC_ISSUER: ${LCIT_SIGN_OIDC_ISSUER:-http://mock-oidc:8080}
+      LCIT_SIGN_OIDC_CLIENT_ID: ${LCIT_SIGN_OIDC_CLIENT_ID:-lcit-sign-crashtest}
+      LCIT_SIGN_OIDC_CLIENT_SECRET: ${LCIT_SIGN_OIDC_CLIENT_SECRET:-crashtest-only-client-secret}
+      LCIT_SIGN_BOOTSTRAP_ADMIN: ""
+    volumes:
+      - ./tests/crashtest:/crashtest:ro
+
+  # Fake OpenID Connect provider of the CrashTest stack (a normal installation has none; it lives
+  # here, not in compose.yaml). tests/crashtest/start.sh starts it with the crashtest profile.
+  # "dev-sso" is the former name of the same profile.
+  mock-oidc:
+    build:
+      context: tests/crashtest/mock_oidc
+    image: ${LCIT_SIGN_PREFIX:-lcit-sign}-mock-oidc:latest
+    container_name: ${LCIT_SIGN_PREFIX:-lcit-sign}-mock-oidc
+    profiles: ["crashtest", "dev-sso"]
+    # The secrets folder is private to you (mode 700): to read its providers file the mock runs
+    # as your user. Set MOCK_OIDC_UID=$(id -u) in .env when you use real accounts.
+    user: "${MOCK_OIDC_UID:-10001}"
+    environment:
+      MOCK_OIDC_ISSUER: http://mock-oidc:8080
+      MOCK_OIDC_PUBLIC_BASE_URL: ${LCIT_SIGN_PUBLIC_BASE_URL:-http://localhost:4180}/mock-oidc
+      # Real accounts (Entra, Google, LDAP) behind the mock sign-in: which ones, and their
+      # secrets, come from a JSON file in ./secrets (outside Git; see docs/mock-sso-real-accounts.md).
+      # Codes only ever go to the app itself.
+      MOCK_OIDC_PROVIDERS_FILE: /run/secrets/lcit-sign/mock-oidc-providers.json
+      MOCK_OIDC_ALLOWED_REDIRECTS: ${LCIT_SIGN_PUBLIC_BASE_URL:-http://localhost:4180}/api/auth/callback
+    volumes:
+      - ${LCIT_SIGN_SECRETS_DIR:-./secrets}:/run/secrets/lcit-sign:ro
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      start_period: 5s
+      retries: 5
+    restart: unless-stopped

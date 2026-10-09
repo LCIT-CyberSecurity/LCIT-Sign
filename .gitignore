@@ -18,8 +18,8 @@ htmlcov/
 
 # Node / frontend
 node_modules/
-web/dist/
-web/*.tsbuildinfo
+frontend/dist/
+frontend/*.tsbuildinfo
 
 # Editors / OS
 .DS_Store
@@ -34,3 +34,4 @@ certs.backup/
 certificate-installer.log
 backups/
 secrets/
+compose.override.yaml
