@@ -445,7 +445,7 @@ test("directory settings explain themselves with a bubble and an example", async
   const hint = page.getByRole("button", { name: "Aide : ID du tenant" });
   await hint.hover();
   await expect(page.getByRole("tooltip").filter({ hasText: "ID de locataire" })).toBeVisible();
-  await expect(page.getByRole("tooltip").filter({ hasText: "73405479-f042" })).toBeVisible();
+  await expect(page.getByRole("tooltip").filter({ hasText: "XXXXXXXX-XXXX" })).toBeVisible();
 });
 
 test("an operator drops several PDFs on the documents page", async ({ page }) => {

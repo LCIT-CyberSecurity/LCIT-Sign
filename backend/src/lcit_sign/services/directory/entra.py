@@ -223,7 +223,7 @@ def validate(fields: dict[str, str], secret: str | None) -> None:
     tenant, client = fields.get("tenant_id", "").strip(), fields.get("client_id", "").strip()
     if not (_GUID.match(tenant) or _DOMAIN.match(tenant)):
         raise ValueError(
-            "L'ID du tenant doit ressembler à 73405479-f042-45d7-8149-c90341261b65 "
+            "L'ID du tenant doit ressembler à XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX "
             "(Entra → Vue d'ensemble → ID de locataire) ou à votre domaine "
             "(entreprise.onmicrosoft.com)."
         )
@@ -235,7 +235,7 @@ def validate(fields: dict[str, str], secret: str | None) -> None:
     if not _GUID.match(client):
         raise ValueError(
             "L'ID de l'application (client) doit être un code du type "
-            "9a8b7c6d-5e4f-4321-b0a9-8c7d6e5f4a3b : page « Vue d'ensemble » de l'application "
+            "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX : page « Vue d'ensemble » de l'application "
             "dans Entra, ligne « ID de l'application (client) »."
         )
     if secret is not None:
@@ -279,7 +279,7 @@ SPEC = ConnectorSpec(
             "L'identifiant de votre annuaire Microsoft. "
             "Entra → Vue d'ensemble → « ID de locataire » "
             "(ou le nom de votre domaine .onmicrosoft.com).",
-            "73405479-f042-45d7-8149-c90341261b65",
+            "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX",
         ),
         FieldSpec(
             "client_id",
@@ -287,7 +287,7 @@ SPEC = ConnectorSpec(
             "L'identifiant de l'application que vous avez déclarée : Entra → Inscriptions "
             "d'applications → votre application → « ID de l'application (client) ». Ce n'est ni "
             "l'ID d'objet, ni l'ID du secret.",
-            "9a8b7c6d-5e4f-4321-b0a9-8c7d6e5f4a3b",
+            "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX",
         ),
         team_selector_field(),
         FieldSpec(

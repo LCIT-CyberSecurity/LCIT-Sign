@@ -119,11 +119,12 @@ def put_provider(
     if provider == "entra":
         if not (_GUID.match(tenant) or _DOMAIN.match(tenant)):
             raise HTTPException(
-                422, "L'ID du tenant doit ressembler à 73405479-f042-45d7-8149-c90341261b65"
+                422, "L'ID du tenant doit ressembler à XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
             )
         if not _GUID.match(client_id):
             raise HTTPException(
-                422, "L'ID de l'application (client) a la forme 333a1a3e-1d45-4661-…"
+                422,
+                "L'ID de l'application (client) a la forme XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX",
             )
     elif not client_id.endswith(".apps.googleusercontent.com"):
         raise HTTPException(422, "L'ID client Google se termine par .apps.googleusercontent.com")

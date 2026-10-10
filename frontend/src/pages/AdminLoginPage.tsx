@@ -105,7 +105,7 @@ function ProviderCard({ item, onSaved }: { item: Provider; onSaved: () => void }
             id="login-entra-tenant"
             value={tenantId}
             onChange={(e) => setTenantId(e.target.value)}
-            placeholder="73405479-f042-45d7-8149-c90341261b65"
+            placeholder="XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
             required
           />
         </div>
@@ -118,7 +118,7 @@ function ProviderCard({ item, onSaved }: { item: Provider; onSaved: () => void }
           id={`login-${item.provider}-client`}
           value={clientId}
           onChange={(e) => setClientId(e.target.value)}
-          placeholder={item.provider === "entra" ? "333a1a3e-1d45-4661-…" : "123-abc.apps.googleusercontent.com"}
+          placeholder={item.provider === "entra" ? "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX" : "123-abc.apps.googleusercontent.com"}
           required
         />
       </div>

@@ -164,14 +164,14 @@ SPEC = MailSpec(
             "ID du tenant",
             "L'identifiant de votre annuaire Microsoft : Entra → Vue d'ensemble → « ID de "
             "locataire ».",
-            "73405479-f042-45d7-8149-c90341261b65",
+            "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX",
         ),
         FieldSpec(
             "graph_client_id",
             "ID de l'application (client)",
             "L'identifiant de l'application déclarée dans Entra (Inscriptions d'applications → "
             "« ID de l'application (client) »). Ce n'est ni l'ID d'objet, ni l'ID du secret.",
-            "9a8b7c6d-5e4f-4321-b0a9-8c7d6e5f4a3b",
+            "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX",
         ),
         FieldSpec(
             "from_address",
