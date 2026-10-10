@@ -1,6 +1,8 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { KeyRound } from "lucide-react";
 import { api, ApiError } from "../api/client";
+import ConnectionTestResult from "../components/ConnectionTestResult";
+import type { DirectoryTestResult } from "../api/types";
 import { GoogleLogo, MicrosoftLogo } from "../components/ProviderLogos";
 
 interface Provider {
@@ -24,7 +26,23 @@ function ProviderCard({ item, onSaved }: { item: Provider; onSaved: () => void }
   const [tenantId, setTenantId] = useState(item.tenant_id);
   const [secret, setSecret] = useState("");
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const [testing, setTesting] = useState(false);
+  const [test, setTest] = useState<DirectoryTestResult | null>(null);
   const label = LABELS[item.provider];
+
+  // Read-only: asks the provider whether it accepts the SAVED identifiers; nobody signs in.
+  const runTest = async () => {
+    setMessage(null);
+    setTest(null);
+    setTesting(true);
+    try {
+      setTest(await api.post<DirectoryTestResult>(`/admin/login-providers/${item.provider}/test`));
+    } catch (err) {
+      setMessage({ ok: false, text: err instanceof ApiError ? err.message : "Le test a échoué." });
+    } finally {
+      setTesting(false);
+    }
+  };
 
   const save = async (e: FormEvent) => {
     e.preventDefault();
@@ -120,6 +138,17 @@ function ProviderCard({ item, onSaved }: { item: Provider; onSaved: () => void }
         <button className="button button--primary" type="submit">
           Enregistrer
         </button>
+        {item.configured && (
+          <button
+            className="button"
+            type="button"
+            onClick={runTest}
+            disabled={testing}
+            title="Lecture seule : personne ne se connecte, rien n'est modifié"
+          >
+            {testing ? "Test en cours…" : "Tester la connexion"}
+          </button>
+        )}
         {item.configured && !item.active && (
           <button className="button" type="button" onClick={activate}>
             Utiliser ce fournisseur
@@ -131,6 +160,13 @@ function ProviderCard({ item, onSaved }: { item: Provider; onSaved: () => void }
           </button>
         )}
       </div>
+      {item.configured && (
+        <p className="muted small">
+          Le test vérifie le fournisseur et les identifiants enregistrés. L&apos;adresse de retour ne peut être
+          contrôlée que par une vraie connexion.
+        </p>
+      )}
+      {test && <ConnectionTestResult result={test} />}
       {message && (
         <p role="status" className={message.ok ? "" : "error-text"}>
           {message.text}

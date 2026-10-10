@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Download, Trash2, UserPlus, Users } from "lucide-react";
+import { Download, Trash2, Users } from "lucide-react";
 import { api, ApiError } from "../api/client";
 import ConfirmButton from "../components/ConfirmButton";
 import type { AdminUser, Role } from "../api/types";
@@ -31,26 +31,17 @@ export default function AdminUsersPage() {
   const [query, setQuery] = useState("");
   const [sourceFilter, setSourceFilter] = useState("");
   const [showDisabled, setShowDisabled] = useState(true);
-  const [email, setEmail] = useState("");
-  const [given, setGiven] = useState("");
-  const [family, setFamily] = useState("");
-  const [method, setMethod] = useState<"sso" | "local">("sso");
-  const [password, setPassword] = useState("");
-  const [newRoles, setNewRoles] = useState<Role[]>(["SIGNER"]);
   const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
 
   const load = () => {
     api.get<AdminUser[]>("/admin/users").then(setUsers);
   };
   useEffect(load, []);
 
-  const run = async (action: () => Promise<unknown>, done?: string) => {
+  const run = async (action: () => Promise<unknown>) => {
     setError(null);
-    setMessage(null);
     try {
       await action();
-      if (done) setMessage(done);
       load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "L'action a échoué.");
@@ -63,29 +54,6 @@ export default function AdminUsersPage() {
         ? api.del(`/admin/users/${user.id}/roles/${role}`)
         : api.post(`/admin/users/${user.id}/roles`, { role }),
     );
-
-  const add = async (e: FormEvent) => {
-    e.preventDefault();
-    await run(
-      () =>
-        api.post("/admin/users", {
-          email,
-          given_name: given,
-          family_name: family,
-          roles: newRoles,
-          auth_method: method,
-          password: method === "local" ? password : undefined,
-        }),
-      method === "local"
-        ? `${email} a été ajouté avec un compte local : cette personne changera son mot de passe à sa première connexion.`
-        : `${email} a été ajouté. Cette personne se connectera avec son SSO habituel.`,
-    );
-    setEmail("");
-    setGiven("");
-    setFamily("");
-    // The password never stays in the page once it has been sent.
-    setPassword("");
-  };
 
   const sources = useMemo(() => [...new Set((users ?? []).map((u) => u.source))].sort(), [users]);
   const visible = useMemo(() => {
@@ -105,8 +73,8 @@ export default function AdminUsersPage() {
             <span className="count-badge">{users?.length ?? 0}</span>
           </h1>
           <p className="page-subtitle" style={{ margin: "6px 0 0" }}>
-            Les personnes se connectent par SSO (aucun mot de passe n&apos;est alors géré ici), ou avec un compte local si
-            vous leur en créez un. Importez-les depuis votre annuaire ou ajoutez-les par e-mail.
+            Les personnes viennent de votre annuaire : importez-les, puis donnez-leur leurs rôles. Elles se connectent
+            par SSO ; aucun mot de passe n&apos;est géré ici.
           </p>
         </div>
         <Link className="button button--secondary" to="/admin/directory">
@@ -114,69 +82,7 @@ export default function AdminUsersPage() {
         </Link>
       </div>
 
-      <form className="card form" onSubmit={add} aria-label="Ajouter un utilisateur">
-        <div className="card-title">
-          <UserPlus size={16} aria-hidden="true" /> Ajouter quelqu&apos;un par e-mail
-        </div>
-        <div className="form-row">
-          <label>
-            Adresse e-mail
-            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required placeholder="prenom.nom@entreprise.fr" />
-          </label>
-          <label>
-            Prénom
-            <input value={given} onChange={(e) => setGiven(e.target.value)} />
-          </label>
-          <label>
-            Nom
-            <input value={family} onChange={(e) => setFamily(e.target.value)} />
-          </label>
-          <button className="button button--primary" type="submit" style={{ alignSelf: "end" }}>
-            Ajouter
-          </button>
-        </div>
-        <fieldset className="form-row" style={{ border: 0, padding: 0 }}>
-          <legend className="muted small">Méthode d&apos;authentification</legend>
-          <label>
-            <input type="radio" name="auth-method" checked={method === "sso"} onChange={() => setMethod("sso")} /> SSO
-          </label>
-          <label>
-            <input type="radio" name="auth-method" checked={method === "local"} onChange={() => setMethod("local")} /> Compte
-            local
-          </label>
-          {method === "local" && (
-            <label>
-              Mot de passe initial
-              <input
-                type="password"
-                value={password}
-                autoComplete="new-password"
-                minLength={8}
-                required
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </label>
-          )}
-        </fieldset>
-        <fieldset className="form-row" style={{ border: 0, padding: 0 }}>
-          <legend className="muted small">Rôles</legend>
-          {ALL_ROLES.map((role) => (
-            <label key={role}>
-              <input
-                type="checkbox"
-                checked={newRoles.includes(role)}
-                onChange={() =>
-                  setNewRoles((all) => (all.includes(role) ? all.filter((r) => r !== role) : [...all, role]))
-                }
-              />{" "}
-              {ROLE_LABELS[role]}
-            </label>
-          ))}
-        </fieldset>
-      </form>
-
       {error && <p className="error-text" role="alert">{error}</p>}
-      {message && <p className="muted" role="status">{message}</p>}
 
       <div className="filter-bar">
         <input

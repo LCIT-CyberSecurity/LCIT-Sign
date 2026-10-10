@@ -3,8 +3,10 @@ client secret is encrypted with the master key and never returned."""
 from __future__ import annotations
 
 import re
+from collections.abc import Generator
 from typing import Any
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import update
@@ -13,8 +15,10 @@ from sqlalchemy.orm import Session as DbSession
 from lcit_sign.deps import get_db, require_roles
 from lcit_sign.models.login_provider import LoginProvider
 from lcit_sign.models.user import Role, User
+from lcit_sign.services import login_diagnostics
 from lcit_sign.services.audit import append_audit_event
-from lcit_sign.services.crypto import encrypt_secret
+from lcit_sign.services.crypto import decrypt_secret, encrypt_secret
+from lcit_sign.services.directory import diagnostics
 from lcit_sign.services.sso import callback_path, environment_sso
 
 router = APIRouter(prefix="/admin/login-providers", tags=["login"])
@@ -166,3 +170,63 @@ def delete_provider(
     )
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+def get_login_http_client() -> Generator[httpx.Client]:
+    # A dependency so tests can swap in a mock transport.
+    with httpx.Client(timeout=30.0) as client:
+        yield client
+
+
+@router.post("/{provider}/test")
+def test_provider(
+    provider: str,
+    request: Request,
+    db: DbSession = Depends(get_db),
+    http_client: httpx.Client = Depends(get_login_http_client),
+    user: User = Depends(_admin),
+) -> dict[str, Any]:
+    """Check the saved provider against the provider itself: reachable, and the application
+    identifiers and secret accepted. Read-only: nobody signs in, nothing is stored but the audit
+    line. The redirect address cannot be checked without a real sign-in."""
+    if provider not in PROVIDERS:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "unknown provider")
+    row = db.get(LoginProvider, provider)
+    settings = request.app.state.settings
+    if row is None or not row.encrypted_secret:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Ce fournisseur n'est pas configuré.")
+    try:
+        secret = decrypt_secret(settings.master_key, row.encrypted_secret)
+    except Exception:  # an unreadable secret: a different master key, a damaged value
+        checks = [
+            diagnostics.fail(
+                "configuration", diagnostics.INVALID_CONFIGURATION,
+                "Le secret enregistré est illisible.",
+                action="Enregistrez à nouveau le secret client.",
+            )
+        ]
+    else:
+        if provider == "entra":
+            checks = login_diagnostics.test_entra(
+                http_client, row.tenant_id or "", row.client_id, secret
+            )
+        else:
+            checks = login_diagnostics.test_google(
+                http_client, row.client_id, secret, _redirect_uri(request, provider)
+            )
+    for check in checks:
+        diagnostics.log_check(f"login:{provider}", check)
+    result = diagnostics.result_payload(provider, checks)
+    first_problem = next((c for c in checks if c.status != diagnostics.OK), None)
+    append_audit_event(
+        db, action="LOGIN_PROVIDER_TESTED", actor_id=user.id, target_type="login_provider",
+        target_id=provider,
+        metadata={
+            "provider": provider,
+            "status": result["status"],
+            "error_code": first_problem.code if first_problem else None,
+            "provider_code": first_problem.provider_code if first_problem else None,
+        },
+    )
+    db.commit()
+    return result

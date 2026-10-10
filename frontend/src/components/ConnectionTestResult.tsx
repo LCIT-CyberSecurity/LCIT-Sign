@@ -20,6 +20,8 @@ const STEP_LABELS: Record<string, string> = {
   users_query: "Requête des utilisateurs",
   groups_query: "Requête des groupes",
   configuration: "Configuration enregistrée",
+  discovery: "Accès au fournisseur",
+  credentials: "Identifiants de l'application",
 };
 
 const SUMMARY: Record<DirectoryTestResult["status"], string> = {

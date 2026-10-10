@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import AdminLoginPage from "./AdminLoginPage";
 
@@ -80,5 +80,31 @@ describe("AdminLoginPage", () => {
     );
     render(<AdminLoginPage />);
     expect(await screen.findByTestId("sso-fixed-by-server")).toHaveTextContent("imposé par la configuration du serveur");
+  });
+
+  it("tests the saved provider, read-only, and shows each step with the provider's code", async () => {
+    vi.mocked(api.post).mockResolvedValue({
+      source: "google",
+      status: "ERROR",
+      checks: [
+        { name: "discovery", status: "OK", code: null, provider_code: null, message: "ok", action: null },
+        {
+          name: "credentials", status: "ERROR", code: "INVALID_CREDENTIALS", provider_code: "invalid_client",
+          message: "Google refuse l'ID client ou le secret.", action: "Copiez l'ID client et le secret.",
+        },
+      ],
+      access_token: "never-shown",
+    });
+    render(<AdminLoginPage />);
+    const google = await screen.findByTestId("login-provider-google");
+    // Only a configured provider can be tested.
+    expect(screen.getByTestId("login-provider-entra")).not.toHaveTextContent("Tester la connexion");
+    const user = userEvent.setup();
+    await user.click(within(google).getByRole("button", { name: "Tester la connexion" }));
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith("/admin/login-providers/google/test"));
+    expect(await within(google).findByTestId("check-credentials")).toHaveTextContent("invalid_client");
+    expect(within(google).getByTestId("check-credentials")).toHaveTextContent("Action recommandée");
+    expect(within(google).getByTestId("check-discovery")).toHaveTextContent("Accès au fournisseur");
+    expect(document.body.innerHTML).not.toContain("never-shown");
   });
 });

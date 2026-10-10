@@ -20,7 +20,7 @@ none. Everything below is done once by a cloud administrator; LCIT Sign itself o
 | Account switched off | `accountEnabled = false` | `suspended = true` |
 
 A person who disappears from the directory, or is switched off there, is **disabled** in LCIT Sign, never deleted.
-People added by hand or marked external are never touched by a sync. People are matched by e-mail address.
+People marked external are never touched by a sync. The *Users* page no longer has a form to add someone by e-mail address: people come from the directory (import them, then give them roles). People are matched by e-mail address.
 
 ## Microsoft Entra ID
 
@@ -301,6 +301,16 @@ response body ever reaches the page, the logs or the audit. The server log has o
 
 In the synchronisation history, a **failed** run has a *View detail* button: the date, the source, the error, the
 provider's code and the recommended action when the message contains them. Older runs only show their error sentence.
+
+### Testing the sign-in provider
+
+*Administration → Identities & access → Connexion* has the same **Test the connection** button on a saved Microsoft or
+Google sign-in provider. It is read-only and nobody signs in: it checks that the provider is reachable (`discovery`) and
+that it accepts the saved application ID and secret (`credentials`). For Microsoft it requests a token with the
+application's own credentials, so the usual `AADSTS…` codes appear. For Google it sends the secret with a deliberately
+invalid authorisation code: `invalid_client` means the ID or the secret is wrong, `invalid_grant` means the client was
+accepted. Only an audit line (`LOGIN_PROVIDER_TESTED`) is written. The redirect address cannot be checked without a
+real sign-in.
 
 ## Quick checks if a sync fails
 
