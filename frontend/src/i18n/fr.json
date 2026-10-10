@@ -1,0 +1,1353 @@
+{
+  "common": {
+    "save": "Enregistrer",
+    "cancel": "Annuler",
+    "delete": "Supprimer",
+    "close": "Fermer",
+    "back": "Retour",
+    "loading": "Chargement…",
+    "later": "Plus tard",
+    "confirmDelete": "Confirmer la suppression",
+    "help": "Aide : {{title}}",
+    "example": "Exemple :",
+    "saving": "Enregistrement…",
+    "sizeKb": "{{count}} Ko"
+  },
+  "roles": {
+    "signer": "Signataire",
+    "operator": "Opérateur",
+    "admin": "Administrateur",
+    "user": "Utilisateur",
+    "adminShort": "Admin"
+  },
+  "nav": {
+    "main": "Navigation principale",
+    "mySpace": "Mon espace",
+    "myRequests": "Mes demandes",
+    "administration": "Administration",
+    "mySignatures": "Mes signatures",
+    "documentToSign": "Document à signer",
+    "documents": "Documents",
+    "sign": "Faire signer",
+    "tracking": "Suivi",
+    "users": "Utilisateurs",
+    "logo": "Logo",
+    "identity": "Identités & accès",
+    "mail": "Email",
+    "mailTitle": "E-mail",
+    "audit": "Audit",
+    "signingKeys": "Clés de signature",
+    "diagnostics": "Diagnostic"
+  },
+  "shell": {
+    "tagline": "Signature & attestation",
+    "signedInAs": "Connecté en tant que {{role}}",
+    "openMenu": "Ouvrir le menu",
+    "logoAlt": "Logo"
+  },
+  "userMenu": {
+    "account": "Compte et réglages",
+    "profiles": "Profils",
+    "settings": "Réglages",
+    "appearance": "Apparence",
+    "changePassword": "Changer le mot de passe",
+    "signOut": "Se déconnecter",
+    "language": "Langue"
+  },
+  "appearance": {
+    "light": "Jour",
+    "dark": "Nuit",
+    "system": "Système"
+  },
+  "theme": {
+    "violet": {
+      "name": "Violet",
+      "summary": "La palette LCIT"
+    },
+    "blue": {
+      "name": "Bleu",
+      "summary": "Sobre, accent bleu"
+    },
+    "aurora": {
+      "name": "Aurora",
+      "summary": "Indigo, voile aurore"
+    },
+    "azure": {
+      "name": "Azur",
+      "summary": "Bleu clair, surfaces blanches"
+    },
+    "studio": {
+      "name": "Studio",
+      "summary": "Précis, presque monochrome"
+    }
+  },
+  "password": {
+    "title": "Changer le mot de passe",
+    "current": "Mot de passe actuel",
+    "new": "Nouveau mot de passe",
+    "confirm": "Confirmer le nouveau mot de passe",
+    "rules": "12 caractères au minimum, différent de l'actuel, ni courant ni répétitif.",
+    "mismatch": "Les deux nouveaux mots de passe sont différents.",
+    "failed": "Le changement a échoué.",
+    "reminder": "Le mot de passe initial du compte système n'a pas été changé : il est connu de tous.",
+    "changeNow": "Le changer maintenant"
+  },
+  "errors": {
+    "unreachable": "Le serveur ne répond pas pour le moment : réessayez dans un instant.",
+    "generic": "Une erreur est survenue."
+  },
+  "auth": {
+    "continueMicrosoft": "Continuer avec Microsoft",
+    "continueGoogle": "Continuer avec Google",
+    "continueSso": "Continuer avec le SSO",
+    "loginFailed": "Connexion impossible.",
+    "username": "Identifiant ou e-mail",
+    "password": "Mot de passe",
+    "signingIn": "Connexion…",
+    "signIn": "Se connecter",
+    "product": "Signature & attestation de documents",
+    "headline": "Signez facilement vos documents !",
+    "madeBy": "Un produit <strong>LCIT Cybersecurity</strong>",
+    "employeeSpace": "Espace de signature des collaborateurs",
+    "eyebrow": "ACCÈS SÉCURISÉ",
+    "title": "Connexion",
+    "intro": "Connectez-vous avec votre compte pour consulter et signer les documents qui vous attendent.",
+    "crashtest": "Environnement de test CrashTest : comptes fictifs. Identifiant = adresse e-mail, mot de passe = prénom en minuscules (Bob Dupont : bob.dupont@lcit-test.local / bob).",
+    "localLogin": "Connexion locale",
+    "noMethod": "Aucune méthode de connexion n'est configurée : contactez un administrateur.",
+    "stepView": "consulter",
+    "stepSign": "signer",
+    "stepProve": "prouver",
+    "protected": "Espace protégé — votre mot de passe n'est jamais saisi ici si vous passez par le SSO de votre entreprise."
+  },
+  "identity": {
+    "login": {
+      "saved": "Enregistré : c'est maintenant le fournisseur de connexion.",
+      "saveFailed": "Échec de l'enregistrement.",
+      "activateFailed": "Échec de l'activation.",
+      "deleteFailed": "Échec de la suppression.",
+      "active": "(actif)",
+      "configuredInactive": "(configuré, inactif)",
+      "notConfigured": "(non configuré)",
+      "redirectUri": "Adresse de retour à déclarer chez le fournisseur :",
+      "tenantId": "ID du tenant (annuaire)",
+      "entraClientId": "ID de l'application (client)",
+      "googleClientId": "ID client OAuth",
+      "secret": "Secret client (la valeur, pas son ID)",
+      "secretKept": "•••••••• (enregistré — laisser vide pour le garder)",
+      "useProvider": "Utiliser ce fournisseur",
+      "title": "Connexion",
+      "intro": "Comment les gens s'authentifient : <strong>un seul</strong> fournisseur SSO est actif (celui que la page de connexion propose), plus la connexion locale, toujours disponible. Les identifiants se saisissent ici : ils sont stockés chiffrés dans la base, jamais dans le code ni dans l'environnement.",
+      "fixedByServer": "Le SSO est imposé par la configuration du serveur (variables LCIT_SIGN_OIDC_*) : tant qu'elles sont définies, elles passent avant les réglages ci-dessous."
+    }
+  },
+  "directory": {
+    "local": {
+      "title": "Annuaire de démonstration",
+      "description": "Une organisation fictive (24 personnes, 6 groupes) pour tester sans rien connecter."
+    },
+    "schedule": {
+      "manual": "Manuelle",
+      "every15": "Toutes les 15 minutes",
+      "hourly": "Toutes les heures",
+      "every6h": "Toutes les 6 heures",
+      "daily": "Une fois par jour",
+      "everyMinutes": "Toutes les {{minutes}} minutes",
+      "label": "Planification — {{title}}",
+      "title": "Planification"
+    },
+    "lastRun": {
+      "never": "Jamais synchronisée",
+      "summary": "{{when}} — {{added}} ajouté(s), {{updated}} mis à jour, {{deactivated}} désactivé(s)",
+      "failed": "{{when}} — échec",
+      "other": "{{when}} — {{status}}"
+    },
+    "syncFailed": "Échec de la synchronisation",
+    "activateFailed": "Échec de l'activation",
+    "saveFailed": "Échec de l'enregistrement",
+    "state": {
+      "active": "Actif",
+      "configuredInactive": "Configuré, inactif",
+      "notConfigured": "Non configuré",
+      "inactive": "Inactif"
+    },
+    "lastSync": "Dernière synchronisation",
+    "syncing": "Synchronisation…",
+    "syncNow": "Synchroniser maintenant",
+    "use": "Utiliser cet annuaire",
+    "editConnection": "Modifier la connexion",
+    "configure": "Configurer",
+    "title": "Annuaire",
+    "intro": "D'où viennent les utilisateurs et les groupes (RH, Compta, SRE…) : <strong>un seul annuaire est actif</strong>, le seul qui se synchronise. Ils servent ensuite à cibler les campagnes. L'annuaire n'est jamais modifié, et un utilisateur disparu est désactivé, jamais supprimé.",
+    "none": "Aucun annuaire configuré. Choisissez ci-dessous Microsoft Entra ID, Google Workspace ou LDAP / OpenLDAP.",
+    "groups": "Groupes",
+    "searchGroupPlaceholder": "Rechercher un groupe…",
+    "searchGroup": "Rechercher un groupe",
+    "columns": {
+      "name": "Nom",
+      "source": "Source",
+      "members": "Membres",
+      "date": "Date",
+      "status": "Statut",
+      "users": "Utilisateurs +/~/−",
+      "groups": "Groupes +/~",
+      "memberships": "Appartenances +/−"
+    },
+    "noGroups": "Aucun groupe — lancez une synchronisation.",
+    "history": "Historique de synchronisation",
+    "form": {
+      "saved": "Configuration enregistrée (secret chiffré).",
+      "saveFailed": "Échec de l'enregistrement.",
+      "configured": "(configuré)",
+      "notConfigured": "(non configuré)",
+      "guide": "Comment préparer {{label}}, pas à pas",
+      "stored": "•••• enregistré — laisser vide pour le conserver"
+    },
+    "runStatus": {
+      "SUCCESS": "Réussie",
+      "FAILED": "Échec"
+    }
+  },
+  "identityPage": {
+    "title": "Identités & accès",
+    "subtitle": "Toute personne qui s'authentifie peut entrer dans LCIT Sign ; ce sont ses rôles qui décident de ce qu'elle y fait. Même quand Microsoft Entra sert aux deux, ce sont deux réglages distincts."
+  },
+  "mail": {
+    "connectorType": "Type de connecteur",
+    "title": "Configuration e-mail",
+    "testSent": "E-mail de test envoyé à {{to}}.",
+    "sendFailed": "Échec de l'envoi.",
+    "isolationFailed": "Le test d'isolation a échoué.",
+    "diagnostic": "Diagnostic",
+    "testConnection": "Tester la connexion",
+    "isolationTitle": "Test d'isolation (obligatoire avant mise en service)",
+    "isolationHelp": "Tente d'envoyer en tant qu'une AUTRE boîte vers l'adresse de test ci-dessous. Exchange doit refuser : sinon l'application peut envoyer au nom de n'importe qui. Voir docs/microsoft-graph-setup.md.",
+    "otherMailboxPlaceholder": "autre.boite@example.com",
+    "otherMailbox": "Autre boîte à tester",
+    "testIsolation": "Tester l'isolation",
+    "testTitle": "E-mail de test",
+    "recipientPlaceholder": "destinataire@example.com",
+    "send": "Envoyer"
+  },
+  "users": {
+    "source": {
+      "sso": "Connexion SSO",
+      "manual": "Ajouté à la main",
+      "builtin": "Compte système",
+      "password": "Compte local",
+      "local": "Démonstration",
+      "entra": "Entra ID",
+      "google": "Google Workspace",
+      "ldap": "LDAP"
+    },
+    "actionFailed": "L'action a échoué.",
+    "addedLocal": "{{email}} a été ajouté avec un compte local : cette personne changera son mot de passe à sa première connexion.",
+    "addedSso": "{{email}} a été ajouté. Cette personne se connectera avec son SSO habituel.",
+    "title": "Utilisateurs",
+    "subtitle": "Les personnes se connectent par SSO (aucun mot de passe n'est alors géré ici), ou avec un compte local si vous leur en créez un. Importez-les depuis votre annuaire ou ajoutez-les par e-mail.",
+    "importFromDirectory": "Importer depuis l'annuaire",
+    "addForm": "Ajouter un utilisateur",
+    "addByEmail": "Ajouter quelqu'un par e-mail",
+    "email": "Adresse e-mail",
+    "emailPlaceholder": "prenom.nom@entreprise.fr",
+    "givenName": "Prénom",
+    "familyName": "Nom",
+    "add": "Ajouter",
+    "authMethod": "Méthode d'authentification",
+    "sso": "SSO",
+    "localAccount": "Compte local",
+    "initialPassword": "Mot de passe initial",
+    "roles": "Rôles",
+    "searchPlaceholder": "Rechercher un nom, une adresse…",
+    "search": "Rechercher un utilisateur",
+    "sourceFilter": "Source",
+    "allSources": "Toutes",
+    "showDisabled": "Afficher les désactivés",
+    "columns": {
+      "user": "Utilisateur",
+      "source": "Source",
+      "status": "Statut"
+    },
+    "noMatch": "Aucun utilisateur ne correspond.",
+    "external": "Externe",
+    "active": "Actif",
+    "disabled": "Désactivé",
+    "lastSeen": "Vu le {{date}}",
+    "neverSignedIn": "Jamais connecté",
+    "roleOf": "{{role}} — {{email}}",
+    "confirmDisable": "Confirmer la désactivation",
+    "disable": "Désactiver",
+    "enable": "Réactiver",
+    "kept": "Conservé — {{reasons}}",
+    "keptHint": "Conservé : fait partie de l'historique ou géré par une source",
+    "blockers": {
+      "signatures": "{{count}} signature(s)",
+      "assignments": "{{count}} document(s) à signer",
+      "documents": "{{count}} document(s) créé(s)",
+      "campaigns": "{{count}} campagne(s) créée(s)",
+      "owner": "{{count}} campagne(s) dont il est propriétaire",
+      "preparer": "{{count}} campagne(s) où il est préparateur",
+      "reports": "{{count}} procès-verbal(aux) généré(s)",
+      "source": "géré par la source « {{source}} »"
+    }
+  },
+  "audit": {
+    "title": "Audit",
+    "chainValid": "Chaîne intègre",
+    "chainBroken": "Chaîne corrompue",
+    "columns": {
+      "date": "Date",
+      "action": "Action",
+      "actor": "Acteur",
+      "target": "Cible",
+      "result": "Résultat"
+    }
+  },
+  "keys": {
+    "title": "Clés de signature",
+    "rotating": "Rotation…",
+    "rotate": "Faire tourner la clé",
+    "revokeFailed": "La révocation a échoué.",
+    "revokeHelp": "Révoquer une clé retire la confiance aux signatures qu'elle a produites (utile après une compromission). Si c'est la clé active, une nouvelle clé est créée d'abord.",
+    "columns": {
+      "id": "Identifiant",
+      "status": "Statut",
+      "created": "Créée le",
+      "retired": "Retirée le"
+    },
+    "confirmRevoke": "Confirmer la révocation",
+    "revoke": "Révoquer",
+    "status": {
+      "ACTIVE": "Active",
+      "RETIRED": "Retirée",
+      "REVOKED": "Révoquée"
+    }
+  },
+  "branding": {
+    "uploaded": "Logo enregistré : il apparaît dès maintenant en haut à gauche.",
+    "uploadFailed": "L'envoi du logo a échoué.",
+    "reverted": "Le logo LCIT est de retour.",
+    "title": "Logo",
+    "cardTitle": "Le logo de votre entreprise",
+    "help": "Il remplace le logo LCIT en haut à gauche, sur la page de connexion et sur les documents signés qui comportent un logo. Image PNG ou JPEG, 512 Ko au plus, d'au moins 16 px ; un fond transparent (PNG) rend mieux.",
+    "currentAlt": "Logo actuel",
+    "defaultAlt": "Logo LCIT par défaut",
+    "yours": "Votre logo",
+    "default": "Logo LCIT par défaut",
+    "change": "Changer le logo",
+    "choose": "Choisir mon logo",
+    "confirmRevert": "Oui, revenir au logo LCIT",
+    "revert": "Revenir au logo LCIT"
+  },
+  "diagnostics": {
+    "title": "Diagnostic",
+    "checking": "Vérification…",
+    "recheck": "Revérifier",
+    "lastCheck": "Dernière vérification : {{date}}",
+    "component": {
+      "application": "Application",
+      "database": "PostgreSQL",
+      "filesystem": "Système de fichiers",
+      "signing_key": "Clé de signature",
+      "oidc": "SSO (OIDC)",
+      "directory": "Annuaire",
+      "smtp": "E-mail",
+      "worker": "Tâches de fond",
+      "builtin_admin": "Administrateur système"
+    },
+    "detail": {
+      "storageNotWritable": "Le dossier de stockage n'est pas accessible en écriture",
+      "readWrite": "Test de lecture/écriture",
+      "noMasterKey": "La clé maître n'est pas configurée",
+      "noActiveKey": "Pas encore de clé active (créée à la première signature)",
+      "masterKeyMismatch": "La clé maître ne correspond pas à la clé de signature enregistrée",
+      "activeKey": "Clé active {{id}}",
+      "noIssuer": "L'émetteur (issuer) n'est pas configuré",
+      "discoveryUnreachable": "Le point de découverte est injoignable",
+      "discoveryHttp": "Le point de découverte a répondu HTTP {{status}}",
+      "discoveryOk": "Point de découverte joignable",
+      "noSync": "Aucune synchronisation n'a encore eu lieu",
+      "syncOk": "Dernière synchronisation {{source}} réussie ({{when}})",
+      "syncBad": "Dernière synchronisation {{source}} : {{status}} ({{when}})",
+      "mailNone": "Le connecteur e-mail n'est pas configuré",
+      "mailFailed": "{{failed}} notification(s) en échec et {{retry}} en nouvel essai",
+      "mailOk": "Aucune notification en échec",
+      "workerOff": "Le worker de tâches de fond est désactivé",
+      "workerNoCycle": "Aucun cycle terminé pour le moment",
+      "workerStale": "Le worker n'a pas terminé de cycle récemment",
+      "workerOk": "Dernier cycle terminé",
+      "adminOff": "L'administrateur système est désactivé",
+      "adminUnused": "L'administrateur système n'est pas utilisé",
+      "adminDefaultPassword": "Le mot de passe initial du compte système n'a pas été changé",
+      "passwordChanged": "Mot de passe changé",
+      "version": "Version {{v}}"
+    }
+  },
+  "serverErrors": {
+    "notAuthenticated": "Vous n'êtes pas connecté.",
+    "sessionExpired": "Votre session a expiré : reconnectez-vous.",
+    "userInactive": "Utilisateur introuvable ou désactivé.",
+    "insufficientRole": "Votre rôle ne permet pas cette action.",
+    "ssoNotConfigured": "Le SSO n'est pas configuré.",
+    "ssoUnreachable": "Le fournisseur SSO est injoignable.",
+    "invalidLoginState": "État de connexion invalide : recommencez.",
+    "loginFailed": "La connexion a échoué.",
+    "accountDisabled": "Ce compte est désactivé",
+    "tooManyAttempts": "Trop de tentatives, réessayez plus tard",
+    "badCredentials": "Identifiant ou mot de passe incorrect",
+    "invalidEmail": "Adresse e-mail invalide",
+    "userExists": "Un utilisateur avec cette adresse existe déjà",
+    "localNeedsPassword": "Un compte local a besoin d'un mot de passe",
+    "passwordTooShort": "Le mot de passe doit faire au moins {{min}} caractères",
+    "ssoNoPassword": "Un compte SSO n'a pas de mot de passe ici",
+    "userNotFound": "Utilisateur introuvable.",
+    "cannotDisableSelf": "Vous ne pouvez pas désactiver votre propre compte",
+    "cannotDeleteSelf": "Vous ne pouvez pas supprimer votre propre compte",
+    "lastAdminDisable": "C'est le dernier administrateur actif : il ne peut pas être désactivé",
+    "lastAdminRole": "C'est le dernier administrateur actif : son rôle ne peut pas être retiré",
+    "lastAdmin": "C'est le dernier administrateur actif",
+    "userCannotBeDeleted": "Cet utilisateur ne peut pas être supprimé ({{reasons}}). Désactivez-le à la place.",
+    "keyNotFound": "Clé de signature introuvable.",
+    "keyRevoked": "Cette clé est déjà révoquée.",
+    "masterKey": "La clé maître (LCIT_SIGN_MASTER_KEY) n'est pas configurée.",
+    "mailNotConfigured": "Le connecteur e-mail n'est pas configuré.",
+    "graphOnly": "Seul un connecteur Microsoft Graph peut passer le test d'isolation.",
+    "smtpRejected": "Cible SMTP refusée : {{why}}",
+    "testMailFailed": "L'envoi de l'e-mail de test a échoué : {{why}}",
+    "campaignNotFound": "Campagne introuvable.",
+    "campaignForbidden": "Vous ne pouvez pas agir sur cette campagne",
+    "campaignConfidential": "Le contenu de cette campagne est confidentiel : il faut en être le propriétaire ou un préparateur.",
+    "notDraft": "La campagne n'est plus un brouillon.",
+    "campaignFinished": "Cette campagne est terminée : elle ne se modifie plus",
+    "onlyRunning": "Seule une campagne en cours se modifie ainsi",
+    "onlyDraftOrPublished": "Seule une version de document en brouillon ou publiée peut être ajoutée à une campagne.",
+    "docAlreadySent": "Ce document est déjà envoyé : il ne se retire plus.",
+    "docAlreadySentShort": "Ce document est déjà envoyé.",
+    "docNotInCampaign": "Ce document n'est pas dans la campagne.",
+    "noDocuments": "La campagne n'a aucun document à signer.",
+    "emptyPopulation": "Aucun destinataire n'est ciblé.",
+    "remindersActiveOnly": "Seule une campagne en cours peut envoyer des relances.",
+    "closeActiveOnly": "Seule une campagne en cours peut être clôturée.",
+    "campaignCannotDelete": "Cette campagne ne peut pas être supprimée ({{reasons}}).{{tail}}",
+    "archiveClosedOnly": "Seule une campagne clôturée ou annulée peut être archivée",
+    "cannotCancel": "La campagne ne peut pas être annulée dans son état actuel.",
+    "personDisabled": "Cette personne est désactivée : un administrateur doit la réactiver.",
+    "userNotFoundOrDisabled": "Utilisateur introuvable ou désactivé",
+    "noSignerRole": "{{name}} n'a pas le rôle Signataire (ni Opérateur, ni Admin) : donnez-lui d'abord ce rôle.",
+    "alreadyOwnerOrPreparer": "{{name}} est déjà propriétaire ou préparateur",
+    "ownerStays": "Le propriétaire ne se retire pas : changez d'abord de propriétaire.",
+    "notPreparer": "Cette personne n'est pas préparateur de la campagne",
+    "docUnusableInCampaign": "Un document de la campagne n'est plus utilisable",
+    "deadlineAfterStart": "L'échéance doit être après la date de début.",
+    "docUnusable": "Ce document n'est plus utilisable",
+    "creatorGone": "Le créateur de la campagne n'existe plus",
+    "docNotFound": "Document introuvable.",
+    "versionNotFound": "Version du document introuvable.",
+    "docConfidential": "Ce document est confidentiel : il n'est pas dans vos campagnes.",
+    "draftOnlyPublish": "Seule une version en brouillon peut être publiée.",
+    "logoNotConfigured": "Ce document comporte un logo d'entreprise, mais aucun logo n'est configuré (Administration → Logo).",
+    "alreadyArchived": "Cette version est déjà archivée.",
+    "usedByCampaign": "Une campagne en cours utilise encore cette version.",
+    "versionIsEvidence": "Cette version fait partie de la preuve et ne peut pas être supprimée ({{reasons}}). Archivez-la à la place.",
+    "documentIsEvidence": "Ce document contient des versions qui font partie de la preuve ({{reasons}}). Archivez les versions concernées à la place.",
+    "notAuthorizedView": "Vous n'avez pas le droit de voir cette version du document.",
+    "contentMissing": "Le contenu du document est introuvable dans le stockage.",
+    "publishedLocked": "Les éléments d'une version publiée ne peuvent plus être modifiés",
+    "noLogo": "Aucun logo n'est configuré.",
+    "providerNotConfigured": "Non configuré.",
+    "unknownProvider": "Fournisseur inconnu.",
+    "secretRequired": "Le secret client est à renseigner",
+    "secretLooksLikeId": "Ceci ressemble à un identifiant, pas au secret : copiez la VALEUR du secret client (visible une seule fois à sa création), pas son ID.",
+    "tenantShape": "L'ID du tenant doit ressembler à {{example}}",
+    "appIdShape": "L'ID de l'application (client) a la forme {{example}}",
+    "googleIdShape": "L'ID client Google se termine par .apps.googleusercontent.com",
+    "reportNotFound": "Procès-verbal introuvable.",
+    "signingNotConfigured": "La signature n'est pas configurée.",
+    "signAllClosed": "Cette campagne n'est plus ouverte à la signature",
+    "consentRequired": "Votre consentement explicite est nécessaire pour signer.",
+    "nothingToSign": "Rien à signer pour vous dans cette campagne.",
+    "notAuthorizedSignature": "Vous n'avez pas le droit d'accéder à cette signature.",
+    "assignmentNotFound": "Demande de signature introuvable.",
+    "publishedOnly": "Seule une version publiée peut être signée.",
+    "noActiveRequest": "Aucune demande de signature active pour ce document",
+    "severalCampaigns": "Ce document vous est demandé par plusieurs campagnes : ouvrez-le depuis la demande de signature voulue pour préciser laquelle vous signez.",
+    "alreadySigned": "Vous avez déjà signé cette version du document.",
+    "notYourTurn": "Ce document n'est pas encore à signer : {{who}} doit signer d'abord",
+    "signatureNotFound": "Signature introuvable.",
+    "noSignedDocs": "Aucun document signé pour cette sélection.",
+    "tooManyDocs": "Trop de documents pour un seul export ({{n}}, {{max}} au maximum) : choisissez moins de campagnes ou affinez la recherche.",
+    "exportTooBig": "L'export dépasse la taille maximale : choisissez moins de campagnes.",
+    "directoryNone": "Aucun annuaire configuré.",
+    "directoryOnlyOne": "Un seul annuaire est actif à la fois : « {{active}} ». Configurez « {{source}} » pour le rendre actif.",
+    "directoryUnknown": "Source d'annuaire inconnue : « {{source}} ».",
+    "directoryNotConfigured": "Le connecteur « {{source}} » n'est pas configuré.",
+    "directoryFill": "À renseigner : {{fields}}",
+    "directoryNoSettings": "L'annuaire local n'a pas de réglages.",
+    "directoryNoSecret": "L'annuaire local n'a pas de secret."
+  },
+  "status": {
+    "WAITING": "À venir",
+    "PENDING": "À signer",
+    "VIEWED": "Consulté",
+    "SIGNED": "Signé",
+    "EXPIRED": "Expiré",
+    "CANCELLED": "Annulé"
+  },
+  "campaign": {
+    "status": {
+      "DRAFT": "Brouillon",
+      "SCHEDULED": "Programmée",
+      "ACTIVE": "Active",
+      "CLOSED": "Clôturée",
+      "CANCELLED": "Annulée",
+      "ARCHIVED": "Archivée"
+    },
+    "target": {
+      "SPECIFIC_USERS": "Utilisateurs",
+      "GROUPS": "Groupes",
+      "GROUPS_AND_USERS": "Groupes + utilisateurs",
+      "ALL_USERS": "Tous les utilisateurs"
+    }
+  },
+  "version": {
+    "status": {
+      "DRAFT": "Brouillon",
+      "PUBLISHED": "Publiée",
+      "SUPERSEDED": "Remplacée",
+      "ARCHIVED": "Archivée"
+    }
+  },
+  "assignments": {
+    "greeting": "Bonjour {{name}}",
+    "toSign": "À signer",
+    "signed": "Signés",
+    "docsWaiting": "document(s) en attente",
+    "docsSigned": "document(s) signé(s)",
+    "signAllTitle": "Tout signer d'un coup",
+    "signAllText": "{{count}} documents de « {{name}} » : un seul consentement, chaque document a sa preuve.",
+    "signAllButton": "Signer les {{count}} documents",
+    "upToDate": "Tout est à jour",
+    "upToDateText": "Aucun document n'attend votre signature. Vous serez prévenu par e-mail dès qu'un nouveau document vous est adressé.",
+    "version": "Version {{version}} — {{campaign}}",
+    "before": "Avant le {{date}}",
+    "noDeadline": "Sans échéance",
+    "upcoming": "À venir",
+    "upcomingText": "Ce sera votre tour après la signature de {{who}}. Vous serez prévenu par e-mail.",
+    "previousStep": "l'étape précédente",
+    "signedIntro": "Ce que <strong>vous</strong> avez signé, avec le PDF signé, le certificat et la preuve.",
+    "othersSigned": "Ce que d'autres ont signé se suit dans <view>Suivi → Documents signés</view>.",
+    "noSignatureTitle": "Aucune signature pour le moment",
+    "noSignatureText": "Les documents que vous signerez apparaîtront ici, avec leur preuve vérifiable.",
+    "signedLine": "Version {{version}}{{campaign}} — signé le {{date}}",
+    "open": "Ouvrir",
+    "signedPdf": "PDF signé",
+    "proof": "Preuve et signataires"
+  },
+  "signing": {
+    "documentSigned": "Document signé",
+    "id": "Identifiant :",
+    "viewSignature": "Voir ma signature et vérifier",
+    "certificate": "Certificat",
+    "previewLabel": "Aperçu de votre signature",
+    "signedWith": "Signé avec LCIT Sign",
+    "signer": "Signataire :",
+    "email": "E-mail :",
+    "date": "Date :",
+    "atSigning": "à l'instant de la signature",
+    "fillBefore": "À renseigner avant de signer",
+    "optional": "(facultatif)",
+    "automatic": "Seront apposés automatiquement sur le document :",
+    "defaultFieldLabel": "Texte",
+    "consentDefault": "J'atteste avoir pris connaissance de ce document.",
+    "inProgress": "Signature en cours…",
+    "sign": "Signer",
+    "failed": "La signature a échoué.",
+    "auto": {
+      "SIGNATURE": "votre signature",
+      "DATE": "la date de signature",
+      "FULL_NAME": "votre nom",
+      "EMAIL": "votre e-mail",
+      "LOGO": "le logo de l'entreprise"
+    }
+  },
+  "signatureDetail": {
+    "checks": {
+      "original_document_hash": "Le document original est intact",
+      "signed_document_hash": "Le PDF signé est intact",
+      "evidence_hash": "La preuve n'a pas été modifiée",
+      "cryptographic_signature": "La signature cryptographique est valide",
+      "signing_key_trusted": "La clé de signature est digne de confiance",
+      "metadata_consistent": "Les métadonnées sont cohérentes"
+    },
+    "subtitle": "Version {{version}}{{campaign}}",
+    "notFound": "Signature introuvable.",
+    "verifyFailed": "La vérification a échoué.",
+    "pdfTitle": "PDF signé — {{title}}",
+    "whoSigned": "Qui a signé ce document ?",
+    "you": "(vous)",
+    "signedOn": "a signé le {{date}}",
+    "notYetTurn": "pas encore son tour",
+    "mustSign": "doit encore signer",
+    "others": "{{count}} autre(s) destinataire(s), dont {{signed}} ont signé.",
+    "everyoneSigned": "Tout le monde a signé.",
+    "signaturesRemain": "Il reste des signatures à recueillir.",
+    "yourCopy": "Ce PDF est <strong>votre exemplaire</strong> : il porte les signatures de ceux qui ont signé avant vous.",
+    "trackCampaign": "Toute la campagne se suit dans <view>Suivi</view>.",
+    "signature": "Signature",
+    "id": "Identifiant",
+    "signer": "Signataire",
+    "date": "Date",
+    "pdfHash": "Empreinte du PDF signé",
+    "signingKey": "Clé de signature",
+    "evidenceJson": "Preuve (JSON)",
+    "integrity": "Vérification d'intégrité",
+    "integrityHelp": "Recalcule les empreintes du document et de la preuve et contrôle la signature cryptographique.",
+    "verifyNow": "Vérifier maintenant",
+    "valid": "Signature valide",
+    "invalid": "Intégrité invalide"
+  },
+  "dashboard": {
+    "label": "Tableau de bord",
+    "activeCampaigns": "Campagnes actives",
+    "closedHint": "{{count}} terminée(s)",
+    "expected": "Signatures attendues",
+    "notViewedHint": "{{count}} non consultée(s)",
+    "done": "Signatures réalisées",
+    "rateHint": "{{rate}} % des attendues",
+    "late": "En retard",
+    "remindersHint": "{{count}} relance(s) envoyée(s)",
+    "rate": "Taux de signature",
+    "split": "Répartition des signatures attendues",
+    "signedLegend": "Signées",
+    "waiting": "En attente",
+    "notViewed": "Non consultées"
+  },
+  "signatures": {
+    "everyRecipient": "Chaque destinataire",
+    "theSigner": "le signataire {{role}}",
+    "placeFor": "Placez une signature pour {{who}} sur « {{title}} »."
+  },
+  "blockers": {
+    "running": "elle est en cours ou programmée : annulez-la d'abord",
+    "recordedSignatures": "{{count}} signature(s) enregistrée(s)",
+    "reportsCount": "{{count}} procès-verbal(aux)",
+    "usedByCampaign": "utilisé par la campagne « {{name}} »"
+  },
+  "uploads": {
+    "hint": "PDF, Word ou LibreOffice, plusieurs à la fois",
+    "refused": "Formats acceptés : PDF, Word (.docx, .doc) et LibreOffice (.odt).",
+    "dropAria": "Déposer des fichiers ou parcourir",
+    "dropTitle": "Glissez vos documents ici",
+    "dropBrowse": "ou cliquez pour parcourir"
+  },
+  "documents": {
+    "title": "Documents",
+    "intro": "La bibliothèque de vos documents. Pour les faire signer, allez dans <sign>Faire signer</sign> : vous y choisissez qui signe, déposez ou reprenez les documents et placez les éléments.",
+    "addAria": "Ajouter des documents",
+    "options": "Options",
+    "optionsHint": "— titre, version, catégorie (facultatif)",
+    "titleField": "Titre",
+    "titleHint": "(repris du nom du fichier si vide)",
+    "version": "Version",
+    "category": "Catégorie",
+    "description": "Description",
+    "remove": "Retirer {{name}}",
+    "importDoc": "Importer le document",
+    "importDocs": "Importer {{count}} documents",
+    "added": "ajouté à la bibliothèque",
+    "uploading": "envoi…",
+    "waiting": "en attente",
+    "uploadFailed": "L'envoi a échoué.",
+    "deleteFailed": "La suppression a échoué.",
+    "archiveFailed": "L'archivage a échoué.",
+    "searchPlaceholder": "Rechercher un document, une catégorie…",
+    "search": "Rechercher un document",
+    "sort": "Tri",
+    "sortAlpha": "Ordre alphabétique",
+    "sortRecent": "Plus récents d'abord",
+    "noMatch": "Aucun document ne correspond.",
+    "deleteDocument": "Supprimer le document",
+    "columns": {
+      "version": "Version",
+      "status": "Statut",
+      "size": "Taille"
+    },
+    "publish": "Publier",
+    "archive": "Archiver",
+    "kept": "Conservée — {{reasons}}",
+    "keptHint": "Une version signée ou utilisée fait partie de la preuve"
+  },
+  "connectors": {
+    "dir": {
+      "entra": {
+        "label": "Microsoft Entra ID (Office 365)",
+        "description": "Lit les utilisateurs et les groupes de votre tenant Microsoft, en lecture seule, avec une application déclarée dans Entra (permissions User.Read.All, Group.Read.All et GroupMember.Read.All de type Application, avec consentement administrateur).",
+        "fields": {
+          "tenant_id": {
+            "label": "ID du tenant",
+            "help": "L'identifiant de votre annuaire Microsoft. Entra → Vue d'ensemble → « ID de locataire » (ou le nom de votre domaine .onmicrosoft.com).",
+            "example": "73405479-f042-45d7-8149-c90341261b65"
+          },
+          "client_id": {
+            "label": "ID de l'application (client)",
+            "help": "L'identifiant de l'application que vous avez déclarée : Entra → Inscriptions d'applications → votre application → « ID de l'application (client) ». Ce n'est ni l'ID d'objet, ni l'ID du secret.",
+            "example": "9a8b7c6d-5e4f-4321-b0a9-8c7d6e5f4a3b"
+          },
+          "team_selector": {
+            "label": "D'où vient le nom de l'équipe ?",
+            "help": "Les équipes (compta, RH, achats…) servent à cibler une campagne en une fois. Elles peuvent venir des groupes de l'annuaire, ou d'un champ renseigné sur chaque personne (son service, son unité d'organisation…).",
+            "example": "Les groupes de l'annuaire",
+            "options": {
+              "groups": "Les groupes de l'annuaire",
+              "attribute": "Un attribut de chaque personne",
+              "both": "Les deux"
+            }
+          },
+          "team_attribute": {
+            "label": "Attribut qui donne l'équipe",
+            "help": "Le champ de chaque utilisateur Entra dont la valeur est le nom de l'équipe. Utilisé si vous avez choisi « un attribut » ou « les deux ».",
+            "example": "Service (department)",
+            "options": {
+              "department": "Service (department)",
+              "officeLocation": "Bureau (officeLocation)",
+              "companyName": "Société (companyName)",
+              "jobTitle": "Fonction (jobTitle)",
+              "city": "Ville (city)"
+            }
+          }
+        },
+        "secret": {
+          "label": "Secret client",
+          "help": "La VALEUR du secret créé dans Entra → Certificats et secrets (colonne « Valeur », pas « ID de secret »). Elle n'est montrée qu'une fois à la création ; ici elle est chiffrée et jamais réaffichée.",
+          "example": "abC8Q~xYzTn3kLw0pQe5vRsU9dFgHjKlMnOpQr"
+        }
+      },
+      "google": {
+        "label": "Google Workspace",
+        "description": "Lit les utilisateurs et les groupes de votre domaine Google, en lecture seule, avec un compte de service autorisé par délégation à l'échelle du domaine (consoles Google Cloud et Admin).",
+        "fields": {
+          "admin_email": {
+            "label": "E-mail d'un administrateur",
+            "help": "L'adresse d'un administrateur Google Workspace au nom duquel le compte de service lit l'annuaire (délégation à l'échelle du domaine).",
+            "example": "admin@votre-domaine.fr"
+          },
+          "team_selector": {
+            "label": "D'où vient le nom de l'équipe ?",
+            "help": "Les équipes (compta, RH, achats…) servent à cibler une campagne en une fois. Elles peuvent venir des groupes de l'annuaire, ou d'un champ renseigné sur chaque personne (son service, son unité d'organisation…).",
+            "example": "Les groupes de l'annuaire",
+            "options": {
+              "groups": "Les groupes de l'annuaire",
+              "attribute": "Un attribut de chaque personne",
+              "both": "Les deux"
+            }
+          },
+          "team_attribute": {
+            "label": "Attribut qui donne l'équipe",
+            "help": "Ce qui sert de nom d'équipe pour chaque personne : son unité d'organisation (OU) dans la console Admin, ou son champ « Service ». Utilisé si vous avez choisi « un attribut » ou « les deux ».",
+            "example": "Unité d'organisation (OU)",
+            "options": {
+              "orgunit": "Unité d'organisation (OU)",
+              "department": "Service (champ « Service » de l'utilisateur)"
+            }
+          }
+        },
+        "secret": {
+          "label": "Clé du compte de service (JSON)",
+          "help": "Le contenu du fichier JSON téléchargé depuis Google Cloud (IAM → Comptes de service → Clés → Créer une clé). Il contient « client_email » et « private_key ». Chiffré ici, jamais réaffiché.",
+          "example": "{\"type\": \"service_account\", \"client_email\": \"…\", \"private_key\": \"…\"}"
+        },
+        "guide": {
+          "0": "Console Google Cloud (console.cloud.google.com) : choisissez ou créez un projet, puis « APIs et services » → « Bibliothèque » → activez « Admin SDK API ».",
+          "1": "« IAM et administration » → « Comptes de service » → « Créer un compte de service » (par exemple lcit-sign-annuaire). Aucun rôle n'est à lui donner dans Google Cloud.",
+          "2": "Ouvrez ce compte → onglet « Clés » → « Ajouter une clé » → « Créer une clé » → JSON. Le fichier téléchargé : collez son contenu dans « Clé du compte de service » ci-dessous.",
+          "3": "Notez l'« ID client » du compte de service (un long nombre, sur sa page de détails, « Paramètres avancés » ou « Détails »).",
+          "4": "Console d'administration (admin.google.com), avec un super-administrateur : « Sécurité » → « Contrôle des accès et des données » → « Contrôles des API » → « Gérer la délégation à l'échelle du domaine » → « Ajouter ». Mettez l'ID client noté à l'étape 4 et, comme champs d'application OAuth (séparés par des virgules) : https://www.googleapis.com/auth/admin.directory.user.readonly,https://www.googleapis.com/auth/admin.directory.group.readonly,https://www.googleapis.com/auth/admin.directory.group.member.readonly",
+          "5": "Ci-dessous, « E-mail d'un administrateur » : l'adresse d'un super-administrateur du domaine (un compte dédié à la lecture de l'annuaire est préférable). Le compte de service lit l'annuaire en son nom, en lecture seule ; rien n'est modifié.",
+          "6": "Enregistrez, puis lancez une synchronisation. Si Google répond « unauthorized_client » : l'étape 5 n'est pas encore prise en compte (quelques minutes) ou un champ d'application est mal recopié. Si la création de clé est refusée à l'étape 3, une politique de votre organisation l'interdit : demandez à son administrateur de l'autoriser."
+        }
+      },
+      "ldap": {
+        "label": "LDAP / Active Directory",
+        "description": "Lit les utilisateurs et les groupes d'un annuaire LDAP (OpenLDAP, 389 DS, Active Directory…) avec un compte de service en lecture seule. La connexion est chiffrée et le certificat du serveur est toujours vérifié.",
+        "fields": {
+          "server_url": {
+            "label": "Adresse du serveur",
+            "help": "L'adresse de l'annuaire. ldaps:// (port 636) chiffre la connexion ; ldap:// (port 389) n'est accepté qu'avec StartTLS.",
+            "example": "ldaps://ldap.entreprise.fr:636"
+          },
+          "start_tls": {
+            "label": "StartTLS",
+            "help": "Chiffrer une connexion ldap:// avec StartTLS (inutile avec ldaps://).",
+            "example": "non",
+            "options": {
+              "no": "Non",
+              "yes": "Oui"
+            }
+          },
+          "bind_dn": {
+            "label": "Compte de liaison (DN)",
+            "help": "Le DN du compte de service en lecture seule que LCIT Sign utilise pour lire l'annuaire. Le mot de passe se saisit plus bas.",
+            "example": "cn=lcit-sign,ou=services,dc=entreprise,dc=fr"
+          },
+          "base_dn": {
+            "label": "Base de recherche (DN)",
+            "help": "Le point de l'annuaire à partir duquel chercher les personnes et les groupes.",
+            "example": "dc=entreprise,dc=fr"
+          },
+          "user_filter": {
+            "label": "Filtre des personnes",
+            "help": "Quelles entrées sont des utilisateurs. Par défaut toutes les personnes ; sous Active Directory : (&(objectClass=user)(objectCategory=person)).",
+            "example": "(objectClass=person)"
+          },
+          "email_attribute": {
+            "label": "Attribut e-mail",
+            "help": "Le champ qui contient l'adresse e-mail (sert à reconnaître la personne à sa connexion SSO).",
+            "example": "mail"
+          },
+          "given_name_attribute": {
+            "label": "Attribut prénom",
+            "help": "Le champ LDAP qui contient le prénom de la personne.",
+            "example": "givenName"
+          },
+          "family_name_attribute": {
+            "label": "Attribut nom",
+            "help": "Le champ LDAP qui contient le nom de famille de la personne.",
+            "example": "sn"
+          },
+          "id_attribute": {
+            "label": "Attribut identifiant stable",
+            "help": "Un champ qui ne change jamais pour une personne, pour la reconnaître même si elle change de nom ou de dossier. OpenLDAP : entryUUID ; Active Directory : objectGUID.",
+            "example": "entryUUID"
+          },
+          "team_selector": {
+            "label": "D'où vient le nom de l'équipe ?",
+            "help": "Les équipes (compta, RH, achats…) servent à cibler une campagne en une fois. Elles peuvent venir des groupes de l'annuaire, ou d'un champ renseigné sur chaque personne (son service, son unité d'organisation…).",
+            "example": "Les groupes de l'annuaire",
+            "options": {
+              "groups": "Les groupes LDAP",
+              "attribute": "Un attribut de chaque personne (ex : department)",
+              "container": "Le dossier (OU) où se trouve la personne"
+            }
+          },
+          "group_filter": {
+            "label": "Filtre des groupes",
+            "help": "Quelles entrées sont des groupes (une équipe = un groupe). Laissez vide si les équipes ne viennent pas des groupes.",
+            "example": "(|(objectClass=groupOfNames)(objectClass=group))"
+          },
+          "member_attribute": {
+            "label": "Attribut des membres",
+            "help": "Dans un groupe, le champ qui liste ses membres (leurs DN).",
+            "example": "member"
+          },
+          "team_attribute": {
+            "label": "Attribut qui donne l'équipe",
+            "help": "Le champ de chaque personne dont la valeur est le nom de l'équipe. Utilisé si vous avez choisi « un attribut ».",
+            "example": "department"
+          }
+        },
+        "secret": {
+          "label": "Mot de passe du compte de liaison",
+          "help": "Le mot de passe du compte de service en lecture seule. Chiffré ici, jamais réaffiché."
+        }
+      }
+    },
+    "mail": {
+      "smtp": {
+        "label": "SMTP",
+        "description": "Envoie par n'importe quel serveur SMTP : un relais interne (Postfix, Exchange…) ou le service SMTP d'un fournisseur. La connexion peut être chiffrée (TLS ou STARTTLS).",
+        "fields": {
+          "host": {
+            "label": "Serveur SMTP",
+            "help": "L'adresse du serveur qui envoie les e-mails.",
+            "example": "smtp.entreprise.fr"
+          },
+          "port": {
+            "label": "Port",
+            "help": "Le port du serveur : 587 (STARTTLS, le plus courant), 465 (TLS implicite) ou 25.",
+            "example": "587"
+          },
+          "use_starttls": {
+            "label": "STARTTLS",
+            "help": "Chiffre la connexion après l'avoir ouverte (port 587). À cocher sauf si le serveur ne le permet pas."
+          },
+          "use_tls": {
+            "label": "TLS implicite",
+            "help": "Chiffre la connexion dès l'ouverture (port 465). Ne se combine pas avec STARTTLS."
+          },
+          "username": {
+            "label": "Utilisateur",
+            "help": "Le compte qui s'identifie auprès du serveur. Laissez vide si le serveur n'exige pas d'identification (relais interne).",
+            "example": "lcit-sign@entreprise.fr"
+          },
+          "from_address": {
+            "label": "Adresse d'expédition",
+            "help": "L'adresse qui apparaît comme expéditeur des e-mails de signature.",
+            "example": "signature@entreprise.fr"
+          },
+          "reply_to": {
+            "label": "Répondre à",
+            "help": "Facultatif : l'adresse qui reçoit les réponses (l'expéditeur n'est souvent pas lu).",
+            "example": "support@entreprise.fr"
+          }
+        },
+        "secret": {
+          "label": "Mot de passe SMTP",
+          "help": "Le mot de passe du compte ci-dessus. Chiffré ici, jamais réaffiché. Laissez vide si le serveur n'exige pas d'identification."
+        }
+      },
+      "graph": {
+        "label": "Microsoft 365 (Graph)",
+        "description": "Envoie depuis une boîte de votre tenant Microsoft 365 avec l'application déclarée dans Entra (permission Mail.Send de type Application, avec consentement administrateur). Limitez-la à cette seule boîte avec une stratégie d'accès Exchange.",
+        "fields": {
+          "graph_tenant_id": {
+            "label": "ID du tenant",
+            "help": "L'identifiant de votre annuaire Microsoft : Entra → Vue d'ensemble → « ID de locataire ».",
+            "example": "73405479-f042-45d7-8149-c90341261b65"
+          },
+          "graph_client_id": {
+            "label": "ID de l'application (client)",
+            "help": "L'identifiant de l'application déclarée dans Entra (Inscriptions d'applications → « ID de l'application (client) »). Ce n'est ni l'ID d'objet, ni l'ID du secret.",
+            "example": "9a8b7c6d-5e4f-4321-b0a9-8c7d6e5f4a3b"
+          },
+          "from_address": {
+            "label": "Boîte d'envoi dédiée",
+            "help": "La boîte (de préférence une boîte partagée, sans licence) au nom de laquelle les e-mails partent. Elle doit exister dans votre tenant.",
+            "example": "signature@entreprise.fr"
+          },
+          "reply_to": {
+            "label": "Répondre à",
+            "help": "Facultatif : l'adresse qui reçoit les réponses.",
+            "example": "support@entreprise.fr"
+          }
+        },
+        "secret": {
+          "label": "Secret client",
+          "help": "La VALEUR du secret créé dans Entra → Certificats et secrets (colonne « Valeur »). Chiffrée ici, jamais réaffichée.",
+          "example": "abC8Q~xYzTn3kLw0pQe5vRsU9dFgHjKlMnOpQr"
+        }
+      },
+      "gmail": {
+        "label": "Google Workspace (Gmail)",
+        "description": "Envoie depuis une boîte de votre domaine Google Workspace avec un compte de service autorisé par délégation à l'échelle du domaine, pour la seule portée « gmail.send » (console Admin → Sécurité → Contrôle des accès et des données → Contrôles des API).",
+        "fields": {
+          "from_address": {
+            "label": "Boîte d'envoi",
+            "help": "La boîte Gmail au nom de laquelle les e-mails partent : le compte de service agit pour elle. Elle doit exister dans votre domaine Google Workspace.",
+            "example": "signature@votre-domaine.fr"
+          },
+          "reply_to": {
+            "label": "Répondre à",
+            "help": "Facultatif : l'adresse qui reçoit les réponses.",
+            "example": "support@votre-domaine.fr"
+          }
+        },
+        "secret": {
+          "label": "Clé du compte de service (JSON)",
+          "help": "Le contenu du fichier JSON téléchargé depuis Google Cloud (IAM → Comptes de service → Clés → Créer une clé). Chiffré ici, jamais réaffiché.",
+          "example": "{\"type\": \"service_account\", \"client_email\": \"…\", \"private_key\": \"…\"}"
+        }
+      }
+    }
+  },
+  "counts": {
+    "documents": "{{count}} document(s)",
+    "elementsPlaced": "{{count}} élément(s) placé(s)"
+  },
+  "tracking": {
+    "subtitle": "Le suivi et le reporting de ce qui a été envoyé à la signature : qui a signé, qui reste à faire.",
+    "newRequest": "Nouvelle demande de signature",
+    "campaigns": "Campagnes",
+    "signedDocuments": "Documents signés",
+    "columns": {
+      "campaign": "Campagne",
+      "status": "Statut",
+      "target": "Cible",
+      "progress": "Avancement",
+      "launched": "Lancée le",
+      "deadline": "Échéance"
+    },
+    "nothingSent": "Rien n'a encore été envoyé à la signature.",
+    "signedOf": "{{signed}} signé(s) sur {{total}}",
+    "startingOn": "dès le {{date}}"
+  },
+  "signPage": {
+    "subtitle": "Faites signer un ou plusieurs documents : choisissez qui signe, déposez les documents, placez les éléments, puis envoyez.",
+    "newRequest": "Nouvelle demande de signature",
+    "namePlaceholder": "Nom de la demande (ex : PSSI 2026)",
+    "name": "Nom de la demande",
+    "start": "Commencer",
+    "inPreparation": "En préparation",
+    "noDrafts": "Aucune demande en préparation.",
+    "draftSummary": "{{documents}} document(s) — {{signers}} signataire(s) défini(s)",
+    "resume": "Reprendre",
+    "confirmDelete": "Oui, supprimer cette demande",
+    "deleteFailed": "La suppression a échoué.",
+    "followedIn": "Les demandes envoyées se suivent dans <view>Suivi</view>."
+  },
+  "signAll": {
+    "defaultPlace": "Lieu",
+    "defaultText": "Texte",
+    "notFound": "Campagne introuvable.",
+    "failed": "La signature a échoué.",
+    "signedCount": "{{count}} document(s) signé(s)",
+    "ownProof": "Chaque signature a sa propre preuve, que vous retrouvez dans « Mes signatures ».",
+    "toSign": "À signer",
+    "title": "Tout signer — {{name}}",
+    "nothing": "Rien à signer pour vous dans cette campagne pour le moment.",
+    "documentsToSign": "{{count}} document(s) à signer",
+    "othersWaiting": "{{count}} autre(s) document(s) vous attendent, mais ce n'est pas encore votre tour.",
+    "toFill": "À renseigner",
+    "oneAnswer": "(une seule réponse, reprise sur {{where}})",
+    "documentsN": "{{count}} documents",
+    "consentDefault": "J'atteste avoir pris connaissance de ces documents.",
+    "signAllButton": "Signer les {{count}} documents"
+  },
+  "campaignDetail": {
+    "opFailed": "L'opération a échoué.",
+    "reminded_one": "{{count}} relance envoyée.",
+    "reminded_other": "{{count}} relances envoyées.",
+    "nobodyToRemind": "Personne à relancer : ceux qui ont signé, ou dont ce n'est pas encore le tour, ne sont pas relancés.",
+    "alreadyIn": "Ces personnes étaient déjà dans la campagne.",
+    "added_one": "{{count}} personne ajoutée : elle reçoit son exemplaire.",
+    "added_other": "{{count}} personnes ajoutées : elles reçoivent leur exemplaire.",
+    "removed": "{{name}} n'est plus sollicité(e) ({{cancelled}} ; ce qui était signé est conservé).",
+    "cancelledCopies_one": "{{count}} exemplaire annulé",
+    "cancelledCopies_other": "{{count}} exemplaires annulés",
+    "cancelled": "Campagne annulée : plus personne ne peut signer. Ce qui était signé est conservé.",
+    "archived": "Campagne archivée.",
+    "deleteFailed": "La suppression a échoué.",
+    "policies": "Politiques",
+    "scheduledTitle": "Programmée",
+    "scheduledText": "Cette campagne démarre le <strong>{{date}}</strong>. Personne n'est prévenu avant. Pour la changer, annulez-la et recréez-en une.",
+    "confirmCancelSchedule": "Oui, annuler la programmation",
+    "cancelSchedule": "Annuler la programmation",
+    "editTitle": "Modifier la campagne en cours",
+    "editHelp": "Vous pouvez ajouter des personnes ou des documents, et ne plus solliciter quelqu'un. Ce qui a déjà été signé est conservé.",
+    "addPeople": "Ajouter des personnes",
+    "addToCampaign": "Ajouter à la campagne",
+    "documents": "Documents",
+    "remindLate": "Relancer les retardataires",
+    "remindSelection": "Relancer la sélection ({{count}})",
+    "close": "Clôturer",
+    "confirmCancelCampaign": "Oui, annuler la campagne",
+    "cancelCampaign": "Annuler la campagne",
+    "tracking": "Suivi",
+    "filters": {
+      "status": "Statut",
+      "all": "Tous",
+      "waiting": "Pas encore leur tour",
+      "document": "Document",
+      "group": "Groupe",
+      "viewing": "Consultation",
+      "viewed": "Consulté",
+      "notViewed": "Non consulté",
+      "overdue": "En retard"
+    },
+    "columns": {
+      "selection": "Sélection",
+      "recipient": "Destinataire",
+      "group": "Groupe",
+      "document": "Document",
+      "status": "Statut",
+      "viewed": "Consulté",
+      "signed": "Signé",
+      "reminders": "Relances"
+    },
+    "select": "Sélectionner {{name}}",
+    "after": "après {{names}}",
+    "openSignedPdf": "Ouvrir le PDF signé",
+    "download": "Télécharger",
+    "proof": "Preuve",
+    "remind": "Relancer",
+    "stopAsking": "Ne plus solliciter",
+    "removeOne": "Retirer",
+    "archive": "Archiver",
+    "confirmDeleteCampaign": "Oui, supprimer la campagne",
+    "deleteCampaign": "Supprimer la campagne",
+    "keptHint": "Une campagne signée fait partie de la preuve",
+    "kept": "Conservée — {{reasons}}",
+    "signedDocuments": "Documents signés",
+    "reports": "Procès-verbaux",
+    "generateReport": "Générer un PV"
+  },
+  "schedule": {
+    "reminder": {
+      "none": "Aucune relance",
+      "1": "Tous les jours",
+      "2": "Tous les 2 jours",
+      "7": "Toutes les semaines",
+      "14": "Toutes les 2 semaines",
+      "30": "Tous les mois"
+    },
+    "renewal": {
+      "none": "Jamais",
+      "1": "Tous les mois",
+      "3": "Tous les 3 mois",
+      "6": "Tous les 6 mois",
+      "12": "Tous les ans"
+    },
+    "deadlinePassed": "L'échéance est déjà passée.",
+    "deadlineAfterStart": "L'échéance doit être après la date de début.",
+    "startOn": "Début le {{date}}",
+    "startOnSend": "Début dès l'envoi",
+    "deadlineOn": "Échéance le {{date}}",
+    "noDeadline": "Sans échéance",
+    "reminderLine": "Relance en cas de non-réponse : {{choice}}",
+    "noReminder": "Pas de relance automatique",
+    "renewalLine": "Renouvellement : {{choice}}",
+    "noRenewal": "Pas de renouvellement",
+    "policyReminder": "Relance à J+{{first}}, puis tous les {{interval}} jours{{max}}.",
+    "policyMax": ", {{count}} fois au maximum",
+    "policyBeforeDeadline": "Relance {{count}} jour(s) avant l'échéance.",
+    "policyRenewalDays": "Renouvellement tous les {{count}} jour(s).",
+    "policyRenewalMonths": "Renouvellement tous les {{count}} mois.",
+    "startDate": "Date de début",
+    "startHint": "(aujourd'hui : dès l'envoi)",
+    "deadlineDate": "Date d'échéance",
+    "deadlineHint": "(dernier jour pour signer, 30 jours par défaut)",
+    "reminderLabel": "Relance en cas de non-réponse",
+    "renewalLabel": "Renouvellement",
+    "renewalHint": "(redemander la signature)"
+  },
+  "ownership": {
+    "title": "Propriétaire et préparateurs",
+    "owner": "Propriétaire",
+    "createdBy": "Créée par",
+    "preparers": "Préparateurs",
+    "noOther": "Aucun autre que le propriétaire.",
+    "confirmRemove": "Oui, retirer",
+    "confidential": "Le contenu de cette campagne (documents, PDF signés, preuves) est confidentiel : il faut en être le propriétaire ou un préparateur pour y accéder.",
+    "addPreparer": "Ajouter un préparateur",
+    "choose": "Choisir…",
+    "changeOwner": "Changer le propriétaire",
+    "confirmChange": "Oui, changer de propriétaire",
+    "change": "Changer"
+  },
+  "signRequest": {
+    "steps": {
+      "signers": "Signataires et relances",
+      "documents": "Documents",
+      "prepare": "Préparer",
+      "review": "Vérifier et envoyer",
+      "signed": "Documents signés"
+    },
+    "chooseRecipients": "Choisissez les personnes concernées (écran « Signataires et relances »).",
+    "addOneDocument": "Ajoutez au moins un document.",
+    "placeElements": "Placez les éléments (signature, date, nom…) sur : {{titles}}.",
+    "launchFailed": "Le lancement a échoué.",
+    "deleteFailed": "La suppression a échoué.",
+    "badgeScheduled": "Programmée",
+    "badgeSent": "Envoyée",
+    "badgePreparing": "En préparation",
+    "confirmDeleteRequest": "Oui, supprimer cette demande",
+    "deleteRequest": "Supprimer cette demande",
+    "signedTitle": "Documents signés",
+    "scheduledNote": "Cette demande démarre à la date prévue : rien n'est encore signé.",
+    "signedNote": "Les documents signés arrivent ici au fur et à mesure, avec leur preuve. Les relances, les ajouts de personnes ou de documents se font dans Suivi.",
+    "refresh": "Actualiser",
+    "openTracking": "Ouvrir le suivi complet",
+    "newRequest": "Nouvelle demande",
+    "forWhom": "Pour quelles personnes ? (publipostage)",
+    "peopleAsked": "Personnes sollicitées",
+    "oneSpecificPerson": "Chaque signataire est une personne précise : personne d'autre n'est sollicité.",
+    "planning": "Planning",
+    "planningHelp": "Quand cela commence, jusqu'à quand on peut signer, à quel rythme relancer ceux qui n'ont pas répondu, et s'il faut redemander la signature régulièrement. Tout est facultatif.",
+    "nextDocuments": "Suivant : les documents",
+    "backSigners": "Les signataires",
+    "nextPrepare": "Suivant : préparer les documents",
+    "backDocuments": "Les documents",
+    "nextReview": "Suivant : vérifier et envoyer",
+    "stillToPrepare": "Il reste à préparer : {{titles}}.",
+    "recap": "Récapitulatif",
+    "signersInOrder": "Signataires, dans l'ordre",
+    "modify": "Modifier",
+    "eachRecipient": "Chaque destinataire",
+    "eachRecipientCount": "Chaque destinataire ({{count}} personne(s))",
+    "eachRecipientLower": "chaque destinataire",
+    "then": ", puis ",
+    "documentsRecap": "Documents",
+    "elementsLine": "{{title}} — {{elements}}",
+    "planningRecap": "Planning",
+    "send": "Envoyer",
+    "sendSummary": "<strong>{{count}}</strong> document(s) à signer par <strong>{{who}}</strong>.",
+    "scheduledSend": "L'envoi est programmé : personne n'est prévenu avant la date de début.",
+    "immediateSend": "Les personnes concernées sont prévenues par e-mail dès l'envoi.",
+    "finalNote": "Une fois envoyée, la demande ne se modifie plus : pour changer quelque chose, on l'annule et on en crée une autre. Elle se suit ensuite dans Suivi.",
+    "backPreparation": "La préparation",
+    "confirmSchedule": "Oui, programmer",
+    "confirmSend": "Oui, envoyer maintenant",
+    "scheduleSend": "Programmer l'envoi",
+    "sendForSignature": "Envoyer pour signature"
+  },
+  "campaignDocs": {
+    "title": "Documents à faire signer",
+    "helpPrepare": "Déposez un ou plusieurs documents (PDF, Word ou LibreOffice), puis « Préparer » chacun : vous placez la signature, la date, le nom… pour chaque signataire.",
+    "helpWizard": "Déposez un ou plusieurs documents (PDF, Word ou LibreOffice), ou reprenez-en un déjà déposé. Vous placerez les éléments à signer à l'étape suivante.",
+    "none": "Aucun document pour le moment.",
+    "sent": "Envoyé",
+    "toPrepare": "À préparer : placez la signature, la date, le nom…",
+    "prepare": "Préparer",
+    "chooseSignerFirst": "Choisissez d'abord qui signe",
+    "confirmRelease": "Oui, envoyer aux signataires",
+    "release": "Envoyer ce document",
+    "confirmRemove": "Retirer de la campagne",
+    "remove": "Retirer",
+    "removeFile": "Retirer {{name}}",
+    "addDocument": "Ajouter le document",
+    "addDocuments": "Ajouter {{count}} documents",
+    "existingAria": "Document existant",
+    "reuse": "Ou reprendre un document déjà déposé…",
+    "fileError": "{{name}} : {{message}}",
+    "uploadFailed": "l'envoi a échoué.",
+    "addFailed": "L'ajout a échoué.",
+    "releaseFailed": "L'envoi a échoué."
+  },
+  "signers": {
+    "saveFailed": "L'enregistrement a échoué.",
+    "title": "Qui signe, dans l'ordre ?",
+    "help": "Choisissez les personnes dans la liste des utilisateurs : elles signent l'une après l'autre. Pour un document que <strong>chaque personne</strong> doit signer (le RSSI signe d'abord, puis chacun signe son exemplaire), ajoutez « Chaque destinataire » en dernier.",
+    "nobody": "Personne pour le moment — ajoutez au moins un signataire.",
+    "whoAtPosition": "Qui signe en position {{n}} ?",
+    "choose": "— Choisir une personne —",
+    "eachOption": "Chaque destinataire (chacun signe son exemplaire)",
+    "external": "(externe)",
+    "up": "Monter",
+    "down": "Descendre",
+    "removeSigner": "Retirer le signataire {{n}}",
+    "addPerson": "Ajouter une personne",
+    "addEach": "Ajouter « Chaque destinataire »",
+    "pickToSave": "Choisissez la personne pour enregistrer.",
+    "savedState": "Enregistré.",
+    "addExternal": "Ajouter une personne extérieure",
+    "positionName": "Signataire {{n}}"
+  },
+  "recipients": {
+    "all": "Tous les utilisateurs",
+    "groups": "Groupes de l'annuaire",
+    "selected": "— {{count}} sélectionné(s)",
+    "searchPlaceholder": "Rechercher un groupe (ex : SRE)…",
+    "searchGroup": "Rechercher un groupe",
+    "noGroup": "Aucun groupe ne correspond.",
+    "extraUsers": "Utilisateurs supplémentaires",
+    "external": "· externe",
+    "addExternal": "Ajouter une personne extérieure",
+    "count": "{{count}} destinataire(s) seront sollicités (doublons éliminés)."
+  },
+  "external": {
+    "addFailed": "L'ajout a échoué.",
+    "groupLabel": "Ajouter une personne extérieure",
+    "title": "Une personne extérieure à l'entreprise",
+    "helpTitle": "Personne extérieure",
+    "help": "Un client, un partenaire… Elle n'a pas de compte à créer : elle reçoit un e-mail et se connecte avec sa propre adresse (compte Microsoft ou Google). Son adresse doit être celle de ce compte.",
+    "givenName": "Prénom",
+    "familyName": "Nom",
+    "email": "Adresse e-mail"
+  },
+  "signedDocs": {
+    "status": {
+      "WAITING": "Pas encore son tour",
+      "PENDING": "À signer",
+      "VIEWED": "Consulté, pas signé"
+    },
+    "searchPlaceholder": "Rechercher une personne, un document, une campagne…",
+    "search": "Rechercher",
+    "downloadAll": "Tout télécharger (ZIP)",
+    "campaigns": "Campagnes",
+    "allLower": "— toutes",
+    "selectedLower": "— {{count}} sélectionnée(s)",
+    "allCampaigns": "Toutes les campagnes",
+    "signed": "Signés",
+    "left": "Reste à signer",
+    "waiting": "Pas encore leur tour",
+    "signedTitle": "Documents signés",
+    "noneSigned": "Aucun document signé pour cette sélection.",
+    "columns": {
+      "document": "Document",
+      "signer": "Signataire",
+      "campaign": "Campagne",
+      "signedOn": "Signé le",
+      "status": "Statut",
+      "deadline": "Échéance"
+    },
+    "open": "Ouvrir",
+    "proof": "Preuve",
+    "nobodyWaiting": "Personne n'a de document en attente pour cette sélection."
+  },
+  "prepareStep": {
+    "none": "Aucun document : ajoutez-en à l'étape précédente.",
+    "title": "Préparer les documents",
+    "progress": "<strong>{{done}}/{{total}}</strong> préparé(s) — placez la signature, la date, le nom… de chaque signataire",
+    "tabs": "Documents à préparer",
+    "missingSignature": "signature manquante",
+    "prepared": "préparé",
+    "toPrepare": "à préparer"
+  },
+  "kinds": {
+    "SIGNATURE": {
+      "label": "Signature",
+      "hint": "Le nom du signataire, en écriture manuscrite"
+    },
+    "DATE": {
+      "label": "Date de signature",
+      "hint": "Remplie automatiquement"
+    },
+    "FULL_NAME": {
+      "label": "Nom complet",
+      "hint": "Prénom et nom du compte"
+    },
+    "EMAIL": {
+      "label": "E-mail",
+      "hint": "Adresse du compte"
+    },
+    "TEXT": {
+      "label": "Texte libre",
+      "hint": "Saisi par le signataire"
+    },
+    "LOGO": {
+      "label": "Logo de l'entreprise",
+      "hint": "Le logo configuré par l'administrateur"
+    },
+    "automatic": "Automatique",
+    "typed": "À saisir"
+  },
+  "pdf": {
+    "cannotDisplay": "Impossible d'afficher le document.",
+    "loading": "Chargement du document…",
+    "page": "Page {{n}}"
+  },
+  "prepare": {
+    "documentNotFound": "Document introuvable.",
+    "campaignNotFound": "Campagne introuvable.",
+    "position": "Position {{n}}",
+    "everyRecipient": "Chaque destinataire",
+    "savedCount": "Enregistré — {{count}} élément(s).",
+    "saveFailed": "L'enregistrement a échoué.",
+    "needRequest": "Les éléments se préparent depuis une demande de signature : ouvrez <sign>Faire signer</sign>, choisissez qui signe, puis « Préparer » sur le document.",
+    "chooseSignersFirst": "Choisissez d'abord qui signe dans <back>la demande de signature</back>, puis revenez préparer le document.",
+    "versionLine": "<strong>{{title}}</strong> — version {{version}}",
+    "pageTitle": "Préparer le document",
+    "subtitle": "{{title}} — version {{version}}",
+    "unsaved": "Modifications non enregistrées",
+    "summary": "{{count}} élément(s) sur {{pages}} page(s)",
+    "nextDocument": "Document suivant : {{title}}",
+    "finishReview": "Terminer : vérifier et envoyer",
+    "finish": "Terminer",
+    "locked": "Version publiée : les éléments sont figés, comme le document.",
+    "palette": "Palette",
+    "whoSigns": "Qui signe ?",
+    "whoSignsHelp": "Ce sont les signataires de la campagne, dans l'ordre. Choisissez qui remplit, puis placez ses éléments. Le tampon du premier figure sur la copie du suivant.",
+    "editSigners": "Modifier les signataires",
+    "elementsToPlace": "Éléments à placer",
+    "dragHelp": "Glissez sur le document, ou cliquez puis cliquez sur la page.",
+    "readOnly": "Les destinataires et éléments sont en lecture seule.",
+    "properties": "Propriétés",
+    "selectHint": "Sélectionnez un élément sur le document pour le régler.",
+    "role": "Rôle",
+    "label": "Libellé",
+    "required": "Obligatoire",
+    "sharedKey": "Saisie partagée (clé)",
+    "sharedKeyPlaceholder": "ex : societe",
+    "sharedKeyHelp": "Les champs de même clé se remplissent une seule fois, sur tous les documents.",
+    "deleteElement": "Supprimer l'élément"
+  }
+}

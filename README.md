@@ -150,6 +150,7 @@ Stack: Python 3.12, FastAPI, SQLAlchemy 2, Alembic, PostgreSQL, Vite, React, ngi
 
 - [`docs/user/user-guide.md`](docs/user/user-guide.md): using LCIT Sign
 - [`docs/architecture/design.md`](docs/architecture/design.md): design, security model, known limits
+- [`docs/i18n.md`](docs/i18n.md): WebUI languages (French, English) and how to add a text
 - [`docs/integrations/entra-sso-test.md`](docs/integrations/entra-sso-test.md): Entra ID sign-in
 - [`docs/integrations/directory-setup.md`](docs/integrations/directory-setup.md): directory (Entra ID, Google Workspace): what to do in the cloud
 - [`docs/integrations/microsoft-graph-setup.md`](docs/integrations/microsoft-graph-setup.md): mail through Microsoft Graph
