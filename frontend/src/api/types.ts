@@ -235,6 +235,25 @@ export interface DirectorySyncRun {
   memberships_added: number;
   memberships_removed: number;
   error: string | null;
+  /** The failure as the server explains it: the sentence, the provider's code and the advice
+   *  when it has them. Absent on an older server, null when the run did not fail. */
+  error_detail?: { message: string; provider_code: string | null; action: string | null } | null;
+}
+
+/** One step of a connection test (read-only): what was tried and how it went. */
+export interface DirectoryCheck {
+  name: string;
+  status: "OK" | "WARN" | "ERROR";
+  code: string | null;
+  provider_code: string | null;
+  message: string;
+  action: string | null;
+}
+
+export interface DirectoryTestResult {
+  source: string;
+  status: "OK" | "WARN" | "ERROR";
+  checks: DirectoryCheck[];
 }
 
 /** A mail connector as the server describes it: its settings, with help for each. */

@@ -1,8 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
-import { Cloud, Database, FolderCog, Network, RefreshCw, Settings2 } from "lucide-react";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import { Cloud, Database, FolderCog, Network, Plug, RefreshCw, Settings2 } from "lucide-react";
 import { api, ApiError } from "../api/client";
+import ConnectionTestResult from "../components/ConnectionTestResult";
 import DirectoryConnectorForm from "./DirectoryConnectorForm";
-import type { DirectoryGroup, DirectorySource, DirectorySyncRun } from "../api/types";
+import type {
+  DirectoryGroup,
+  DirectorySource,
+  DirectorySyncRun,
+  DirectoryTestResult,
+} from "../api/types";
 
 interface SourceInfo {
   source: string;
@@ -68,6 +74,8 @@ function SourceCard({
   const [open, setOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [testing, setTesting] = useState(false);
+  const [test, setTest] = useState<DirectoryTestResult | null>(null);
   const Icon = info.icon;
   const ready = !info.remote || source.configured;
   const active = Boolean(source.active);
@@ -83,6 +91,20 @@ function SourceCard({
       setError(err instanceof ApiError ? err.message : "Échec de la synchronisation");
     } finally {
       setSyncing(false);
+    }
+  };
+
+  // Read-only: asks the directory for one user, one group, one member. Nothing is changed.
+  const testConnection = async () => {
+    setTesting(true);
+    setError(null);
+    setTest(null);
+    try {
+      setTest(await api.post<DirectoryTestResult>(`/admin/directory/sources/${info.source}/test`));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Le test de connexion a échoué");
+    } finally {
+      setTesting(false);
     }
   };
 
@@ -151,6 +173,16 @@ function SourceCard({
         <button className="button button--primary button--sm" onClick={sync} disabled={!ready || !active || syncing}>
           <RefreshCw size={13} aria-hidden="true" /> {syncing ? "Synchronisation…" : "Synchroniser maintenant"}
         </button>
+        {info.remote && (
+          <button
+            className="button button--secondary button--sm"
+            onClick={testConnection}
+            disabled={!source.configured || testing}
+            title="Lecture seule : aucune donnée n'est modifiée, rien n'est synchronisé"
+          >
+            <Plug size={13} aria-hidden="true" /> {testing ? "Test en cours…" : "Tester la connexion"}
+          </button>
+        )}
         {ready && !active && (
           <button className="button button--secondary button--sm" onClick={activate}>
             Utiliser cet annuaire
@@ -162,6 +194,17 @@ function SourceCard({
           </button>
         )}
       </div>
+      {info.remote && (
+        <p className="muted small" style={{ marginTop: 8 }}>
+          « Tester la connexion » lit un utilisateur, un groupe et un membre sans rien modifier ;
+          « Synchroniser maintenant » met à jour les utilisateurs et les groupes.
+        </p>
+      )}
+      {test && (
+        <div style={{ marginTop: 14 }}>
+          <ConnectionTestResult result={test} />
+        </div>
+      )}
       {info.remote && open && (
         <div style={{ marginTop: 14 }}>
           <DirectoryConnectorForm
@@ -176,11 +219,42 @@ function SourceCard({
   );
 }
 
+/** Why a synchronisation failed: the sentence, the provider's code and what to do when known. An
+ *  older run only has its sentence, shown as it is. */
+function RunDetail({ run }: { run: DirectorySyncRun }) {
+  const detail = run.error_detail ?? (run.error ? { message: run.error, provider_code: null, action: null } : null);
+  return (
+    <dl className="kv" style={{ margin: 0 }}>
+      <dt>Source</dt>
+      <dd>{run.source}</dd>
+      <dt>Date</dt>
+      <dd>{new Date(run.started_at).toLocaleString("fr-FR")}</dd>
+      <dt>Erreur</dt>
+      <dd>{detail ? detail.message : "Aucun détail enregistré."}</dd>
+      {detail?.provider_code && (
+        <>
+          <dt>Code fournisseur</dt>
+          <dd>
+            <code>{detail.provider_code}</code>
+          </dd>
+        </>
+      )}
+      {detail?.action && (
+        <>
+          <dt>Action recommandée</dt>
+          <dd>{detail.action}</dd>
+        </>
+      )}
+    </dl>
+  );
+}
+
 export default function AdminDirectoryPage() {
   const [sources, setSources] = useState<DirectorySource[]>([]);
   const [groups, setGroups] = useState<DirectoryGroup[] | null>(null);
   const [runs, setRuns] = useState<DirectorySyncRun[] | null>(null);
   const [query, setQuery] = useState("");
+  const [detailOf, setDetailOf] = useState<string | null>(null);
 
   const load = () => {
     api.get<DirectorySource[]>("/admin/directory/sources").then(setSources);
@@ -289,26 +363,50 @@ export default function AdminDirectoryPage() {
                 <th>Utilisateurs +/~/−</th>
                 <th>Groupes +/~</th>
                 <th>Appartenances +/−</th>
+                <th>Détail</th>
               </tr>
             </thead>
             <tbody>
               {runs?.map((r) => (
-                <tr key={r.id}>
-                  <td>{new Date(r.started_at).toLocaleString("fr-FR")}</td>
-                  <td>{r.source}</td>
-                  <td>
-                    <span className={`badge badge--${r.status === "SUCCESS" ? "signed" : "failed"}`}>{r.status}</span>
-                  </td>
-                  <td>
-                    {r.users_added}/{r.users_updated}/{r.users_deactivated}
-                  </td>
-                  <td>
-                    {r.groups_added}/{r.groups_updated}
-                  </td>
-                  <td>
-                    {r.memberships_added}/{r.memberships_removed}
-                  </td>
-                </tr>
+                <Fragment key={r.id}>
+                  <tr>
+                    <td>{new Date(r.started_at).toLocaleString("fr-FR")}</td>
+                    <td>{r.source}</td>
+                    <td>
+                      <span className={`badge badge--${r.status === "SUCCESS" ? "signed" : "failed"}`}>{r.status}</span>
+                    </td>
+                    <td>
+                      {r.users_added}/{r.users_updated}/{r.users_deactivated}
+                    </td>
+                    <td>
+                      {r.groups_added}/{r.groups_updated}
+                    </td>
+                    <td>
+                      {r.memberships_added}/{r.memberships_removed}
+                    </td>
+                    <td>
+                      {r.status === "FAILED" ? (
+                        <button
+                          type="button"
+                          className="button button--ghost button--sm"
+                          aria-expanded={detailOf === r.id}
+                          onClick={() => setDetailOf(detailOf === r.id ? null : r.id)}
+                        >
+                          Voir le détail
+                        </button>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                  </tr>
+                  {detailOf === r.id && (
+                    <tr data-testid={`run-detail-${r.id}`}>
+                      <td colSpan={7}>
+                        <RunDetail run={r} />
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               ))}
             </tbody>
           </table>
