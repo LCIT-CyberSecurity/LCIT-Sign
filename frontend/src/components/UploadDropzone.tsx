@@ -1,5 +1,6 @@
 import { useRef, useState, type DragEvent, type KeyboardEvent } from "react";
 import { UploadCloud } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { DOCUMENT_ACCEPT } from "../lib/uploads";
 
 /** Drop files here, or click to browse. It only hands the files over: what to do
@@ -15,6 +16,7 @@ export default function UploadDropzone({
   accept?: string;
   hint?: string;
 }) {
+  const { t } = useTranslation();
   const input = useRef<HTMLInputElement>(null);
   const [over, setOver] = useState(false);
 
@@ -40,7 +42,7 @@ export default function UploadDropzone({
       role="button"
       tabIndex={disabled ? -1 : 0}
       aria-disabled={disabled}
-      aria-label="Déposer des fichiers ou parcourir"
+      aria-label={t("uploads.dropAria")}
       data-testid="dropzone"
       onClick={() => !disabled && input.current?.click()}
       onKeyDown={onKey}
@@ -52,8 +54,8 @@ export default function UploadDropzone({
       onDrop={onDrop}
     >
       <UploadCloud size={28} aria-hidden="true" />
-      <strong>Glissez vos documents ici</strong>
-      <span className="muted small">ou cliquez pour parcourir{hint ? ` — ${hint}` : ""}</span>
+      <strong>{t("uploads.dropTitle")}</strong>
+      <span className="muted small">{t("uploads.dropBrowse")}{hint ? ` — ${hint}` : ""}</span>
       <input
         ref={input}
         type="file"

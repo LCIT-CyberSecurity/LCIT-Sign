@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+import { connectorText } from "../i18n/connectors";
 import type { ConnectorField } from "../api/types";
 
 /** The input for one connector setting, whatever its kind (text, secret, long text, choice,
@@ -5,6 +7,7 @@ import type { ConnectorField } from "../api/types";
  *  stays empty and says leaving it empty keeps it. */
 export default function ConnectorFieldControl({
   id,
+  scope,
   field,
   value,
   onChange,
@@ -12,13 +15,16 @@ export default function ConnectorFieldControl({
   stored,
 }: {
   id: string;
+  /** "dir.entra", "mail.smtp"…: where the field's texts are in the catalogue. */
+  scope: string;
   field: ConnectorField;
   value: string;
   onChange: (value: string) => void;
   secret?: boolean;
   stored?: boolean;
 }) {
-  const keep = secret && stored ? "•••• enregistré — laisser vide pour le conserver" : "";
+  const { t } = useTranslation();
+  const keep = secret && stored ? t("directory.form.stored") : "";
   const required = secret ? !stored && field.required : field.required;
   switch (field.kind) {
     case "select":
@@ -26,7 +32,7 @@ export default function ConnectorFieldControl({
         <select id={id} value={value || field.default} onChange={(e) => onChange(e.target.value)}>
           {field.options.map((o) => (
             <option key={o.value} value={o.value}>
-              {o.label}
+              {connectorText(scope, `fields.${field.name}.options.${o.value}`, o.label)}
             </option>
           ))}
         </select>

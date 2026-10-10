@@ -1,7 +1,11 @@
 import { useEffect, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { Navigate, useParams, Link } from "react-router-dom";
 import { ArrowLeft, Bell, StopCircle, FileBarChart, Download } from "lucide-react";
-import { api, ApiError } from "../api/client";
+import { api } from "../api/client";
+import { blockerText, errorText, roleLabelText } from "../i18n/errors";
+import { assignmentStatus, campaignStatus } from "../i18n/enums";
+import { formatDate, formatDateTime } from "../i18n/format";
 import CampaignDocuments from "../components/CampaignDocuments";
 import CampaignOwnership from "../components/CampaignOwnership";
 import ConfirmButton from "../components/ConfirmButton";
@@ -20,6 +24,7 @@ import type {
  *  who is waiting for an earlier signer, reminders, closing, reports. Preparing and
  *  sending is done in Signer. */
 export default function OperatorCampaignDetailPage() {
+  const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [assignments, setAssignments] = useState<CampaignAssignment[] | null>(null);
@@ -77,7 +82,7 @@ export default function OperatorCampaignDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  if (!campaign) return <p className="muted">Chargement…</p>;
+  if (!campaign) return <p className="muted">{t("common.loading")}</p>;
   // Not launched yet: it is still being prepared, in Signer.
   if (campaign.status === "DRAFT") return <Navigate to={`/sign/${campaign.id}`} replace />;
 
@@ -95,11 +100,9 @@ export default function OperatorCampaignDetailPage() {
       setNotice(await action());
       load();
     } catch (err) {
-      setProblem(err instanceof ApiError ? err.message : "L'opération a échoué.");
+      setProblem(errorText(err, "campaignDetail.opFailed"));
     }
   };
-
-  const plural = (n: number, one: string, many: string) => `${n} ${n > 1 ? many : one}`;
 
   // Everyone still outstanding, or only some people / rows.
   const remind = (body?: { assignment_ids?: string[]; user_ids?: string[] }) =>
@@ -107,8 +110,8 @@ export default function OperatorCampaignDetailPage() {
       const done = await api.post<{ reminders_queued: number }>(`/campaigns/${id}/remind`, body);
       setSelected([]);
       return done.reminders_queued === 0
-        ? "Personne à relancer : ceux qui ont signé, ou dont ce n'est pas encore le tour, ne sont pas relancés."
-        : `${plural(done.reminders_queued, "relance envoyée", "relances envoyées")}.`;
+        ? t("campaignDetail.nobodyToRemind")
+        : t("campaignDetail.reminded", { count: done.reminders_queued });
     });
 
   const addPeople = () =>
@@ -120,25 +123,28 @@ export default function OperatorCampaignDetailPage() {
       });
       setAdding(NO_RECIPIENTS);
       return done.added === 0
-        ? "Ces personnes étaient déjà dans la campagne."
-        : `${plural(done.added, "personne ajoutée", "personnes ajoutées")} : elles reçoivent leur exemplaire.`;
+        ? t("campaignDetail.alreadyIn")
+        : t("campaignDetail.added", { count: done.added });
     });
 
   const removePerson = (userId: string, name: string) =>
     run(async () => {
       const done = await api.del<{ cancelled: number }>(`/campaigns/${id}/recipients/${userId}`);
-      return `${name} n'est plus sollicité(e) (${plural(done.cancelled, "exemplaire annulé", "exemplaires annulés")} ; ce qui était signé est conservé).`;
+      return t("campaignDetail.removed", {
+        name,
+        cancelled: t("campaignDetail.cancelledCopies", { count: done.cancelled }),
+      });
     });
 
   const cancelCampaign = () =>
     run(async () => {
       await api.post(`/campaigns/${id}/cancel`);
-      return "Campagne annulée : plus personne ne peut signer. Ce qui était signé est conservé.";
+      return t("campaignDetail.cancelled");
     });
   const archiveCampaign = () =>
     run(async () => {
       await api.post(`/campaigns/${id}/archive`);
-      return "Campagne archivée.";
+      return t("campaignDetail.archived");
     });
   const deleteCampaign = async () => {
     setProblem(null);
@@ -146,7 +152,7 @@ export default function OperatorCampaignDetailPage() {
       await api.del(`/campaigns/${id}`);
       window.location.assign("/campaigns");
     } catch (err) {
-      setProblem(err instanceof ApiError ? err.message : "La suppression a échoué.");
+      setProblem(errorText(err, "campaignDetail.deleteFailed"));
     }
   };
 
@@ -166,19 +172,19 @@ export default function OperatorCampaignDetailPage() {
   return (
     <div className="stack">
       <Link to="/campaigns" className="back-link">
-        <ArrowLeft size={14} aria-hidden="true" /> Suivi
+        <ArrowLeft size={14} aria-hidden="true" /> {t("nav.tracking")}
       </Link>
 
       <div className="page-title-row">
         <h1 className="page-title">{campaign.name}</h1>
-        <span className={`badge badge--${campaign.status.toLowerCase()}`}>{campaign.status}</span>
+        <span className={`badge badge--${campaign.status.toLowerCase()}`}>{campaignStatus(campaign.status)}</span>
       </div>
 
       <CampaignOwnership campaign={campaign} onChanged={setCampaign} />
 
       {describePolicies(campaign.policies).length > 0 && (
         <div className="card">
-          <div className="card-title">Politiques</div>
+          <div className="card-title">{t("campaignDetail.policies")}</div>
           <ul className="plain-list">
             {describePolicies(campaign.policies).map((line) => (
               <li key={line}>{line}</li>
@@ -192,28 +198,29 @@ export default function OperatorCampaignDetailPage() {
 
       {campaign.status === "SCHEDULED" && (
         <div className="card" data-testid="scheduled-card">
-          <div className="card-title">Programmée</div>
+          <div className="card-title">{t("campaignDetail.scheduledTitle")}</div>
           <p>
-            Cette campagne démarre le{" "}
-            <strong>{campaign.scheduled_start ? new Date(campaign.scheduled_start).toLocaleString("fr-FR") : ""}</strong>.
-            Personne n&apos;est prévenu avant. Pour la changer, annulez-la et recréez-en une.
+            <Trans
+              i18nKey="campaignDetail.scheduledText"
+              values={{ date: campaign.scheduled_start ? formatDateTime(campaign.scheduled_start) : "" }}
+              components={{ strong: <strong /> }}
+            />
           </p>
-          <ConfirmButton confirmLabel="Oui, annuler la programmation" onConfirm={cancelCampaign}>
-            Annuler la programmation
+          <ConfirmButton confirmLabel={t("campaignDetail.confirmCancelSchedule")} onConfirm={cancelCampaign}>
+            {t("campaignDetail.cancelSchedule")}
           </ConfirmButton>
         </div>
       )}
 
       {campaign.status === "ACTIVE" && (
         <div className="card" data-testid="edit-card">
-          <div className="card-title">Modifier la campagne en cours</div>
+          <div className="card-title">{t("campaignDetail.editTitle")}</div>
           <p className="muted small">
-            Vous pouvez ajouter des personnes ou des documents, et ne plus solliciter quelqu&apos;un. Ce qui a
-            déjà été signé est conservé.
+            {t("campaignDetail.editHelp")}
           </p>
           {asked && (
             <>
-              <div className="field-label">Ajouter des personnes</div>
+              <div className="field-label">{t("campaignDetail.addPeople")}</div>
               <RecipientPicker
                 value={adding}
                 onChange={setAdding}
@@ -228,14 +235,14 @@ export default function OperatorCampaignDetailPage() {
                   onClick={() => void addPeople()}
                   disabled={!adding.allUsers && adding.groupIds.length === 0 && adding.userIds.length === 0}
                 >
-                  Ajouter à la campagne
+                  {t("campaignDetail.addToCampaign")}
                 </button>
               </div>
             </>
           )}
           {canContent && (
             <>
-              <div className="field-label">Documents</div>
+              <div className="field-label">{t("campaignDetail.documents")}</div>
               <CampaignDocuments campaign={campaign} library={library} onChanged={load} active />
             </>
           )}
@@ -245,51 +252,51 @@ export default function OperatorCampaignDetailPage() {
       {campaign.status === "ACTIVE" && (
         <div className="button-row">
           <button className="button button--secondary" onClick={() => void remind()}>
-            <Bell size={14} aria-hidden="true" /> Relancer les retardataires
+            <Bell size={14} aria-hidden="true" /> {t("campaignDetail.remindLate")}
           </button>
           {selected.length > 0 && (
             <button
               className="button button--secondary"
               onClick={() => void remind({ assignment_ids: selected })}
             >
-              <Bell size={14} aria-hidden="true" /> Relancer la sélection ({selected.length})
+              <Bell size={14} aria-hidden="true" /> {t("campaignDetail.remindSelection", { count: selected.length })}
             </button>
           )}
           <button className="button button--secondary" onClick={close}>
-            <StopCircle size={14} aria-hidden="true" /> Clôturer
+            <StopCircle size={14} aria-hidden="true" /> {t("campaignDetail.close")}
           </button>
           <ConfirmButton
             className="button button--secondary"
-            confirmLabel="Oui, annuler la campagne"
+            confirmLabel={t("campaignDetail.confirmCancelCampaign")}
             onConfirm={cancelCampaign}
           >
-            Annuler la campagne
+            {t("campaignDetail.cancelCampaign")}
           </ConfirmButton>
         </div>
       )}
 
       {(
         <div className="card">
-          <div className="card-title">Suivi</div>
+          <div className="card-title">{t("campaignDetail.tracking")}</div>
           <div className="filter-bar">
             <label>
-              Statut
+              {t("campaignDetail.filters.status")}
               <select value={filters.status} onChange={(e) => changeFilters({ status: e.target.value })}>
-                <option value="">Tous</option>
-                <option value="WAITING">Pas encore leur tour</option>
-                <option value="PENDING">À signer</option>
-                <option value="VIEWED">Consulté</option>
-                <option value="SIGNED">Signé</option>
-                <option value="EXPIRED">Expiré</option>
+                <option value="">{t("campaignDetail.filters.all")}</option>
+                <option value="WAITING">{t("campaignDetail.filters.waiting")}</option>
+                <option value="PENDING">{assignmentStatus("PENDING")}</option>
+                <option value="VIEWED">{assignmentStatus("VIEWED")}</option>
+                <option value="SIGNED">{assignmentStatus("SIGNED")}</option>
+                <option value="EXPIRED">{assignmentStatus("EXPIRED")}</option>
               </select>
             </label>
             <label>
-              Document
+              {t("campaignDetail.filters.document")}
               <select
                 value={filters.document_version_id}
                 onChange={(e) => changeFilters({ document_version_id: e.target.value })}
               >
-                <option value="">Tous</option>
+                <option value="">{t("campaignDetail.filters.all")}</option>
                 {publishedAndUsed.map((v) => (
                   <option key={v.id} value={v.id}>
                     {v.label}
@@ -298,9 +305,9 @@ export default function OperatorCampaignDetailPage() {
               </select>
             </label>
             <label>
-              Groupe
+              {t("campaignDetail.filters.group")}
               <select value={filters.group_id} onChange={(e) => changeFilters({ group_id: e.target.value })}>
-                <option value="">Tous</option>
+                <option value="">{t("campaignDetail.filters.all")}</option>
                 {groups?.map((g) => (
                   <option key={g.id} value={g.id}>
                     {g.name}
@@ -309,11 +316,11 @@ export default function OperatorCampaignDetailPage() {
               </select>
             </label>
             <label>
-              Consultation
+              {t("campaignDetail.filters.viewing")}
               <select value={filters.viewed} onChange={(e) => changeFilters({ viewed: e.target.value })}>
-                <option value="">Tous</option>
-                <option value="true">Consulté</option>
-                <option value="false">Non consulté</option>
+                <option value="">{t("campaignDetail.filters.all")}</option>
+                <option value="true">{t("campaignDetail.filters.viewed")}</option>
+                <option value="false">{t("campaignDetail.filters.notViewed")}</option>
               </select>
             </label>
             <label className="consent-row">
@@ -322,20 +329,20 @@ export default function OperatorCampaignDetailPage() {
                 checked={filters.overdue}
                 onChange={(e) => changeFilters({ overdue: e.target.checked })}
               />
-              En retard
+              {t("campaignDetail.filters.overdue")}
             </label>
           </div>
           <table className="simple-table">
             <thead>
               <tr>
-                {campaign.status === "ACTIVE" && <th aria-label="Sélection" />}
-                <th>Destinataire</th>
-                <th>Groupe</th>
-                <th>Document</th>
-                <th>Statut</th>
-                <th>Consulté</th>
-                <th>Signé</th>
-                <th>Relances</th>
+                {campaign.status === "ACTIVE" && <th aria-label={t("campaignDetail.columns.selection")} />}
+                <th>{t("campaignDetail.columns.recipient")}</th>
+                <th>{t("campaignDetail.columns.group")}</th>
+                <th>{t("campaignDetail.columns.document")}</th>
+                <th>{t("campaignDetail.columns.status")}</th>
+                <th>{t("campaignDetail.columns.viewed")}</th>
+                <th>{t("campaignDetail.columns.signed")}</th>
+                <th>{t("campaignDetail.columns.reminders")}</th>
                 <th />
               </tr>
             </thead>
@@ -347,7 +354,7 @@ export default function OperatorCampaignDetailPage() {
                       {isOutstanding(a.status) && (
                         <input
                           type="checkbox"
-                          aria-label={`Sélectionner ${a.user_display_name}`}
+                          aria-label={t("campaignDetail.select", { name: a.user_display_name })}
                           checked={selected.includes(a.id)}
                           onChange={() =>
                             setSelected(
@@ -366,17 +373,17 @@ export default function OperatorCampaignDetailPage() {
                   <td>
                     {a.document_title}
                     {a.role_label && (campaign.roles_required ?? 1) > 1 && (
-                      <div className="muted small">{a.role_label}</div>
+                      <div className="muted small">{roleLabelText(a.role_label)}</div>
                     )}
                   </td>
                   <td>
-                    <span className={`badge badge--${a.status.toLowerCase()}`}>{a.status}</span>
+                    <span className={`badge badge--${a.status.toLowerCase()}`}>{assignmentStatus(a.status)}</span>
                     {a.status === "WAITING" && a.waiting_on && a.waiting_on.length > 0 && (
-                      <div className="muted small">après {a.waiting_on.join(", ")}</div>
+                      <div className="muted small">{t("campaignDetail.after", { names: a.waiting_on.join(", ") })}</div>
                     )}
                   </td>
-                  <td>{a.first_viewed_at ? new Date(a.first_viewed_at).toLocaleDateString("fr-FR") : "—"}</td>
-                  <td>{a.signed_at ? new Date(a.signed_at).toLocaleDateString("fr-FR") : "—"}</td>
+                  <td>{a.first_viewed_at ? formatDate(a.first_viewed_at) : "—"}</td>
+                  <td>{a.signed_at ? formatDate(a.signed_at) : "—"}</td>
                   <td>{a.reminder_count}</td>
                   <td>
                     <div className="row-actions">
@@ -388,16 +395,16 @@ export default function OperatorCampaignDetailPage() {
                             target="_blank"
                             rel="noreferrer"
                           >
-                            Ouvrir le PDF signé
+                            {t("campaignDetail.openSignedPdf")}
                           </a>
                           <a
                             className="button button--ghost button--sm"
                             href={`/api/signatures/${a.signature_id}/signed-pdf`}
                           >
-                            Télécharger
+                            {t("campaignDetail.download")}
                           </a>
                           <Link className="button button--ghost button--sm" to={`/signatures/${a.signature_id}`}>
-                            Preuve
+                            {t("campaignDetail.proof")}
                           </Link>
                         </>
                       )}
@@ -407,7 +414,7 @@ export default function OperatorCampaignDetailPage() {
                           className="button button--ghost button--sm"
                           onClick={() => void remind({ assignment_ids: [a.id] })}
                         >
-                          <Bell size={12} aria-hidden="true" /> Relancer
+                          <Bell size={12} aria-hidden="true" /> {t("campaignDetail.remind")}
                         </button>
                       )}
                       {campaign.status === "ACTIVE" &&
@@ -417,10 +424,10 @@ export default function OperatorCampaignDetailPage() {
                         a.status !== "CANCELLED" &&
                         a.status !== "EXPIRED" && (
                           <ConfirmButton
-                            confirmLabel="Ne plus solliciter"
+                            confirmLabel={t("campaignDetail.stopAsking")}
                             onConfirm={() => removePerson(a.user_id, a.user_display_name)}
                           >
-                            Retirer
+                            {t("campaignDetail.removeOne")}
                           </ConfirmButton>
                         )}
                     </div>
@@ -435,19 +442,19 @@ export default function OperatorCampaignDetailPage() {
       {(campaign.status === "CLOSED" || campaign.status === "CANCELLED") && (
         <div className="button-row">
           <button className="button button--secondary" onClick={() => void archiveCampaign()}>
-            Archiver
+            {t("campaignDetail.archive")}
           </button>
         </div>
       )}
       {campaign.status !== "ACTIVE" && campaign.status !== "SCHEDULED" && (
         <div className="button-row" data-testid="delete-row">
           {campaign.delete_blockers.length === 0 ? (
-            <ConfirmButton confirmLabel="Oui, supprimer la campagne" onConfirm={deleteCampaign}>
-              Supprimer la campagne
+            <ConfirmButton confirmLabel={t("campaignDetail.confirmDeleteCampaign")} onConfirm={deleteCampaign}>
+              {t("campaignDetail.deleteCampaign")}
             </ConfirmButton>
           ) : (
-            <p className="blocker-note" title="Une campagne signée fait partie de la preuve">
-              Conservée — {campaign.delete_blockers.join(" ; ")}
+            <p className="blocker-note" title={t("campaignDetail.keptHint")}>
+              {t("campaignDetail.kept", { reasons: campaign.delete_blockers.map(blockerText).join(" ; ") })}
             </p>
           )}
         </div>
@@ -455,7 +462,7 @@ export default function OperatorCampaignDetailPage() {
 
       {canContent && (
         <section data-testid="campaign-signed">
-          <h2 className="card-title">Documents signés</h2>
+          <h2 className="card-title">{t("campaignDetail.signedDocuments")}</h2>
           <SignedDocuments campaignIds={[campaign.id]} refreshKey={assignments?.length ?? 0} />
         </section>
       )}
@@ -463,15 +470,15 @@ export default function OperatorCampaignDetailPage() {
       {canContent && (
         <div className="card">
           <div className="card-title">
-            <FileBarChart size={16} aria-hidden="true" /> Procès-verbaux
+            <FileBarChart size={16} aria-hidden="true" /> {t("campaignDetail.reports")}
           </div>
           <button className="button button--secondary" onClick={generateReport}>
-            Générer un PV
+            {t("campaignDetail.generateReport")}
           </button>
           <ul className="plain-list">
             {reports?.map((r) => (
               <li key={r.id} className="report-row">
-                {r.display_id} — {new Date(r.generated_at).toLocaleString("fr-FR")}
+                {r.display_id} — {formatDateTime(r.generated_at)}
                 <a className="button button--ghost button--sm" href={`/api/reports/${r.id}/pdf`}>
                   <Download size={12} aria-hidden="true" /> PDF
                 </a>

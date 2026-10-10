@@ -1,23 +1,25 @@
 import { useEffect, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, BadgeCheck, Download, FileText, ShieldAlert, ShieldCheck } from "lucide-react";
-import { api, ApiError } from "../api/client";
+import { api } from "../api/client";
+import i18n from "../i18n";
+import { errorText } from "../i18n/errors";
+import { assignmentStatus } from "../i18n/enums";
+import { formatDateTime } from "../i18n/format";
 import { useAuth } from "../auth/AuthContext";
 import type { SignatureChain, SignatureDetail, VerificationResult } from "../api/types";
 
-export const CHECK_LABELS: Record<string, string> = {
-  original_document_hash: "Le document original est intact",
-  signed_document_hash: "Le PDF signé est intact",
-  evidence_hash: "La preuve n'a pas été modifiée",
-  cryptographic_signature: "La signature cryptographique est valide",
-  signing_key_trusted: "La clé de signature est digne de confiance",
-  metadata_consistent: "Les métadonnées sont cohérentes",
-};
+/** What each integrity check says, in the active language (a check this build does not know is
+ *  shown under its own name). */
+const checkLabel = (name: string) =>
+  i18n.exists(`signatureDetail.checks.${name}`) ? i18n.t(`signatureDetail.checks.${name}`) : name;
 
 /** One signature: the signed PDF itself, what was signed, by whom and when, the
  *  downloads, and an on-demand integrity check. Reachable by the signer and,
  *  for follow-up, by operators and administrators. */
 export default function SignatureDetailPage() {
+  const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const [signature, setSignature] = useState<SignatureDetail | null>(null);
   const [result, setResult] = useState<VerificationResult | null>(null);
@@ -31,7 +33,7 @@ export default function SignatureDetailPage() {
     api
       .get<SignatureDetail>(`/signatures/${id}`)
       .then(setSignature)
-      .catch((err) => setError(err instanceof ApiError ? err.message : "Signature introuvable."));
+      .catch((err) => setError(errorText(err, "signatureDetail.notFound")));
   }, [id]);
 
   useEffect(() => {
@@ -47,33 +49,35 @@ export default function SignatureDetailPage() {
     try {
       setResult(await api.get<VerificationResult>(`/signatures/${id}/verify`));
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "La vérification a échoué.");
+      setError(errorText(err, "signatureDetail.verifyFailed"));
     } finally {
       setVerifying(false);
     }
   };
 
   if (error && !signature) return <p className="error-text">{error}</p>;
-  if (!signature) return <p className="muted">Chargement…</p>;
+  if (!signature) return <p className="muted">{t("common.loading")}</p>;
 
   return (
     <div className="stack">
       <Link to="/" className="back-link">
-        <ArrowLeft size={14} aria-hidden="true" /> Mes signatures
+        <ArrowLeft size={14} aria-hidden="true" /> {t("nav.mySignatures")}
       </Link>
       <h1 className="page-title">
         <FileText size={22} aria-hidden="true" /> {signature.document_title}
-        <span className="badge badge--signed">Signé</span>
+        <span className="badge badge--signed">{assignmentStatus("SIGNED")}</span>
       </h1>
       <p className="page-subtitle">
-        Version {signature.version_label}
-        {signature.campaign_name ? ` — ${signature.campaign_name}` : ""}
+        {t("signatureDetail.subtitle", {
+          version: signature.version_label,
+          campaign: signature.campaign_name ? ` — ${signature.campaign_name}` : "",
+        })}
       </p>
 
       <div className="split">
         <div className="pdf-viewer">
           <iframe
-            title={`PDF signé — ${signature.document_title}`}
+            title={t("signatureDetail.pdfTitle", { title: signature.document_title })}
             src={`/api/signatures/${signature.id}/signed-pdf?inline=true`}
           />
         </div>
@@ -81,7 +85,7 @@ export default function SignatureDetailPage() {
         <div className="stack">
           {chain && (
             <section className="card" data-testid="signature-chain">
-              <div className="card-title">Qui a signé ce document ?</div>
+              <div className="card-title">{t("signatureDetail.whoSigned")}</div>
               <ol className="chain">
                 {chain.steps.map((step) => (
                   <li key={`${step.role}-${step.email}`} className={step.mine ? "chain__me" : undefined}>
@@ -90,15 +94,15 @@ export default function SignatureDetailPage() {
                     </span>
                     <span>
                       <strong>{step.name}</strong>
-                      {step.mine ? " (vous)" : ""}
+                      {step.mine ? ` ${t("signatureDetail.you")}` : ""}
                       <span className="muted small">
                         {" "}
                         —{" "}
                         {step.status === "SIGNED" && step.signed_at
-                          ? `a signé le ${new Date(step.signed_at).toLocaleString("fr-FR")}`
+                          ? t("signatureDetail.signedOn", { date: formatDateTime(step.signed_at) })
                           : step.status === "WAITING"
-                            ? "pas encore son tour"
-                            : "doit encore signer"}
+                            ? t("signatureDetail.notYetTurn")
+                            : t("signatureDetail.mustSign")}
                       </span>
                     </span>
                   </li>
@@ -106,19 +110,16 @@ export default function SignatureDetailPage() {
               </ol>
               {chain.others && (
                 <p className="muted small" data-testid="chain-others">
-                  {chain.others.count} autre(s) destinataire(s), dont {chain.others.signed} ont signé.
+                  {t("signatureDetail.others", { count: chain.others.count, signed: chain.others.signed })}
                 </p>
               )}
               <p className="muted small">
-                {chain.complete
-                  ? "Tout le monde a signé."
-                  : "Il reste des signatures à recueillir."}{" "}
-                Ce PDF est <strong>votre exemplaire</strong> : il porte les signatures de ceux qui ont signé
-                avant vous.
+                {chain.complete ? t("signatureDetail.everyoneSigned") : t("signatureDetail.signaturesRemain")}{" "}
+                <Trans i18nKey="signatureDetail.yourCopy" components={{ strong: <strong /> }} />
                 {staff && (
                   <>
                     {" "}
-                    Toute la campagne se suit dans <Link to="/campaigns?tab=signed">Suivi</Link>.
+                    <Trans i18nKey="signatureDetail.trackCampaign" components={{ view: <Link to="/campaigns?tab=signed" /> }} />
                   </>
                 )}
               </p>
@@ -126,59 +127,59 @@ export default function SignatureDetailPage() {
           )}
 
           <section className="card">
-            <div className="card-title">Signature</div>
+            <div className="card-title">{t("signatureDetail.signature")}</div>
             <dl className="kv">
-              <dt>Identifiant</dt>
+              <dt>{t("signatureDetail.id")}</dt>
               <dd className="mono" data-testid="signature-id">
                 {signature.display_id}
               </dd>
-              <dt>Signataire</dt>
+              <dt>{t("signatureDetail.signer")}</dt>
               <dd>
                 {signature.display_name_snapshot}
                 <div className="muted small">{signature.email_snapshot}</div>
               </dd>
-              <dt>Date</dt>
-              <dd>{new Date(signature.signed_at_utc).toLocaleString("fr-FR")}</dd>
-              <dt>Empreinte du PDF signé</dt>
+              <dt>{t("signatureDetail.date")}</dt>
+              <dd>{formatDateTime(signature.signed_at_utc)}</dd>
+              <dt>{t("signatureDetail.pdfHash")}</dt>
               <dd className="mono">{signature.signed_file_sha256}</dd>
-              <dt>Clé de signature</dt>
+              <dt>{t("signatureDetail.signingKey")}</dt>
               <dd className="mono">{signature.signing_key_id}</dd>
             </dl>
             <div className="button-row" style={{ marginTop: 16 }}>
               <a className="button button--secondary button--sm" href={`/api/signatures/${signature.id}/signed-pdf`}>
-                <Download size={14} aria-hidden="true" /> PDF signé
+                <Download size={14} aria-hidden="true" /> {t("assignments.signedPdf")}
               </a>
               <a className="button button--secondary button--sm" href={`/api/signatures/${signature.id}/certificate`}>
-                <Download size={14} aria-hidden="true" /> Certificat
+                <Download size={14} aria-hidden="true" /> {t("signing.certificate")}
               </a>
               <a className="button button--secondary button--sm" href={`/api/signatures/${signature.id}/evidence`}>
-                <Download size={14} aria-hidden="true" /> Preuve (JSON)
+                <Download size={14} aria-hidden="true" /> {t("signatureDetail.evidenceJson")}
               </a>
             </div>
           </section>
 
           <section className="card">
             <div className="card-title">
-              <BadgeCheck size={16} aria-hidden="true" /> Vérification d&apos;intégrité
+              <BadgeCheck size={16} aria-hidden="true" /> {t("signatureDetail.integrity")}
             </div>
             <p className="muted small">
-              Recalcule les empreintes du document et de la preuve et contrôle la signature cryptographique.
+              {t("signatureDetail.integrityHelp")}
             </p>
             <button className="button button--primary" onClick={verify} disabled={verifying}>
-              <ShieldCheck size={14} aria-hidden="true" /> {verifying ? "Vérification…" : "Vérifier maintenant"}
+              <ShieldCheck size={14} aria-hidden="true" /> {verifying ? t("diagnostics.checking") : t("signatureDetail.verifyNow")}
             </button>
             {error && <p className="error-text">{error}</p>}
             {result && (
               <div className="stack" style={{ marginTop: 16, gap: 12 }}>
                 <div className={`verdict ${result.valid ? "verdict--ok" : "verdict--ko"}`} role="status">
                   {result.valid ? <ShieldCheck size={18} /> : <ShieldAlert size={18} />}
-                  {result.valid ? "Signature valide" : "Intégrité invalide"}
+                  {result.valid ? t("signatureDetail.valid") : t("signatureDetail.invalid")}
                 </div>
                 <ul className="check-list">
                   {Object.entries(result.checks).map(([name, passed]) => (
                     <li key={name}>
                       <span className={passed ? "status-ok" : "status-error"}>{passed ? "✓" : "✕"}</span>
-                      {CHECK_LABELS[name] ?? name}
+                      {checkLabel(name)}
                     </li>
                   ))}
                 </ul>

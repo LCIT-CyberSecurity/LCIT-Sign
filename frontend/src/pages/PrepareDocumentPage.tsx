@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type PointerEvent } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Trans, useTranslation } from "react-i18next";
 import { ArrowLeft, CheckCircle2, Lock, Save, Trash2, UserRound } from "lucide-react";
-import { api, ApiError } from "../api/client";
+import { api } from "../api/client";
+import { errorText } from "../i18n/errors";
+import { versionStatus } from "../i18n/enums";
 import PdfPages, { type PageSize } from "../prepare/PdfPages";
 import { clampRect, moveRect, placeCentered, pointToFraction, resizeRect, tidy, type Rect } from "../prepare/geometry";
-import { KIND_BY_ID, KINDS, roleColor, type FieldKind } from "../prepare/kinds";
+import { KIND_BY_ID, KINDS, kindHint, kindLabel, roleColor, type FieldKind } from "../prepare/kinds";
 import type { Campaign } from "../api/types";
 
 export interface EditorField extends Rect {
@@ -102,7 +105,7 @@ function FieldBox({
         {field.role}
       </span>
       <Icon size={13} aria-hidden="true" />
-      <span className="prep-field__label">{field.label || meta.label}</span>
+      <span className="prep-field__label">{field.label || kindLabel(field.kind)}</span>
       {selected && editable && (
         <span
           className="prep-field__handle"
@@ -136,6 +139,7 @@ export function DocumentEditor({
   /** Called after the elements were saved (so the counts around can be refreshed). */
   onSaved?: () => void;
 }) {
+  const { t } = useTranslation();
   const id = versionId;
   const [info, setInfo] = useState<FieldsResponse | null>(null);
   const [pages, setPages] = useState<PageSize[]>([]);
@@ -166,7 +170,7 @@ export function DocumentEditor({
         // last must not shrink the list the other one made.
         setRecipients((n) => Math.max(n, 1, ...loaded.fields.map((f) => f.role)));
       })
-      .catch((err) => setLoadError(err instanceof ApiError ? err.message : "Document introuvable."));
+      .catch((err) => setLoadError(errorText(err, "prepare.documentNotFound")));
   }, [id]);
 
   useEffect(() => {
@@ -177,15 +181,15 @@ export function DocumentEditor({
         setCampaign(loaded);
         setRecipients((n) => Math.max(n, loaded.roles.length, 1));
       })
-      .catch((err) => setLoadError(err instanceof ApiError ? err.message : "Campagne introuvable."));
+      .catch((err) => setLoadError(errorText(err, "prepare.campaignNotFound")));
   }, [campaignId]);
 
   const editable = info?.editable ?? false;
   // Whoever the campaign says signs in this position — a person, or every recipient.
   const roleName = (role: number) => {
     const party = campaign?.roles.find((r) => r.role === role);
-    if (!party) return `Position ${role}`;
-    return party.mode === "EACH" ? "Chaque destinataire" : party.user_display_name ?? `Position ${role}`;
+    if (!party) return t("prepare.position", { n: role });
+    return party.mode === "EACH" ? t("prepare.everyRecipient") : (party.user_display_name ?? t("prepare.position", { n: role }));
   };
   const backTo = !campaignId
     ? "/sign"
@@ -280,11 +284,11 @@ export function DocumentEditor({
       });
       setFields(saved.fields);
       setDirty(false);
-      setMessage(`Enregistré — ${saved.fields.length} élément(s).`);
+      setMessage(t("prepare.savedCount", { count: saved.fields.length }));
       onSaved?.();
       return true;
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "L'enregistrement a échoué.");
+      setError(errorText(err, "prepare.saveFailed"));
       return false;
     } finally {
       setSaving(false);
@@ -315,19 +319,17 @@ export function DocumentEditor({
   if (!campaignId)
     return (
       <p className="muted">
-        Les éléments se préparent depuis une demande de signature : ouvrez <Link to="/sign">Faire signer</Link>,
-        choisissez qui signe, puis « Préparer » sur le document.
+        <Trans i18nKey="prepare.needRequest" components={{ sign: <Link to="/sign" /> }} />
       </p>
     );
   if (loadError) return <p className="error-text">{loadError}</p>;
   if (campaign && campaign.roles.length === 0)
     return (
       <p className="muted">
-        Choisissez d&apos;abord qui signe dans <Link to={backTo}>la demande de signature</Link>, puis revenez préparer le
-        document.
+        <Trans i18nKey="prepare.chooseSignersFirst" components={{ back: <Link to={backTo} /> }} />
       </p>
     );
-  if (!info) return <p className="muted">Chargement…</p>;
+  if (!info) return <p className="muted">{t("common.loading")}</p>;
 
   const pagesWithFields = new Set(fields.map((f) => f.page)).size;
 
@@ -335,23 +337,27 @@ export function DocumentEditor({
     <div className="stack prep">
       {!embedded && (
         <Link to={backTo} className="back-link">
-          <ArrowLeft size={14} aria-hidden="true" /> {campaign ? campaign.name : "Faire signer"}
+          <ArrowLeft size={14} aria-hidden="true" /> {campaign ? campaign.name : t("nav.sign")}
         </Link>
       )}
       <div className="page-header">
         <div>
           {embedded ? (
             <p className="page-subtitle" style={{ margin: 0 }}>
-              <strong>{info.document_title}</strong> — version {info.version_label}
+              <Trans
+                i18nKey="prepare.versionLine"
+                values={{ title: info.document_title, version: info.version_label }}
+                components={{ strong: <strong /> }}
+              />
             </p>
           ) : (
             <>
               <h1 className="page-title" style={{ margin: 0 }}>
-                Préparer le document
+                {t("prepare.pageTitle")}
               </h1>
               <p className="page-subtitle" style={{ margin: "6px 0 0" }}>
-                {info.document_title} — version {info.version_label}{" "}
-                <span className={`badge badge--${info.status.toLowerCase()}`}>{info.status}</span>
+                {t("prepare.subtitle", { title: info.document_title, version: info.version_label })}{" "}
+                <span className={`badge badge--${info.status.toLowerCase()}`}>{versionStatus(info.status)}</span>
               </p>
             </>
           )}
@@ -359,18 +365,20 @@ export function DocumentEditor({
         {editable && (
           <div className="row-actions">
             <span className="muted small" data-testid="prep-status">
-              {dirty ? "Modifications non enregistrées" : message ?? `${fields.length} élément(s) sur ${pagesWithFields} page(s)`}
+              {dirty
+                ? t("prepare.unsaved")
+                : (message ?? t("prepare.summary", { count: fields.length, pages: pagesWithFields }))}
             </span>
             <button className="button button--secondary" onClick={() => void save()} disabled={saving || !dirty}>
-              <Save size={14} aria-hidden="true" /> {saving ? "Enregistrement…" : "Enregistrer"}
+              <Save size={14} aria-hidden="true" /> {saving ? t("common.saving") : t("common.save")}
             </button>
             <button className="button button--primary" onClick={() => void finish()} disabled={saving}>
               <CheckCircle2 size={14} aria-hidden="true" />{" "}
               {nextToPrepare
-                ? `Document suivant : ${nextToPrepare.title}`
+                ? t("prepare.nextDocument", { title: nextToPrepare.title })
                 : embedded
-                  ? "Terminer : vérifier et envoyer"
-                  : "Terminer"}
+                  ? t("prepare.finishReview")
+                  : t("prepare.finish")}
             </button>
           </div>
         )}
@@ -378,18 +386,17 @@ export function DocumentEditor({
       {error && <p className="error-text" role="alert">{error}</p>}
       {!editable && (
         <p className="prep-locked-note">
-          <Lock size={14} aria-hidden="true" /> Version publiée : les éléments sont figés, comme le document.
+          <Lock size={14} aria-hidden="true" /> {t("prepare.locked")}
         </p>
       )}
 
       <div className="prep-layout">
-        <aside className="prep-rail" aria-label="Palette">
+        <aside className="prep-rail" aria-label={t("prepare.palette")}>
           {editable && (
             <>
-              <div className="prep-rail__title">Qui signe ?</div>
+              <div className="prep-rail__title">{t("prepare.whoSigns")}</div>
               <p className="muted small" style={{ margin: "0 0 8px" }}>
-                Ce sont les signataires de la campagne, dans l&apos;ordre. Choisissez qui remplit, puis
-                placez ses éléments. Le tampon du premier figure sur la copie du suivant.
+                {t("prepare.whoSignsHelp")}
               </p>
               <ul className="prep-roles">
                 {Array.from({ length: recipients }, (_, i) => i + 1).map((role) => (
@@ -411,14 +418,14 @@ export function DocumentEditor({
                 ))}
               </ul>
               <Link to={backTo} className="muted small">
-                Modifier les signataires
+                {t("prepare.editSigners")}
               </Link>
 
               <div className="prep-rail__title" style={{ marginTop: 18 }}>
-                Éléments à placer
+                {t("prepare.elementsToPlace")}
               </div>
               <p className="muted small" style={{ margin: "0 0 8px" }}>
-                Glissez sur le document, ou cliquez puis cliquez sur la page.
+                {t("prepare.dragHelp")}
               </p>
               <ul className="prep-palette">
                 {KINDS.map((meta) => {
@@ -431,7 +438,7 @@ export function DocumentEditor({
                         className={`prep-tool${armed === meta.kind ? " prep-tool--armed" : ""}`}
                         data-testid={`tool-${meta.kind}`}
                         aria-pressed={armed === meta.kind}
-                        title={meta.hint}
+                        title={kindHint(meta.kind)}
                         onDragStart={(e) => {
                           e.dataTransfer.setData(DRAG_TYPE, meta.kind);
                           e.dataTransfer.effectAllowed = "copy";
@@ -440,8 +447,8 @@ export function DocumentEditor({
                       >
                         <Icon size={15} aria-hidden="true" />
                         <span>
-                          {meta.label}
-                          <small>{meta.automatic ? "Automatique" : "À saisir"}</small>
+                          {kindLabel(meta.kind)}
+                          <small>{meta.automatic ? t("kinds.automatic") : t("kinds.typed")}</small>
                         </span>
                       </button>
                     </li>
@@ -450,7 +457,7 @@ export function DocumentEditor({
               </ul>
             </>
           )}
-          {!editable && <p className="muted small">Les destinataires et éléments sont en lecture seule.</p>}
+          {!editable && <p className="muted small">{t("prepare.readOnly")}</p>}
         </aside>
 
         <section className="prep-canvas">
@@ -490,17 +497,17 @@ export function DocumentEditor({
           />
         </section>
 
-        <aside className="prep-props" aria-label="Propriétés">
-          <div className="prep-rail__title">Propriétés</div>
-          {!selected && <p className="muted small">Sélectionnez un élément sur le document pour le régler.</p>}
+        <aside className="prep-props" aria-label={t("prepare.properties")}>
+          <div className="prep-rail__title">{t("prepare.properties")}</div>
+          {!selected && <p className="muted small">{t("prepare.selectHint")}</p>}
           {selected && (
             <div className="stack" style={{ gap: 12 }}>
               <div>
-                <strong>{KIND_BY_ID[selected.kind].label}</strong>
-                <div className="muted small">{KIND_BY_ID[selected.kind].hint}</div>
+                <strong>{kindLabel(selected.kind)}</strong>
+                <div className="muted small">{kindHint(selected.kind)}</div>
               </div>
               <label>
-                Rôle
+                {t("prepare.role")}
                 <select
                   value={selected.role}
                   disabled={!editable}
@@ -514,12 +521,12 @@ export function DocumentEditor({
                 </select>
               </label>
               <label>
-                Libellé
+                {t("prepare.label")}
                 <input
                   value={selected.label}
                   maxLength={120}
                   disabled={!editable}
-                  placeholder={KIND_BY_ID[selected.kind].label}
+                  placeholder={kindLabel(selected.kind)}
                   onChange={(e) => update(selected.id, { label: e.target.value })}
                 />
               </label>
@@ -532,26 +539,26 @@ export function DocumentEditor({
                       disabled={!editable}
                       onChange={(e) => update(selected.id, { required: e.target.checked })}
                     />
-                    <span>Obligatoire</span>
+                    <span>{t("prepare.required")}</span>
                   </label>
                   <label>
-                    Saisie partagée (clé)
+                    {t("prepare.sharedKey")}
                     <input
                       value={selected.group_key ?? ""}
                       maxLength={60}
                       disabled={!editable}
-                      placeholder="ex : societe"
+                      placeholder={t("prepare.sharedKeyPlaceholder")}
                       onChange={(e) => update(selected.id, { group_key: e.target.value || null })}
                     />
                     <span className="muted small">
-                      Les champs de même clé se remplissent une seule fois, sur tous les documents.
+                      {t("prepare.sharedKeyHelp")}
                     </span>
                   </label>
                 </>
               )}
               {editable && (
                 <button className="button button--ghost button--sm" onClick={() => remove(selected.id)}>
-                  <Trash2 size={13} aria-hidden="true" /> Supprimer l&apos;élément
+                  <Trash2 size={13} aria-hidden="true" /> {t("prepare.deleteElement")}
                 </button>
               )}
             </div>

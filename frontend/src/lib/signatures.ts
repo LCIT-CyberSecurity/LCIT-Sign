@@ -1,9 +1,10 @@
+import i18n from "../i18n";
 import type { Campaign } from "../api/types";
 
 export interface MissingSignature {
   versionId: string;
   title: string;
-  /** Who: the person's name, or "Chaque destinataire". */
+  /** Who: the person's name, or "Each recipient". */
   who: string;
 }
 
@@ -20,14 +21,16 @@ export function missingSignatures(campaign: Campaign): MissingSignature[] {
         versionId: doc.version_id,
         title: doc.title,
         who:
-          party?.mode === "EACH" ? "Chaque destinataire" : (party?.user_display_name ?? `le signataire ${role}`),
+          party?.mode === "EACH"
+            ? i18n.t("signatures.everyRecipient")
+            : (party?.user_display_name ?? i18n.t("signatures.theSigner", { role })),
       });
     }
   }
   return found;
 }
 
-/** "Placez une signature pour Alice Martin sur « Test03 »." */
+/** "Place a signature for Alice Martin on “Test03”." (in the active language) */
 export function missingSignatureText(missing: MissingSignature[]): string {
-  return missing.map((m) => `Placez une signature pour ${m.who} sur « ${m.title} ».`).join(" ");
+  return missing.map((m) => i18n.t("signatures.placeFor", { who: m.who, title: m.title })).join(" ");
 }

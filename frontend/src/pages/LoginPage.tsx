@@ -1,7 +1,9 @@
 import { useCompanyLogo } from "../lib/branding";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { FileSearch, FileSignature, Fingerprint, LockKeyhole, LogIn, PenLine } from "lucide-react";
-import { api, ApiError } from "../api/client";
+import { api } from "../api/client";
+import { errorText } from "../i18n/errors";
 import { useAuth } from "../auth/AuthContext";
 import { GoogleLogo, MicrosoftLogo } from "../components/ProviderLogos";
 
@@ -17,13 +19,14 @@ interface Options {
   crashtest?: boolean;
 }
 
-const SSO_BUTTONS: Record<string, { label: string; logo: ReactNode }> = {
-  entra: { label: "Continuer avec Microsoft", logo: <MicrosoftLogo /> },
-  google: { label: "Continuer avec Google", logo: <GoogleLogo /> },
-  generic: { label: "Continuer avec le SSO", logo: <LogIn size={18} aria-hidden="true" /> },
+const SSO_BUTTONS: Record<string, { labelKey: string; logo: ReactNode }> = {
+  entra: { labelKey: "auth.continueMicrosoft", logo: <MicrosoftLogo /> },
+  google: { labelKey: "auth.continueGoogle", logo: <GoogleLogo /> },
+  generic: { labelKey: "auth.continueSso", logo: <LogIn size={18} aria-hidden="true" /> },
 };
 
 function LocalForm() {
+  const { t } = useTranslation();
   const { refresh } = useAuth();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -38,7 +41,7 @@ function LocalForm() {
       await api.post("/auth/local-login", { username, password });
       await refresh();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Connexion impossible.");
+      setError(errorText(err, "auth.loginFailed"));
     } finally {
       setBusy(false);
     }
@@ -47,11 +50,11 @@ function LocalForm() {
   return (
     <form onSubmit={submit} data-testid="local-form">
       <label>
-        Identifiant ou e-mail
+        {t("auth.username")}
         <input value={username} autoComplete="username" onChange={(e) => setUsername(e.target.value)} required />
       </label>
       <label>
-        Mot de passe
+        {t("auth.password")}
         <input
           type="password"
           value={password}
@@ -62,13 +65,14 @@ function LocalForm() {
       </label>
       {error && <p className="form-error" role="alert">{error}</p>}
       <button className="button button--secondary" type="submit" disabled={busy}>
-        {busy ? "Connexion…" : "Se connecter"}
+        {busy ? t("auth.signingIn") : t("auth.signIn")}
       </button>
     </form>
   );
 }
 
 export default function LoginPage() {
+  const { t } = useTranslation();
   const companyLogo = useCompanyLogo();
   const [options, setOptions] = useState<Options | null>(null);
   useEffect(() => {
@@ -91,16 +95,16 @@ export default function LoginPage() {
             </span>
             <span>
               <strong>LCIT SIGN</strong>
-              <small>Signature &amp; attestation de documents</small>
+              <small>{t("auth.product")}</small>
             </span>
           </div>
 
           <div className="auth-message">
-            <h2>Signez facilement vos documents !</h2>
+            <h2>{t("auth.headline")}</h2>
           </div>
 
           <div className="auth-foot">
-            Un produit <strong>LCIT Cybersecurity</strong>
+            <Trans i18nKey="auth.madeBy" components={{ strong: <strong /> }} />
           </div>
         </aside>
 
@@ -109,27 +113,23 @@ export default function LoginPage() {
             <div className="auth-company">
               {companyLogo ? (
                 // The company's own logo: the LCIT name beside it would be wrong.
-                <img src={companyLogo} alt="Logo" height={76} style={{ maxWidth: 220, objectFit: "contain" }} />
+                <img src={companyLogo} alt={t("shell.logoAlt")} height={76} style={{ maxWidth: 220, objectFit: "contain" }} />
               ) : (
                 <img src="/lcit-logo.png" alt="LCIT" width={100} height={76} />
               )}
               <div>
                 {!companyLogo && <strong>LCIT Cybersecurity</strong>}
-                <span>Espace de signature des collaborateurs</span>
+                <span>{t("auth.employeeSpace")}</span>
               </div>
             </div>
 
             <section className="login-card">
-              <span className="auth-eyebrow">ACCÈS SÉCURISÉ</span>
-              <h1>Connexion</h1>
-              <p>
-                Connectez-vous avec votre compte pour consulter et signer les documents qui vous
-                attendent.
-              </p>
+              <span className="auth-eyebrow">{t("auth.eyebrow")}</span>
+              <h1>{t("auth.title")}</h1>
+              <p>{t("auth.intro")}</p>
               {options?.crashtest && (
                 <p className="auth-crashtest" data-testid="crashtest-note">
-                  Environnement de test CrashTest : comptes fictifs. Identifiant = adresse e-mail,
-                  mot de passe = prénom en minuscules (Bob Dupont : bob.dupont@lcit-test.local / bob).
+                  {t("auth.crashtest")}
                 </p>
               )}
               {sso && (
@@ -139,12 +139,12 @@ export default function LoginPage() {
                   data-testid="sso-button"
                 >
                   {sso.logo}
-                  {sso.label}
+                  {t(sso.labelKey)}
                 </a>
               )}
               {options?.local && button && (
                 <details className="auth-local" data-testid="local-login">
-                  <summary>Connexion locale</summary>
+                  <summary>{t("auth.localLogin")}</summary>
                   <LocalForm />
                 </details>
               )}
@@ -155,18 +155,17 @@ export default function LoginPage() {
               )}
               {options && !options.local && !button && (
                 <p className="form-error" role="alert">
-                  Aucune méthode de connexion n&apos;est configurée : contactez un administrateur.
+                  {t("auth.noMethod")}
                 </p>
               )}
               <p className="auth-steps" aria-hidden="true">
-                <FileSearch size={14} /> consulter <PenLine size={14} /> signer{" "}
-                <Fingerprint size={14} /> prouver
+                <FileSearch size={14} /> {t("auth.stepView")} <PenLine size={14} /> {t("auth.stepSign")}{" "}
+                <Fingerprint size={14} /> {t("auth.stepProve")}
               </p>
             </section>
 
             <p className="auth-form-foot">
-              <LockKeyhole size={12} aria-hidden="true" /> Espace protégé — votre mot de passe n&apos;est
-              jamais saisi ici si vous passez par le SSO de votre entreprise.
+              <LockKeyhole size={12} aria-hidden="true" /> {t("auth.protected")}
             </p>
           </div>
         </main>

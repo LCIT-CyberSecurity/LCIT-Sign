@@ -1,6 +1,9 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { KeyRound, Trash2 } from "lucide-react";
-import { api, ApiError } from "../api/client";
+import { api } from "../api/client";
+import { errorText } from "../i18n/errors";
+import { connectorText } from "../i18n/connectors";
 import ConnectorFieldControl from "../components/ConnectorFieldControl";
 import HelpHint from "../components/HelpHint";
 import type { ConnectorField, DirectorySource } from "../api/types";
@@ -28,7 +31,14 @@ export default function DirectoryConnectorForm({
   source: DirectorySource;
   onChanged: () => void;
 }) {
+  const { t } = useTranslation();
   const spec = source.spec;
+  const scope = `dir.${source.source}`;
+  const fieldText = (f: ConnectorField, part: "label" | "help" | "example") =>
+    connectorText(scope, `fields.${f.name}.${part}`, f[part]);
+  const secretText = (part: "label" | "help" | "example") =>
+    connectorText(scope, `secret.${part}`, spec?.secret[part] ?? "");
+  const specLabel = connectorText(scope, "label", spec?.label ?? "");
   const [fields, setFields] = useState<Record<string, string>>(source.fields);
   const [secret, setSecret] = useState("");
   const [message, setMessage] = useState<string | null>(null);
@@ -52,10 +62,10 @@ export default function DirectoryConnectorForm({
       });
       // The secret never stays in the page once it has been sent.
       setSecret("");
-      setMessage("Configuration enregistrée (secret chiffré).");
+      setMessage(t("directory.form.saved"));
       onChanged();
     } catch (err) {
-      setMessage(err instanceof ApiError ? err.message : "Échec de l'enregistrement.");
+      setMessage(errorText(err, "directory.form.saveFailed"));
     }
   };
 
@@ -70,14 +80,15 @@ export default function DirectoryConnectorForm({
   return (
     <form className="card form" onSubmit={save} autoComplete="off">
       <div className="card-title">
-        <KeyRound size={14} aria-hidden="true" /> {spec.label} {source.configured ? "(configuré)" : "(non configuré)"}
+        <KeyRound size={14} aria-hidden="true" /> {specLabel}{" "}
+        {source.configured ? t("directory.form.configured") : t("directory.form.notConfigured")}
       </div>
       {spec.guide && spec.guide.length > 0 && (
         <details className="connector-guide" open={!source.configured}>
-          <summary>Comment préparer {spec.label}, pas à pas</summary>
+          <summary>{t("directory.form.guide", { label: specLabel })}</summary>
           <ol>
-            {spec.guide.map((step) => (
-              <li key={step}>{step}</li>
+            {spec.guide.map((step, index) => (
+              <li key={step}>{connectorText(scope, `guide.${index}`, step)}</li>
             ))}
           </ol>
         </details>
@@ -87,13 +98,14 @@ export default function DirectoryConnectorForm({
         .map((f) => (
           <div key={f.name} className="field">
             <span className="label-line">
-              <label htmlFor={`${source.source}-${f.name}`}>{f.label}</label>
-              <HelpHint title={f.label} example={f.example || undefined}>
-                {f.help}
+              <label htmlFor={`${source.source}-${f.name}`}>{fieldText(f, "label")}</label>
+              <HelpHint title={fieldText(f, "label")} example={fieldText(f, "example") || undefined}>
+                {fieldText(f, "help")}
               </HelpHint>
             </span>
             <ConnectorFieldControl
               id={`${source.source}-${f.name}`}
+              scope={scope}
               field={f}
               value={fields[f.name] ?? ""}
               onChange={(value) => setFields({ ...fields, [f.name]: value })}
@@ -102,13 +114,14 @@ export default function DirectoryConnectorForm({
         ))}
       <div className="field">
         <span className="label-line">
-          <label htmlFor={`${source.source}-secret`}>{spec.secret.label}</label>
-          <HelpHint title={spec.secret.label} example={spec.secret.example || undefined}>
-            {spec.secret.help}
+          <label htmlFor={`${source.source}-secret`}>{secretText("label")}</label>
+          <HelpHint title={secretText("label")} example={secretText("example") || undefined}>
+            {secretText("help")}
           </HelpHint>
         </span>
         <ConnectorFieldControl
           id={`${source.source}-secret`}
+          scope={scope}
           field={spec.secret}
           value={secret}
           onChange={setSecret}
@@ -118,11 +131,11 @@ export default function DirectoryConnectorForm({
       </div>
       <div className="form-row">
         <button className="button button--primary" type="submit">
-          Enregistrer
+          {t("common.save")}
         </button>
         {source.configured && (
           <button className="button" type="button" onClick={remove}>
-            <Trash2 size={14} aria-hidden="true" /> Supprimer
+            <Trash2 size={14} aria-hidden="true" /> {t("common.delete")}
           </button>
         )}
       </div>

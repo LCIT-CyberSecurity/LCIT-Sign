@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { ArrowDown, ArrowUp, Plus, UserPlus, X } from "lucide-react";
 import ExternalPersonForm from "./ExternalPersonForm";
-import { api, ApiError } from "../api/client";
+import { api } from "../api/client";
+import { errorText } from "../i18n/errors";
 import type { Campaign } from "../api/types";
 
 export interface SignerOption {
@@ -34,6 +36,7 @@ export default function CampaignSigners({
   /** A person from outside was just added: the page's list of people must know them. */
   onUserAdded?: (person: SignerOption) => void;
 }) {
+  const { t } = useTranslation();
   const [adding, setAdding] = useState(false);
   const [rows, setRows] = useState<Row[]>(() =>
     campaign.roles.map((r) => ({ key: nextKey++, mode: r.mode ?? "FIXED", userId: r.user_id ?? "" })),
@@ -79,7 +82,7 @@ export default function CampaignSigners({
       onSaved();
     } catch (err) {
       setSaved(false);
-      setError(err instanceof ApiError ? err.message : "L'enregistrement a échoué.");
+      setError(errorText(err, "signers.saveFailed"));
     }
   };
 
@@ -115,40 +118,38 @@ export default function CampaignSigners({
 
   return (
     <div className="card" data-testid="signers-card">
-      <div className="card-title">Qui signe, dans l&apos;ordre ?</div>
+      <div className="card-title">{t("signers.title")}</div>
       <p className="muted small">
-        Choisissez les personnes dans la liste des utilisateurs : elles signent l&apos;une après l&apos;autre.
-        Pour un document que <strong>chaque personne</strong> doit signer (le RSSI signe d&apos;abord, puis
-        chacun signe son exemplaire), ajoutez « Chaque destinataire » en dernier.
+        <Trans i18nKey="signers.help" components={{ strong: <strong /> }} />
       </p>
 
       {rows.length === 0 && (
-        <p className="muted small">Personne pour le moment — ajoutez au moins un signataire.</p>
+        <p className="muted small">{t("signers.nobody")}</p>
       )}
       <ol className="signer-rows">
         {rows.map((row, i) => (
           <li key={row.key}>
             <span className="signer-rank">{i + 1}</span>
             <select
-              aria-label={`Qui signe en position ${i + 1} ?`}
+              aria-label={t("signers.whoAtPosition", { n: i + 1 })}
               value={row.mode === "EACH" ? "EACH" : row.userId}
               onChange={(e) => choose(i, e.target.value)}
             >
-              <option value="">— Choisir une personne —</option>
+              <option value="">{t("signers.choose")}</option>
               {i === rows.length - 1 && (
-                <option value="EACH">Chaque destinataire (chacun signe son exemplaire)</option>
+                <option value="EACH">{t("signers.eachOption")}</option>
               )}
               {users?.map((u) => (
                 <option key={u.id} value={u.id} disabled={taken.has(u.id) && u.id !== row.userId}>
                   {u.display_name} — {u.email}
-                  {u.external ? " (externe)" : ""}
+                  {u.external ? ` ${t("signers.external")}` : ""}
                 </option>
               ))}
             </select>
             <button
               type="button"
               className="button button--ghost button--sm"
-              aria-label="Monter"
+              aria-label={t("signers.up")}
               disabled={i === 0 || row.mode === "EACH" || rows[i - 1].mode === "EACH"}
               onClick={() => move(i, -1)}
             >
@@ -157,7 +158,7 @@ export default function CampaignSigners({
             <button
               type="button"
               className="button button--ghost button--sm"
-              aria-label="Descendre"
+              aria-label={t("signers.down")}
               disabled={i === rows.length - 1 || row.mode === "EACH" || rows[i + 1].mode === "EACH"}
               onClick={() => move(i, 1)}
             >
@@ -166,7 +167,7 @@ export default function CampaignSigners({
             <button
               type="button"
               className="button button--ghost button--sm"
-              aria-label={`Retirer le signataire ${i + 1}`}
+              aria-label={t("signers.removeSigner", { n: i + 1 })}
               onClick={() => void persist(rows.filter((_, j) => j !== i))}
             >
               <X size={13} aria-hidden="true" />
@@ -177,20 +178,20 @@ export default function CampaignSigners({
 
       <div className="row-actions">
         <button type="button" className="button button--secondary button--sm" onClick={() => add("FIXED")}>
-          <Plus size={13} aria-hidden="true" /> Ajouter une personne
+          <Plus size={13} aria-hidden="true" /> {t("signers.addPerson")}
         </button>
         {!lastIsEach && (
           <button type="button" className="button button--secondary button--sm" onClick={() => add("EACH")}>
-            <Plus size={13} aria-hidden="true" /> Ajouter « Chaque destinataire »
+            <Plus size={13} aria-hidden="true" /> {t("signers.addEach")}
           </button>
         )}
         <span className="muted small" data-testid="signers-status">
-          {error ? "" : !complete ? "Choisissez la personne pour enregistrer." : rows.length > 0 && saved ? "Enregistré." : ""}
+          {error ? "" : !complete ? t("signers.pickToSave") : rows.length > 0 && saved ? t("signers.savedState") : ""}
         </span>
       </div>
       <div className="row-actions">
         <button type="button" className="button button--ghost button--sm" onClick={() => setAdding(!adding)}>
-          <UserPlus size={13} aria-hidden="true" /> Ajouter une personne extérieure
+          <UserPlus size={13} aria-hidden="true" /> {t("signers.addExternal")}
         </button>
       </div>
       {adding && (

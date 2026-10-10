@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import {
   Activity,
@@ -48,26 +49,28 @@ function NavItem({
   );
 }
 
-const TITLES: [prefix: string, label: string][] = [
-  ["/signatures", "Mes signatures"],
-  ["/assignments", "Document à signer"],
-  ["/documents", "Documents"],
-  ["/sign", "Faire signer"],
-  ["/campaigns", "Suivi"],
-  ["/admin/users", "Utilisateurs"],
-  ["/admin/branding", "Logo"],
-  ["/admin/identity", "Identités & accès"],
-  ["/admin/mail", "E-mail"],
-  ["/admin/audit", "Audit"],
-  ["/admin/signing-keys", "Clés de signature"],
-  ["/admin/diagnostics", "Diagnostic"],
+// Catalogue keys, not texts: the breadcrumb is translated when it is drawn.
+const TITLES: [prefix: string, key: string][] = [
+  ["/signatures", "nav.mySignatures"],
+  ["/assignments", "nav.documentToSign"],
+  ["/documents", "nav.documents"],
+  ["/sign", "nav.sign"],
+  ["/campaigns", "nav.tracking"],
+  ["/admin/users", "nav.users"],
+  ["/admin/branding", "nav.logo"],
+  ["/admin/identity", "nav.identity"],
+  ["/admin/mail", "nav.mailTitle"],
+  ["/admin/audit", "nav.audit"],
+  ["/admin/signing-keys", "nav.signingKeys"],
+  ["/admin/diagnostics", "nav.diagnostics"],
 ];
 
-function sectionTitle(pathname: string): string {
-  return TITLES.find(([prefix]) => pathname.startsWith(prefix))?.[1] ?? "Mes signatures";
+function sectionTitleKey(pathname: string): string {
+  return TITLES.find(([prefix]) => pathname.startsWith(prefix))?.[1] ?? "nav.mySignatures";
 }
 
 export default function Shell() {
+  const { t } = useTranslation();
   const { user, hasRole, refresh } = useAuth();
   const { pathname } = useLocation();
   const [open, setOpen] = useState(false);
@@ -79,12 +82,12 @@ export default function Shell() {
   const close = () => setOpen(false);
 
   const roleLabel = isAdmin
-    ? "Administrateur"
+    ? t("roles.admin")
     : hasRole("OPERATOR")
-      ? "Opérateur"
+      ? t("roles.operator")
       : hasRole("SIGNER")
-        ? "Signataire"
-        : "Utilisateur";
+        ? t("roles.signer")
+        : t("roles.user");
 
   const logout = async () => {
     try {
@@ -100,41 +103,41 @@ export default function Shell() {
     <div className="app-shell">
       <aside className={`sidebar${open ? " sidebar--open" : ""}`}>
         <div className="brand">
-          <img className="brand-logo" src={companyLogo ?? "/lcit-mark.png"} alt={companyLogo ? "Logo" : "LCIT"} />
+          <img className="brand-logo" src={companyLogo ?? "/lcit-mark.png"} alt={companyLogo ? t("shell.logoAlt") : "LCIT"} />
           <div>
             <span>Sign</span>
-            <small>Signature &amp; attestation</small>
+            <small>{t("shell.tagline")}</small>
           </div>
         </div>
-        <nav aria-label="Navigation principale">
-          <div className="nav-heading">Mon espace</div>
-          <NavItem to="/" end icon={<FileSignature size={18} />} label="Mes signatures" onNavigate={close} />
+        <nav aria-label={t("nav.main")}>
+          <div className="nav-heading">{t("nav.mySpace")}</div>
+          <NavItem to="/" end icon={<FileSignature size={18} />} label={t("nav.mySignatures")} onNavigate={close} />
           {isOperator && (
             <>
-              <div className="nav-heading">Mes demandes</div>
-              <NavItem to="/documents" icon={<FileText size={18} />} label="Documents" onNavigate={close} />
-              <NavItem to="/sign" icon={<PenLine size={18} />} label="Faire signer" onNavigate={close} />
-              <NavItem to="/campaigns" icon={<Megaphone size={18} />} label="Suivi" onNavigate={close} />
+              <div className="nav-heading">{t("nav.myRequests")}</div>
+              <NavItem to="/documents" icon={<FileText size={18} />} label={t("nav.documents")} onNavigate={close} />
+              <NavItem to="/sign" icon={<PenLine size={18} />} label={t("nav.sign")} onNavigate={close} />
+              <NavItem to="/campaigns" icon={<Megaphone size={18} />} label={t("nav.tracking")} onNavigate={close} />
             </>
           )}
           {isAdmin && (
             <>
-              <div className="nav-heading">Administration</div>
-              <NavItem to="/admin/users" icon={<Users size={18} />} label="Utilisateurs" onNavigate={close} />
-              <NavItem to="/admin/branding" icon={<ImageIcon size={18} />} label="Logo" onNavigate={close} />
-              <NavItem to="/admin/identity" icon={<KeyRound size={18} />} label="Identités & accès" onNavigate={close} />
-              <NavItem to="/admin/mail" icon={<Mail size={18} />} label="Email" onNavigate={close} />
-              <NavItem to="/admin/audit" icon={<ScrollText size={18} />} label="Audit" onNavigate={close} />
+              <div className="nav-heading">{t("nav.administration")}</div>
+              <NavItem to="/admin/users" icon={<Users size={18} />} label={t("nav.users")} onNavigate={close} />
+              <NavItem to="/admin/branding" icon={<ImageIcon size={18} />} label={t("nav.logo")} onNavigate={close} />
+              <NavItem to="/admin/identity" icon={<KeyRound size={18} />} label={t("nav.identity")} onNavigate={close} />
+              <NavItem to="/admin/mail" icon={<Mail size={18} />} label={t("nav.mail")} onNavigate={close} />
+              <NavItem to="/admin/audit" icon={<ScrollText size={18} />} label={t("nav.audit")} onNavigate={close} />
               <NavItem
                 to="/admin/signing-keys"
                 icon={<KeyRound size={18} />}
-                label="Clés de signature"
+                label={t("nav.signingKeys")}
                 onNavigate={close}
               />
               <NavItem
                 to="/admin/diagnostics"
                 icon={<Activity size={18} />}
-                label="Diagnostic"
+                label={t("nav.diagnostics")}
                 onNavigate={close}
               />
             </>
@@ -144,7 +147,7 @@ export default function Shell() {
           <strong>
             <ShieldCheck size={13} aria-hidden="true" /> LCIT Cybersecurity
           </strong>
-          Connecté en tant que {roleLabel.toLowerCase()}
+          {t("shell.signedInAs", { role: roleLabel.toLowerCase() })}
         </div>
       </aside>
       {open && <div className="sidebar-scrim" onClick={close} aria-hidden="true" />}
@@ -155,13 +158,13 @@ export default function Shell() {
             <button
               className="button button--ghost button--sm mobile-menu"
               onClick={() => setOpen(true)}
-              aria-label="Ouvrir le menu"
+              aria-label={t("shell.openMenu")}
             >
               <Menu size={18} />
             </button>
             <span>LCIT Sign</span>
             <ChevronRight size={14} aria-hidden="true" />
-            <strong>{sectionTitle(pathname)}</strong>
+            <strong>{t(sectionTitleKey(pathname))}</strong>
           </div>
           <div className="top-actions">
             {user && (

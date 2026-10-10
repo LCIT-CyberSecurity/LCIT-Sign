@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, ChevronDown, KeyRound, LogOut, Monitor, Moon, Palette, Sun } from "lucide-react";
+import { useTranslation } from "react-i18next";
+import { Check, ChevronDown, KeyRound, Languages, LogOut, Monitor, Moon, Palette, Sun } from "lucide-react";
 import {
   APPEARANCES,
   THEMES,
@@ -13,12 +14,14 @@ import {
   type Appearance,
   type ThemeId,
 } from "../theme";
+import { LOCALE_LABELS, SUPPORTED_LOCALES, currentLocale, setLocale } from "../i18n";
 import type { Me } from "../api/types";
 
-const ROLE_LABELS: Record<string, string> = {
-  SIGNER: "Signataire",
-  OPERATOR: "Opérateur",
-  ADMIN: "Administrateur",
+/** The API role values stay as they are; only what is displayed is translated. */
+const ROLE_KEYS: Record<string, string> = {
+  SIGNER: "roles.signer",
+  OPERATOR: "roles.operator",
+  ADMIN: "roles.admin",
 };
 
 export function initials(name: string | undefined): string {
@@ -43,12 +46,14 @@ export default function UserMenu({
   onSignOut: () => void;
   onChangePassword?: () => void;
 }) {
+  const { t } = useTranslation();
   const menu = useRef<HTMLDetailsElement>(null);
   const [theme, setTheme] = useState<ThemeId>(readTheme);
   const [appearance, setAppearance] = useState<Appearance>(readAppearance);
 
-  const roles = user.roles.map((role) => ROLE_LABELS[role] ?? role);
-  const primaryRole = roles.length ? roles[roles.length - 1] : "Utilisateur";
+  const roles = user.roles.map((role) => (ROLE_KEYS[role] ? t(ROLE_KEYS[role]) : role));
+  const primaryRole = roles.length ? roles[roles.length - 1] : t("roles.user");
+  const locale = currentLocale();
 
   const pickTheme = (next: ThemeId) => {
     setTheme(next);
@@ -85,7 +90,7 @@ export default function UserMenu({
 
   return (
     <details className="user-menu" ref={menu}>
-      <summary aria-label="Compte et réglages">
+      <summary aria-label={t("userMenu.account")}>
         <span className="avatar">{initials(user.display_name)}</span>
         <span className="user-name">
           {user.display_name}
@@ -103,7 +108,7 @@ export default function UserMenu({
         </div>
 
         <div className="user-menu-section">
-          <span className="user-menu-label">Profils</span>
+          <span className="user-menu-label">{t("userMenu.profiles")}</span>
           <div className="badge-list" style={{ padding: "2px 10px 6px" }}>
             {roles.map((role) => (
               <span key={role} className="badge badge--viewed">
@@ -115,9 +120,9 @@ export default function UserMenu({
 
         <div className="user-menu-section">
           <span className="user-menu-label">
-            <Palette size={13} aria-hidden="true" /> Réglages
+            <Palette size={13} aria-hidden="true" /> {t("userMenu.settings")}
           </span>
-          <div className="appearance-row" role="group" aria-label="Apparence">
+          <div className="appearance-row" role="group" aria-label={t("userMenu.appearance")}>
             {APPEARANCES.map((option) => {
               const Icon = option.id === "light" ? Sun : option.id === "dark" ? Moon : Monitor;
               return (
@@ -128,7 +133,7 @@ export default function UserMenu({
                   className={"appearance-option" + (appearance === option.id ? " active" : "")}
                   onClick={() => pickAppearance(option.id)}
                 >
-                  <Icon aria-hidden="true" size={14} /> {option.label}
+                  <Icon aria-hidden="true" size={14} /> {t(`appearance.${option.id}`)}
                 </button>
               );
             })}
@@ -143,10 +148,31 @@ export default function UserMenu({
             >
               <span className={"style-swatch " + option.id} />
               <span className="style-option-text">
-                <strong>{option.name}</strong>
-                <small>{option.summary}</small>
+                <strong>{t(`theme.${option.id}.name`)}</strong>
+                <small>{t(`theme.${option.id}.summary`)}</small>
               </span>
               {theme === option.id ? <Check size={15} aria-hidden="true" /> : null}
+            </button>
+          ))}
+        </div>
+
+        <div className="user-menu-section">
+          <span className="user-menu-label">
+            <Languages size={13} aria-hidden="true" /> {t("userMenu.language")}
+          </span>
+          {SUPPORTED_LOCALES.map((code) => (
+            <button
+              key={code}
+              type="button"
+              lang={code}
+              aria-pressed={locale === code}
+              className={"style-option" + (locale === code ? " active" : "")}
+              onClick={() => void setLocale(code)}
+            >
+              <span className="style-option-text">
+                <strong>{LOCALE_LABELS[code]}</strong>
+              </span>
+              {locale === code ? <Check size={15} aria-hidden="true" /> : null}
             </button>
           ))}
         </div>
@@ -160,7 +186,7 @@ export default function UserMenu({
                 onChangePassword();
               }}
             >
-              <KeyRound size={15} aria-hidden="true" /> Changer le mot de passe
+              <KeyRound size={15} aria-hidden="true" /> {t("userMenu.changePassword")}
             </button>
           )}
           <button
@@ -170,7 +196,7 @@ export default function UserMenu({
               onSignOut();
             }}
           >
-            <LogOut size={15} aria-hidden="true" /> Se déconnecter
+            <LogOut size={15} aria-hidden="true" /> {t("userMenu.signOut")}
           </button>
         </div>
       </div>

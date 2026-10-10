@@ -1,4 +1,5 @@
 import { useId, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { Info } from "lucide-react";
 
 /** A small (i) that explains a setting on hover or keyboard focus, with an
@@ -12,10 +13,11 @@ export default function HelpHint({
   children: ReactNode;
   example?: string;
 }) {
+  const { t } = useTranslation();
   const id = useId();
   return (
     <span className="help">
-      <button type="button" className="help__button" aria-label={`Aide : ${title}`} aria-describedby={id}>
+      <button type="button" className="help__button" aria-label={t("common.help", { title })} aria-describedby={id}>
         <Info size={14} aria-hidden="true" />
       </button>
       <span role="tooltip" id={id} className="help__bubble">
@@ -23,7 +25,7 @@ export default function HelpHint({
         <span>{children}</span>
         {example && (
           <span className="help__example">
-            Exemple : <code>{example}</code>
+            {t("common.example")} <code>{example}</code>
           </span>
         )}
       </span>

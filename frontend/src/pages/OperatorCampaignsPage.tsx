@@ -1,26 +1,16 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Link, useSearchParams } from "react-router-dom";
 import { Megaphone, PenLine } from "lucide-react";
 import { api } from "../api/client";
+import { campaignStatus } from "../i18n/enums";
+import i18n from "../i18n";
+import { formatDate as formatDay } from "../i18n/format";
 import DashboardCards from "../components/DashboardCards";
 import SignedDocuments from "../components/SignedDocuments";
 import type { Campaign, OperatorDashboard } from "../api/types";
 
-const TARGETS: Record<string, string> = {
-  SPECIFIC_USERS: "Utilisateurs",
-  GROUPS: "Groupes",
-  GROUPS_AND_USERS: "Groupes + utilisateurs",
-  ALL_USERS: "Tous les utilisateurs",
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  DRAFT: "Brouillon",
-  SCHEDULED: "Programmée",
-  ACTIVE: "Active",
-  CLOSED: "Clôturée",
-  CANCELLED: "Annulée",
-  ARCHIVED: "Archivée",
-};
+const targetLabel = (mode: string) => (i18n.exists(`campaign.target.${mode}`) ? i18n.t(`campaign.target.${mode}`) : mode);
 
 function totals(c: Campaign): { signed: number; total: number } {
   const counts = c.assignment_counts;
@@ -29,10 +19,11 @@ function totals(c: Campaign): { signed: number; total: number } {
 }
 
 function formatDate(value: string | null): string {
-  return value ? new Date(value).toLocaleDateString("fr-FR") : "—";
+  return value ? formatDay(value) : "—";
 }
 
 export default function OperatorCampaignsPage() {
+  const { t } = useTranslation();
   const [campaigns, setCampaigns] = useState<Campaign[] | null>(null);
   const [dashboard, setDashboard] = useState<OperatorDashboard | null>(null);
   const [query, setQuery] = useSearchParams();
@@ -50,18 +41,18 @@ export default function OperatorCampaignsPage() {
       <div className="page-header">
         <div>
           <h1 className="page-title" style={{ margin: 0 }}>
-            <Megaphone size={22} aria-hidden="true" /> Suivi
+            <Megaphone size={22} aria-hidden="true" /> {t("nav.tracking")}
           </h1>
           <p className="page-subtitle" style={{ margin: "6px 0 0" }}>
-            Le suivi et le reporting de ce qui a été envoyé à la signature : qui a signé, qui reste à faire.
+            {t("tracking.subtitle")}
           </p>
         </div>
         <Link className="button button--primary" to="/sign">
-          <PenLine size={14} aria-hidden="true" /> Nouvelle demande de signature
+          <PenLine size={14} aria-hidden="true" /> {t("tracking.newRequest")}
         </Link>
       </div>
 
-      <div className="tabs" role="tablist" aria-label="Suivi">
+      <div className="tabs" role="tablist" aria-label={t("nav.tracking")}>
         <button
           role="tab"
           type="button"
@@ -69,7 +60,7 @@ export default function OperatorCampaignsPage() {
           className={tab === "campaigns" ? "tab is-active" : "tab"}
           onClick={() => setQuery({})}
         >
-          Campagnes
+          {t("tracking.campaigns")}
         </button>
         <button
           role="tab"
@@ -78,7 +69,7 @@ export default function OperatorCampaignsPage() {
           className={tab === "signed" ? "tab is-active" : "tab"}
           onClick={() => setQuery({ tab: "signed" })}
         >
-          Documents signés
+          {t("tracking.signedDocuments")}
         </button>
       </div>
 
@@ -90,19 +81,19 @@ export default function OperatorCampaignsPage() {
         <table className="simple-table campaigns-table">
           <thead>
             <tr>
-              <th>Campagne</th>
-              <th>Statut</th>
-              <th>Cible</th>
-              <th>Avancement</th>
-              <th>Lancée le</th>
-              <th>Échéance</th>
+              <th>{t("tracking.columns.campaign")}</th>
+              <th>{t("tracking.columns.status")}</th>
+              <th>{t("tracking.columns.target")}</th>
+              <th>{t("tracking.columns.progress")}</th>
+              <th>{t("tracking.columns.launched")}</th>
+              <th>{t("tracking.columns.deadline")}</th>
             </tr>
           </thead>
           <tbody>
             {campaigns?.filter((c) => c.status !== "DRAFT").length === 0 && (
               <tr>
                 <td colSpan={6} className="muted">
-                  Rien n&apos;a encore été envoyé à la signature.
+                  {t("tracking.nothingSent")}
                 </td>
               </tr>
             )}
@@ -115,15 +106,15 @@ export default function OperatorCampaignsPage() {
                     <Link className="row-link" to={`/campaigns/${c.id}`}>
                       {c.name}
                     </Link>
-                    <div className="muted small">{c.document_version_ids.length} document(s)</div>
+                    <div className="muted small">{t("counts.documents", { count: c.document_version_ids.length })}</div>
                   </td>
                   <td>
-                    <span className={`badge badge--${c.status.toLowerCase()}`}>{STATUS_LABELS[c.status]}</span>
+                    <span className={`badge badge--${c.status.toLowerCase()}`}>{campaignStatus(c.status)}</span>
                   </td>
-                  <td>{c.status === "DRAFT" ? "—" : (TARGETS[c.target_mode] ?? c.target_mode)}</td>
+                  <td>{c.status === "DRAFT" ? "—" : targetLabel(c.target_mode)}</td>
                   <td>
                     {total > 0 ? (
-                      <div className="table-progress" title={`${signed} signé(s) sur ${total}`}>
+                      <div className="table-progress" title={t("tracking.signedOf", { signed, total })}>
                         <div>
                           <span style={{ width: `${pct}%` }} />
                         </div>
@@ -133,7 +124,7 @@ export default function OperatorCampaignsPage() {
                       "—"
                     )}
                   </td>
-                  <td>{c.status === "SCHEDULED" ? `dès le ${formatDate(c.scheduled_start)}` : formatDate(c.launch_at)}</td>
+                  <td>{c.status === "SCHEDULED" ? t("tracking.startingOn", { date: formatDate(c.scheduled_start) }) : formatDate(c.launch_at)}</td>
                   <td>{formatDate(c.deadline)}</td>
                 </tr>
               );

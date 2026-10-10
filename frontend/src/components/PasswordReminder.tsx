@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { ShieldAlert } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
 import ChangePasswordDialog from "./ChangePasswordDialog";
@@ -26,6 +27,7 @@ function markShown(): void {
  *  out clears the memory (see Shell), so the next sign-in shows it again; a page
  *  reload within the same sign-in does not re-open it. */
 export default function PasswordReminder() {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const [open, setOpen] = useState(() => !alreadyShownThisSession());
   const mustChange = Boolean(user?.must_change_password);
@@ -37,11 +39,9 @@ export default function PasswordReminder() {
     <>
       <div className="reminder-banner" role="alert" data-testid="password-reminder">
         <ShieldAlert size={16} aria-hidden="true" />
-        <span>
-          Le mot de passe initial du compte système n&apos;a pas été changé : il est connu de tous.
-        </span>
+        <span>{t("password.reminder")}</span>
         <button type="button" className="button button--sm button--primary" onClick={() => setOpen(true)}>
-          Le changer maintenant
+          {t("password.changeNow")}
         </button>
       </div>
       {open && <ChangePasswordDialog onClose={() => setOpen(false)} />}

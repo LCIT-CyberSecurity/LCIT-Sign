@@ -1,6 +1,8 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { KeyRound } from "lucide-react";
-import { api, ApiError } from "../api/client";
+import { api } from "../api/client";
+import { errorText } from "../i18n/errors";
 import { GoogleLogo, MicrosoftLogo } from "../components/ProviderLogos";
 
 interface Provider {
@@ -12,6 +14,7 @@ interface Provider {
   redirect_uri: string;
 }
 
+// Provider names are proper names: the same in every language.
 const LABELS = {
   entra: { name: "Microsoft (Entra ID)", logo: <MicrosoftLogo /> },
   google: { name: "Google", logo: <GoogleLogo /> },
@@ -20,6 +23,7 @@ const LABELS = {
 /** One sign-in button per provider, set up by hand: the application's identifiers and its secret.
  *  The secret is written once, stored encrypted, and never shown again. */
 function ProviderCard({ item, onSaved }: { item: Provider; onSaved: () => void }) {
+  const { t } = useTranslation();
   const [clientId, setClientId] = useState(item.client_id);
   const [tenantId, setTenantId] = useState(item.tenant_id);
   const [secret, setSecret] = useState("");
@@ -36,10 +40,10 @@ function ProviderCard({ item, onSaved }: { item: Provider; onSaved: () => void }
         client_secret: secret || undefined,
       });
       setSecret(""); // the secret never stays in the page once sent
-      setMessage({ ok: true, text: "Enregistré : c'est maintenant le fournisseur de connexion." });
+      setMessage({ ok: true, text: t("identity.login.saved") });
       onSaved();
     } catch (err) {
-      setMessage({ ok: false, text: err instanceof ApiError ? err.message : "Échec de l'enregistrement." });
+      setMessage({ ok: false, text: errorText(err, "identity.login.saveFailed") });
     }
   };
 
@@ -49,7 +53,7 @@ function ProviderCard({ item, onSaved }: { item: Provider; onSaved: () => void }
       await api.post(`/admin/login-providers/${item.provider}/activate`);
       onSaved();
     } catch (err) {
-      setMessage({ ok: false, text: err instanceof ApiError ? err.message : "Échec de l'activation." });
+      setMessage({ ok: false, text: errorText(err, "identity.login.activateFailed") });
     }
   };
 
@@ -62,7 +66,7 @@ function ProviderCard({ item, onSaved }: { item: Provider; onSaved: () => void }
       setSecret("");
       onSaved();
     } catch (err) {
-      setMessage({ ok: false, text: err instanceof ApiError ? err.message : "Échec de la suppression." });
+      setMessage({ ok: false, text: errorText(err, "identity.login.deleteFailed") });
     }
   };
 
@@ -75,14 +79,18 @@ function ProviderCard({ item, onSaved }: { item: Provider; onSaved: () => void }
     >
       <div className="card-title">
         {label.logo} {label.name}{" "}
-        {item.active ? "(actif)" : item.configured ? "(configuré, inactif)" : "(non configuré)"}
+        {item.active
+          ? t("identity.login.active")
+          : item.configured
+            ? t("identity.login.configuredInactive")
+            : t("identity.login.notConfigured")}
       </div>
       <p className="muted small">
-        Adresse de retour à déclarer chez le fournisseur : <code>{item.redirect_uri}</code>
+        {t("identity.login.redirectUri")} <code>{item.redirect_uri}</code>
       </p>
       {item.provider === "entra" && (
         <div className="field">
-          <label htmlFor="login-entra-tenant">ID du tenant (annuaire)</label>
+          <label htmlFor="login-entra-tenant">{t("identity.login.tenantId")}</label>
           <input
             id="login-entra-tenant"
             value={tenantId}
@@ -94,7 +102,7 @@ function ProviderCard({ item, onSaved }: { item: Provider; onSaved: () => void }
       )}
       <div className="field">
         <label htmlFor={`login-${item.provider}-client`}>
-          {item.provider === "entra" ? "ID de l'application (client)" : "ID client OAuth"}
+          {item.provider === "entra" ? t("identity.login.entraClientId") : t("identity.login.googleClientId")}
         </label>
         <input
           id={`login-${item.provider}-client`}
@@ -105,29 +113,29 @@ function ProviderCard({ item, onSaved }: { item: Provider; onSaved: () => void }
         />
       </div>
       <div className="field">
-        <label htmlFor={`login-${item.provider}-secret`}>Secret client (la valeur, pas son ID)</label>
+        <label htmlFor={`login-${item.provider}-secret`}>{t("identity.login.secret")}</label>
         <input
           id={`login-${item.provider}-secret`}
           type="password"
           value={secret}
           onChange={(e) => setSecret(e.target.value)}
           autoComplete="new-password"
-          placeholder={item.configured ? "•••••••• (enregistré — laisser vide pour le garder)" : ""}
+          placeholder={item.configured ? t("identity.login.secretKept") : ""}
           required={!item.configured}
         />
       </div>
       <div className="form-row">
         <button className="button button--primary" type="submit">
-          Enregistrer
+          {t("common.save")}
         </button>
         {item.configured && !item.active && (
           <button className="button" type="button" onClick={activate}>
-            Utiliser ce fournisseur
+            {t("identity.login.useProvider")}
           </button>
         )}
         {item.configured && (
           <button className="button" type="button" onClick={remove}>
-            Supprimer
+            {t("common.delete")}
           </button>
         )}
       </div>
@@ -143,6 +151,7 @@ function ProviderCard({ item, onSaved }: { item: Provider; onSaved: () => void }
 /** Connexion: ONE external sign-in provider is in use (the active one), and the local form is
  *  always there next to it. */
 export default function AdminLoginPage() {
+  const { t } = useTranslation();
   const [items, setItems] = useState<Provider[] | null>(null);
   const [fixedByServer, setFixedByServer] = useState(false);
   const load = () => {
@@ -153,21 +162,18 @@ export default function AdminLoginPage() {
       .catch(() => undefined);
   };
   useEffect(load, []);
-  if (!items) return <p className="muted">Chargement…</p>;
+  if (!items) return <p className="muted">{t("common.loading")}</p>;
   return (
     <section className="stack" data-testid="identity-login">
       <h2 className="page-title" style={{ fontSize: 18, margin: 0 }}>
-        <KeyRound size={18} aria-hidden="true" /> Connexion
+        <KeyRound size={18} aria-hidden="true" /> {t("identity.login.title")}
       </h2>
       <p className="muted">
-        Comment les gens s&apos;authentifient : <strong>un seul</strong> fournisseur SSO est actif (celui que la
-        page de connexion propose), plus la connexion locale, toujours disponible. Les identifiants se saisissent
-        ici : ils sont stockés chiffrés dans la base, jamais dans le code ni dans l&apos;environnement.
+        <Trans i18nKey="identity.login.intro" components={{ strong: <strong /> }} />
       </p>
       {fixedByServer && (
         <p className="error-text" role="status" data-testid="sso-fixed-by-server">
-          Le SSO est imposé par la configuration du serveur (variables LCIT_SIGN_OIDC_*) : tant qu&apos;elles sont
-          définies, elles passent avant les réglages ci-dessous.
+          {t("identity.login.fixedByServer")}
         </p>
       )}
       {items.map((item) => (

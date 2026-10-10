@@ -1,6 +1,8 @@
 import { useState, type FormEvent } from "react";
+import { useTranslation } from "react-i18next";
 import { UserPlus } from "lucide-react";
-import { api, ApiError } from "../api/client";
+import { api } from "../api/client";
+import { errorText } from "../i18n/errors";
 import HelpHint from "./HelpHint";
 
 export interface ExternalPerson {
@@ -20,6 +22,7 @@ export default function ExternalPersonForm({
   onCreated: (person: ExternalPerson) => void;
   onCancel: () => void;
 }) {
+  const { t } = useTranslation();
   const [email, setEmail] = useState("");
   const [givenName, setGivenName] = useState("");
   const [familyName, setFamilyName] = useState("");
@@ -39,7 +42,7 @@ export default function ExternalPersonForm({
       });
       onCreated(person);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "L'ajout a échoué.");
+      setError(errorText(err, "external.addFailed"));
     } finally {
       setBusy(false);
     }
@@ -47,26 +50,25 @@ export default function ExternalPersonForm({
 
   return (
     // Not a <form>: it sits inside the page's own forms.
-    <div className="card external-form" role="group" aria-label="Ajouter une personne extérieure">
+    <div className="card external-form" role="group" aria-label={t("external.groupLabel")}>
       <div className="card-title">
-        <UserPlus size={14} aria-hidden="true" /> Une personne extérieure à l&apos;entreprise
-        <HelpHint title="Personne extérieure" example="jean.client@partenaire.com">
-          Un client, un partenaire… Elle n&apos;a pas de compte à créer : elle reçoit un e-mail et se connecte
-          avec sa propre adresse (compte Microsoft ou Google). Son adresse doit être celle de ce compte.
+        <UserPlus size={14} aria-hidden="true" /> {t("external.title")}
+        <HelpHint title={t("external.helpTitle")} example="jean.client@partenaire.com">
+          {t("external.help")}
         </HelpHint>
       </div>
       <div className="form-row">
         <label>
-          Prénom
+          {t("external.givenName")}
           <input value={givenName} onChange={(e) => setGivenName(e.target.value)} maxLength={120} />
         </label>
         <label>
-          Nom
+          {t("external.familyName")}
           <input value={familyName} onChange={(e) => setFamilyName(e.target.value)} maxLength={120} />
         </label>
       </div>
       <label>
-        Adresse e-mail
+        {t("external.email")}
         <input
           type="email"
           value={email}
@@ -81,10 +83,10 @@ export default function ExternalPersonForm({
       {error && <p className="error-text" role="alert">{error}</p>}
       <div className="row-actions">
         <button type="button" className="button button--primary button--sm" disabled={busy || !email.trim()} onClick={(e) => void submit(e as unknown as FormEvent)}>
-          Ajouter
+          {t("users.add")}
         </button>
         <button type="button" className="button button--ghost button--sm" onClick={onCancel}>
-          Annuler
+          {t("common.cancel")}
         </button>
       </div>
     </div>

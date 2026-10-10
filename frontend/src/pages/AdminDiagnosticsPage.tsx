@@ -1,18 +1,15 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Activity, CheckCircle2, AlertTriangle, XCircle, MinusCircle, RefreshCw } from "lucide-react";
 import { api } from "../api/client";
+import i18n from "../i18n";
+import { diagnosticText } from "../i18n/errors";
+import { formatDateTime } from "../i18n/format";
 import type { DiagnosticCheck, DiagnosticsReport } from "../api/types";
 
-const LABELS: Record<string, string> = {
-  application: "Application",
-  database: "PostgreSQL",
-  filesystem: "Système de fichiers",
-  signing_key: "Clé de signature",
-  oidc: "SSO (OIDC)",
-  directory: "Annuaire",
-  smtp: "E-mail",
-  worker: "Tâches de fond",
-};
+const KNOWN_COMPONENTS = ["application", "database", "filesystem", "signing_key", "oidc", "directory", "smtp", "worker", "builtin_admin"];
+const componentLabel = (name: string) =>
+  KNOWN_COMPONENTS.includes(name) ? i18n.t(`diagnostics.component.${name}`) : name;
 
 function StatusIcon({ status }: { status: DiagnosticCheck["status"] }) {
   const common = { size: 16, "aria-hidden": true } as const;
@@ -23,6 +20,7 @@ function StatusIcon({ status }: { status: DiagnosticCheck["status"] }) {
 }
 
 export default function AdminDiagnosticsPage() {
+  const { t } = useTranslation();
   const [report, setReport] = useState<DiagnosticsReport | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -42,15 +40,15 @@ export default function AdminDiagnosticsPage() {
   return (
     <div className="stack">
       <h1 className="page-title">
-        <Activity size={20} aria-hidden="true" /> Diagnostic
+        <Activity size={20} aria-hidden="true" /> {t("diagnostics.title")}
       </h1>
       <div className="card">
         <button className="button button--secondary" onClick={load} disabled={loading}>
-          <RefreshCw size={14} aria-hidden="true" /> {loading ? "Vérification…" : "Revérifier"}
+          <RefreshCw size={14} aria-hidden="true" /> {loading ? t("diagnostics.checking") : t("diagnostics.recheck")}
         </button>
         {report && (
           <p className="muted small">
-            Dernière vérification : {new Date(report.checked_at).toLocaleString("fr-FR")}
+            {t("diagnostics.lastCheck", { date: formatDateTime(report.checked_at) })}
           </p>
         )}
         <table className="simple-table">
@@ -59,10 +57,10 @@ export default function AdminDiagnosticsPage() {
               <tr key={check.name}>
                 <td>
                   <StatusIcon status={check.status} />{" "}
-                  <span data-testid={`check-${check.name}`}>{LABELS[check.name] ?? check.name}</span>
+                  <span data-testid={`check-${check.name}`}>{componentLabel(check.name)}</span>
                 </td>
                 <td>{check.status}</td>
-                <td className="muted">{check.detail}</td>
+                <td className="muted">{diagnosticText(check.detail)}</td>
               </tr>
             ))}
           </tbody>

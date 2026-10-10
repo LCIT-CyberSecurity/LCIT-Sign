@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useParams, Link } from "react-router-dom";
 import { ArrowLeft, Download, FileCheck } from "lucide-react";
-import { api, ApiError } from "../api/client";
+import { api } from "../api/client";
+import i18n from "../i18n";
+import { errorText } from "../i18n/errors";
 import { useAuth } from "../auth/AuthContext";
 import type { MyAssignment, PublicConfig, SignatureSummary } from "../api/types";
 
@@ -19,14 +22,6 @@ interface SigningForm {
   automatic: FormField[];
 }
 
-const AUTO_LABELS: Record<string, string> = {
-  SIGNATURE: "votre signature",
-  DATE: "la date de signature",
-  FULL_NAME: "votre nom",
-  EMAIL: "votre e-mail",
-  LOGO: "le logo de l'entreprise",
-};
-
 // Always listed in this order, whatever order the operator placed them in.
 const AUTO_ORDER = ["SIGNATURE", "FULL_NAME", "EMAIL", "DATE", "LOGO"];
 
@@ -40,13 +35,14 @@ export function groupInputs(inputs: FormField[]) {
       existing.ids.push(f.id);
       existing.required = existing.required || f.required;
     } else {
-      groups.set(key, { key, label: f.label || "Texte", required: f.required, ids: [f.id] });
+      groups.set(key, { key, label: f.label || i18n.t("signing.defaultFieldLabel"), required: f.required, ids: [f.id] });
     }
   }
   return [...groups.values()];
 }
 
 export default function SignerAssignmentDetailPage() {
+  const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
   const [assignment, setAssignment] = useState<MyAssignment | null>(null);
@@ -81,7 +77,7 @@ export default function SignerAssignmentDetailPage() {
       .catch(() => setForm(null));
   }, [versionId, alreadySigned]);
 
-  if (!assignment) return <p className="muted">Chargement…</p>;
+  if (!assignment) return <p className="muted">{t("common.loading")}</p>;
 
   const inputGroups = groupInputs(form?.inputs ?? []);
   const missing = inputGroups.some((g) => g.required && !(typed[g.key] ?? "").trim());
@@ -112,7 +108,7 @@ export default function SignerAssignmentDetailPage() {
       setSignature(result);
       load();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "La signature a échoué.");
+      setError(errorText(err, "signing.failed"));
     } finally {
       setSigning(false);
     }
@@ -121,12 +117,12 @@ export default function SignerAssignmentDetailPage() {
   return (
     <div className="stack">
       <Link to="/" className="back-link">
-        <ArrowLeft size={14} aria-hidden="true" /> Retour
+        <ArrowLeft size={14} aria-hidden="true" /> {t("common.back")}
       </Link>
 
       <h1 className="page-title">{assignment.document_title}</h1>
       <p className="muted">
-        Version {assignment.version_label} — {assignment.campaign_name}
+        {t("assignments.version", { version: assignment.version_label, campaign: assignment.campaign_name })}
       </p>
 
       <div className="pdf-viewer">
@@ -136,11 +132,11 @@ export default function SignerAssignmentDetailPage() {
       {isSigned || signature ? (
         <div className="card card--success">
           <div className="card-title">
-            <FileCheck size={18} aria-hidden="true" /> Document signé
+            <FileCheck size={18} aria-hidden="true" /> {t("signing.documentSigned")}
           </div>
           {signature && (
             <p className="muted">
-              Identifiant : <strong data-testid="signature-id">{signature.display_id}</strong>
+              {t("signing.id")} <strong data-testid="signature-id">{signature.display_id}</strong>
             </p>
           )}
           <div className="button-row">
@@ -148,7 +144,7 @@ export default function SignerAssignmentDetailPage() {
               className="button button--primary"
               to={`/signatures/${signature ? signature.id : assignment.signature_id}`}
             >
-              Voir ma signature et vérifier
+              {t("signing.viewSignature")}
             </Link>
             <a
               className="button button--secondary"
@@ -158,7 +154,7 @@ export default function SignerAssignmentDetailPage() {
                   : `/api/signatures/${assignment.signature_id}/signed-pdf`
               }
             >
-              <Download size={14} aria-hidden="true" /> PDF signé
+              <Download size={14} aria-hidden="true" /> {t("assignments.signedPdf")}
             </a>
             <a
               className="button button--secondary"
@@ -168,37 +164,37 @@ export default function SignerAssignmentDetailPage() {
                   : `/api/signatures/${assignment.signature_id}/certificate`
               }
             >
-              <Download size={14} aria-hidden="true" /> Certificat
+              <Download size={14} aria-hidden="true" /> {t("signing.certificate")}
             </a>
           </div>
         </div>
       ) : (
         <div className="card stack" style={{ gap: 16 }}>
-          <div className="signature-preview" aria-label="Aperçu de votre signature">
-            <span className="signature-preview__label">Aperçu de votre signature</span>
+          <div className="signature-preview" aria-label={t("signing.previewLabel")}>
+            <span className="signature-preview__label">{t("signing.previewLabel")}</span>
             <span className="signature-preview__name" data-testid="signature-preview-name">
               {user?.display_name}
             </span>
-            <span className="signature-preview__meta">Signé avec LCIT Sign</span>
+            <span className="signature-preview__meta">{t("signing.signedWith")}</span>
             <div className="signature-preview__fields">
               <span>
-                Signataire : <strong>{user?.display_name}</strong>
+                {t("signing.signer")} <strong>{user?.display_name}</strong>
               </span>
               <span>
-                E-mail : <strong>{user?.email}</strong>
+                {t("signing.email")} <strong>{user?.email}</strong>
               </span>
               <span>
-                Date : <strong>à l&apos;instant de la signature</strong>
+                {t("signing.date")} <strong>{t("signing.atSigning")}</strong>
               </span>
             </div>
           </div>
           {inputGroups.length > 0 && (
             <div className="stack" style={{ gap: 10 }} data-testid="signing-inputs">
-              <div className="field-label">À renseigner avant de signer</div>
+              <div className="field-label">{t("signing.fillBefore")}</div>
               {inputGroups.map((g) => (
                 <label key={g.key}>
                   {g.label}
-                  {g.required ? " *" : " (facultatif)"}
+                  {g.required ? " *" : ` ${t("signing.optional")}`}
                   <input
                     value={typed[g.key] ?? ""}
                     maxLength={500}
@@ -210,10 +206,10 @@ export default function SignerAssignmentDetailPage() {
           )}
           {(form?.automatic.length ?? 0) > 0 && (
             <p className="muted small">
-              Seront apposés automatiquement sur le document :{" "}
+              {t("signing.automatic")}{" "}
               {[...new Set(form?.automatic.map((f) => f.kind))]
                 .sort((a, b) => AUTO_ORDER.indexOf(a) - AUTO_ORDER.indexOf(b))
-                .map((kind) => AUTO_LABELS[kind] ?? kind)
+                .map((kind) => (i18n.exists(`signing.auto.${kind}`) ? t(`signing.auto.${kind}`) : kind))
                 .join(", ")}.
             </p>
           )}
@@ -223,7 +219,7 @@ export default function SignerAssignmentDetailPage() {
               checked={consentChecked}
               onChange={(e) => setConsentChecked(e.target.checked)}
             />
-            <span>{config?.consent_text ?? "J'atteste avoir pris connaissance de ce document."}</span>
+            <span>{config?.consent_text ?? t("signing.consentDefault")}</span>
           </label>
           {error && <p className="error-text">{error}</p>}
           <button
@@ -231,7 +227,7 @@ export default function SignerAssignmentDetailPage() {
             disabled={!consentChecked || signing || missing}
             onClick={sign}
           >
-            {signing ? "Signature en cours…" : "Signer"}
+            {signing ? t("signing.inProgress") : t("signing.sign")}
           </button>
         </div>
       )}

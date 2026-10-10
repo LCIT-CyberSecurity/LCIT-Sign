@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { Cloud, Database, FolderCog, Network, RefreshCw, Settings2 } from "lucide-react";
-import { api, ApiError } from "../api/client";
+import { api } from "../api/client";
+import i18n from "../i18n";
+import { errorText } from "../i18n/errors";
+import { connectorText } from "../i18n/connectors";
+import { collator, formatDateTime } from "../i18n/format";
+import { syncRunStatus } from "../i18n/enums";
 import DirectoryConnectorForm from "./DirectoryConnectorForm";
 import type { DirectoryGroup, DirectorySource, DirectorySyncRun } from "../api/types";
 
@@ -13,45 +19,54 @@ interface SourceInfo {
 }
 
 const ICONS: Record<string, typeof Cloud> = { entra: Cloud, google: Cloud, ldap: Network };
-const LOCAL: SourceInfo = {
+const localInfo = (): SourceInfo => ({
   source: "local",
-  title: "Annuaire de démonstration",
-  description: "Une organisation fictive (24 personnes, 6 groupes) pour tester sans rien connecter.",
+  title: i18n.t("directory.local.title"),
+  description: i18n.t("directory.local.description"),
   icon: Database,
   remote: false,
-};
+});
 
 /** A card per connector, titled and described by the connector itself. */
 function infoFor(source: DirectorySource): SourceInfo {
-  if (!source.spec) return LOCAL;
+  if (!source.spec) return localInfo();
   return {
     source: source.source,
-    title: source.spec.label,
-    description: source.spec.description,
+    title: connectorText(`dir.${source.source}`, "label", source.spec.label),
+    description: connectorText(`dir.${source.source}`, "description", source.spec.description),
     icon: ICONS[source.source] ?? Cloud,
     remote: true,
   };
 }
 
-const SCHEDULES: { minutes: number | null; label: string }[] = [
-  { minutes: null, label: "Manuelle" },
-  { minutes: 15, label: "Toutes les 15 minutes" },
-  { minutes: 60, label: "Toutes les heures" },
-  { minutes: 360, label: "Toutes les 6 heures" },
-  { minutes: 1440, label: "Une fois par jour" },
+const SCHEDULES: { minutes: number | null; key: string }[] = [
+  { minutes: null, key: "directory.schedule.manual" },
+  { minutes: 15, key: "directory.schedule.every15" },
+  { minutes: 60, key: "directory.schedule.hourly" },
+  { minutes: 360, key: "directory.schedule.every6h" },
+  { minutes: 1440, key: "directory.schedule.daily" },
 ];
 
 export function scheduleLabel(minutes: number | null): string {
-  return SCHEDULES.find((s) => s.minutes === minutes)?.label ?? `Toutes les ${minutes} minutes`;
+  const known = SCHEDULES.find((s) => s.minutes === minutes);
+  return known ? i18n.t(known.key) : i18n.t("directory.schedule.everyMinutes", { minutes });
 }
 
 function lastRunText(run: DirectorySyncRun | undefined): string {
-  if (!run) return "Jamais synchronisée";
-  const when = new Date(run.started_at).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" });
+  if (!run) return i18n.t("directory.lastRun.never");
+  const when = formatDateTime(run.started_at, { dateStyle: "short", timeStyle: "short" });
   if (run.status === "SUCCESS") {
-    return `${when} — ${run.users_added} ajouté(s), ${run.users_updated} mis à jour, ${run.users_deactivated} désactivé(s)`;
+    return i18n.t("directory.lastRun.summary", {
+      when,
+      added: run.users_added,
+      updated: run.users_updated,
+      deactivated: run.users_deactivated,
+    });
   }
-  return `${when} — ${run.status === "FAILED" ? "échec" : run.status}`;
+  // The run's status value is data from the API; only "FAILED" has a word of its own.
+  return run.status === "FAILED"
+    ? i18n.t("directory.lastRun.failed", { when })
+    : i18n.t("directory.lastRun.other", { when, status: run.status });
 }
 
 function SourceCard({
@@ -65,6 +80,7 @@ function SourceCard({
   lastRun: DirectorySyncRun | undefined;
   onChanged: () => void;
 }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -77,10 +93,10 @@ function SourceCard({
     setError(null);
     try {
       const run = await api.post<DirectorySyncRun>(`/admin/directory/sync?source=${info.source}`);
-      if (run.status === "FAILED") setError(run.error ?? "Échec de la synchronisation");
+      if (run.status === "FAILED") setError(run.error ?? t("directory.syncFailed"));
       onChanged();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Échec de la synchronisation");
+      setError(errorText(err, "directory.syncFailed"));
     } finally {
       setSyncing(false);
     }
@@ -92,7 +108,7 @@ function SourceCard({
       await api.post(`/admin/directory/sources/${info.source}/activate`);
       onChanged();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Échec de l'activation");
+      setError(errorText(err, "directory.activateFailed"));
     }
   };
 
@@ -105,7 +121,7 @@ function SourceCard({
       });
       onChanged();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Échec de l'enregistrement");
+      setError(errorText(err, "directory.saveFailed"));
     }
   };
 
@@ -122,24 +138,30 @@ function SourceCard({
           <div className="muted small">{info.description}</div>
         </div>
         <span className={`badge ${ready ? "badge--signed" : "badge--draft"}`} data-testid="source-state">
-          {active ? "Actif" : info.remote ? (source.configured ? "Configuré, inactif" : "Non configuré") : "Inactif"}
+          {active
+            ? t("directory.state.active")
+            : info.remote
+              ? source.configured
+                ? t("directory.state.configuredInactive")
+                : t("directory.state.notConfigured")
+              : t("directory.state.inactive")}
         </span>
       </div>
 
       <dl className="kv" style={{ marginTop: 12 }}>
-        <dt>Dernière synchronisation</dt>
+        <dt>{t("directory.lastSync")}</dt>
         <dd>{lastRunText(lastRun)}</dd>
-        <dt>Planification</dt>
+        <dt>{t("directory.schedule.title")}</dt>
         <dd>
           <select
             value={source.sync_interval_minutes ?? ""}
             disabled={!ready || !active}
-            aria-label={`Planification — ${info.title}`}
+            aria-label={t("directory.schedule.label", { title: info.title })}
             onChange={(e) => void setSchedule(e.target.value)}
           >
             {SCHEDULES.map((s) => (
-              <option key={s.label} value={s.minutes ?? ""}>
-                {s.label}
+              <option key={s.key} value={s.minutes ?? ""}>
+                {t(s.key)}
               </option>
             ))}
           </select>
@@ -149,16 +171,16 @@ function SourceCard({
       {error && <p className="error-text" role="alert">{error}</p>}
       <div className="button-row" style={{ marginTop: 14 }}>
         <button className="button button--primary button--sm" onClick={sync} disabled={!ready || !active || syncing}>
-          <RefreshCw size={13} aria-hidden="true" /> {syncing ? "Synchronisation…" : "Synchroniser maintenant"}
+          <RefreshCw size={13} aria-hidden="true" /> {syncing ? t("directory.syncing") : t("directory.syncNow")}
         </button>
         {ready && !active && (
           <button className="button button--secondary button--sm" onClick={activate}>
-            Utiliser cet annuaire
+            {t("directory.use")}
           </button>
         )}
         {info.remote && (
           <button className="button button--secondary button--sm" onClick={() => setOpen(!open)} aria-expanded={open}>
-            <Settings2 size={13} aria-hidden="true" /> {source.configured ? "Modifier la connexion" : "Configurer"}
+            <Settings2 size={13} aria-hidden="true" /> {source.configured ? t("directory.editConnection") : t("directory.configure")}
           </button>
         )}
       </div>
@@ -177,6 +199,7 @@ function SourceCard({
 }
 
 export default function AdminDirectoryPage() {
+  const { t } = useTranslation();
   const [sources, setSources] = useState<DirectorySource[]>([]);
   const [groups, setGroups] = useState<DirectoryGroup[] | null>(null);
   const [runs, setRuns] = useState<DirectorySyncRun[] | null>(null);
@@ -194,25 +217,23 @@ export default function AdminDirectoryPage() {
     const q = query.trim().toLowerCase();
     return (groups ?? [])
       .filter((g) => !q || `${g.name} ${g.source}`.toLowerCase().includes(q))
-      .sort((a, b) => a.name.localeCompare(b.name, "fr", { sensitivity: "base" }));
-  }, [groups, query]);
+      .sort((a, b) => collator().compare(a.name, b.name));
+  }, [groups, query, i18n.language]);
 
   return (
     <div className="stack">
       <div>
         <h2 className="page-title" style={{ fontSize: 18, marginBottom: 6 }}>
-          <FolderCog size={18} aria-hidden="true" /> Annuaire
+          <FolderCog size={18} aria-hidden="true" /> {t("directory.title")}
         </h2>
         <p className="page-subtitle">
-          D&apos;où viennent les utilisateurs et les groupes (RH, Compta, SRE…) : <strong>un seul annuaire est actif</strong>,
-          le seul qui se synchronise. Ils servent ensuite à cibler les campagnes. L&apos;annuaire n&apos;est jamais modifié, et un utilisateur disparu est désactivé, jamais
-          supprimé.
+          <Trans i18nKey="directory.intro" components={{ strong: <strong /> }} />
         </p>
       </div>
 
       {sources.length > 0 && !sources.some((s) => s.active) && (
         <p className="muted" data-testid="no-directory">
-          Aucun annuaire configuré. Choisissez ci-dessous Microsoft Entra ID, Google Workspace ou LDAP / OpenLDAP.
+          {t("directory.none")}
         </p>
       )}
 
@@ -236,12 +257,12 @@ export default function AdminDirectoryPage() {
       <div className="section-panel">
         <div className="page-title-row" style={{ marginBottom: 12 }}>
           <h2 className="page-title" style={{ margin: 0, fontSize: 18 }}>
-            Groupes <span className="count-badge">{groups?.length ?? 0}</span>
+            {t("directory.groups")} <span className="count-badge">{groups?.length ?? 0}</span>
           </h2>
           <input
             type="search"
-            placeholder="Rechercher un groupe…"
-            aria-label="Rechercher un groupe"
+            placeholder={t("directory.searchGroupPlaceholder")}
+            aria-label={t("directory.searchGroup")}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
@@ -250,16 +271,16 @@ export default function AdminDirectoryPage() {
           <table className="simple-table">
             <thead>
               <tr>
-                <th>Nom</th>
-                <th>Source</th>
-                <th>Membres</th>
+                <th>{t("directory.columns.name")}</th>
+                <th>{t("directory.columns.source")}</th>
+                <th>{t("directory.columns.members")}</th>
               </tr>
             </thead>
             <tbody>
               {visibleGroups.length === 0 && (
                 <tr>
                   <td colSpan={3} className="muted">
-                    {groups ? "Aucun groupe — lancez une synchronisation." : "Chargement…"}
+                    {groups ? t("directory.noGroups") : t("common.loading")}
                   </td>
                 </tr>
               )}
@@ -277,27 +298,27 @@ export default function AdminDirectoryPage() {
 
       <div className="section-panel">
         <h2 className="page-title" style={{ margin: "0 0 12px", fontSize: 18 }}>
-          Historique de synchronisation
+          {t("directory.history")}
         </h2>
         <div className="table-wrap">
           <table className="simple-table">
             <thead>
               <tr>
-                <th>Date</th>
-                <th>Source</th>
-                <th>Statut</th>
-                <th>Utilisateurs +/~/−</th>
-                <th>Groupes +/~</th>
-                <th>Appartenances +/−</th>
+                <th>{t("directory.columns.date")}</th>
+                <th>{t("directory.columns.source")}</th>
+                <th>{t("directory.columns.status")}</th>
+                <th>{t("directory.columns.users")}</th>
+                <th>{t("directory.columns.groups")}</th>
+                <th>{t("directory.columns.memberships")}</th>
               </tr>
             </thead>
             <tbody>
               {runs?.map((r) => (
                 <tr key={r.id}>
-                  <td>{new Date(r.started_at).toLocaleString("fr-FR")}</td>
+                  <td>{formatDateTime(r.started_at)}</td>
                   <td>{r.source}</td>
                   <td>
-                    <span className={`badge badge--${r.status === "SUCCESS" ? "signed" : "failed"}`}>{r.status}</span>
+                    <span className={`badge badge--${r.status === "SUCCESS" ? "signed" : "failed"}`}>{syncRunStatus(r.status)}</span>
                   </td>
                   <td>
                     {r.users_added}/{r.users_updated}/{r.users_deactivated}

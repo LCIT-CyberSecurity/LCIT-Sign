@@ -1,10 +1,14 @@
 import { useEffect, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { FileText, CheckCircle2, Trash2, Upload, X } from "lucide-react";
 import { Link } from "react-router-dom";
-import { api, ApiError } from "../api/client";
+import { api } from "../api/client";
+import { blockerText, errorText } from "../i18n/errors";
+import { versionStatus } from "../i18n/enums";
+import { collator, formatSize } from "../i18n/format";
 import ConfirmButton from "../components/ConfirmButton";
 import UploadDropzone from "../components/UploadDropzone";
-import { DOCUMENT_HINT, DOCUMENT_REFUSED, isAcceptedDocument } from "../lib/uploads";
+import { documentHint, documentRefused, isAcceptedDocument } from "../lib/uploads";
 import type { DocumentDetail } from "../api/types";
 
 interface UploadResult {
@@ -20,6 +24,7 @@ export function deriveTitle(fileName: string): string {
 }
 
 export default function OperatorDocumentsPage() {
+  const { t } = useTranslation();
   const [documents, setDocuments] = useState<DocumentDetail[] | null>(null);
   const [title, setTitle] = useState("");
   const [versionLabel, setVersionLabel] = useState("1.0");
@@ -59,7 +64,7 @@ export default function OperatorDocumentsPage() {
     };
     for (const [index, file] of files.entries()) {
       if (!isAcceptedDocument(file.name)) {
-        update(index, { state: "error", message: DOCUMENT_REFUSED });
+        update(index, { state: "error", message: documentRefused() });
         continue;
       }
       update(index, { state: "uploading" });
@@ -74,7 +79,7 @@ export default function OperatorDocumentsPage() {
         await api.postForm("/documents", form);
         update(index, { state: "done" });
       } catch (err) {
-        update(index, { state: "error", message: err instanceof ApiError ? err.message : "L'envoi a échoué." });
+        update(index, { state: "error", message: errorText(err, "documents.uploadFailed") });
       }
     }
     if (files.length === 1 && batch[0].state === "done") setTitle("");
@@ -88,7 +93,7 @@ export default function OperatorDocumentsPage() {
       await api.del(path);
       load();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "La suppression a échoué.");
+      setError(errorText(err, "documents.deleteFailed"));
     }
   };
 
@@ -98,7 +103,7 @@ export default function OperatorDocumentsPage() {
       await api.post(`/documents/versions/${versionId}/archive`);
       load();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "L'archivage a échoué.");
+      setError(errorText(err, "documents.archiveFailed"));
     }
   };
 
@@ -114,46 +119,44 @@ export default function OperatorDocumentsPage() {
     })
     .sort((a, b) =>
       sort === "alpha"
-        ? a.title.localeCompare(b.title, "fr", { sensitivity: "base", numeric: true })
+        ? collator().compare(a.title, b.title)
         : b.created_at.localeCompare(a.created_at),
     );
 
   return (
     <div className="stack">
       <h1 className="page-title">
-        <FileText size={20} aria-hidden="true" /> Documents
+        <FileText size={20} aria-hidden="true" /> {t("documents.title")}
       </h1>
 
       <p className="muted">
-        La bibliothèque de vos documents. Pour les faire signer, allez dans{" "}
-        <Link to="/sign">Faire signer</Link> : vous y choisissez qui signe, déposez ou reprenez les
-        documents et placez les éléments.
+        <Trans i18nKey="documents.intro" components={{ sign: <Link to="/sign" /> }} />
       </p>
 
-      <section className="card form" aria-label="Ajouter des documents">
-        <UploadDropzone onFiles={stage} disabled={uploading} hint={DOCUMENT_HINT} />
+      <section className="card form" aria-label={t("documents.addAria")}>
+        <UploadDropzone onFiles={stage} disabled={uploading} hint={documentHint()} />
         <details className="upload-options">
           <summary>
-            Options <span className="muted small">— titre, version, catégorie (facultatif)</span>
+            {t("documents.options")} <span className="muted small">{t("documents.optionsHint")}</span>
           </summary>
           <div className="stack" style={{ marginTop: 10 }}>
             <div className="form-row">
               <label>
-                Titre <span className="muted small">(repris du nom du fichier si vide)</span>
+                {t("documents.titleField")} <span className="muted small">{t("documents.titleHint")}</span>
                 <input value={title} onChange={(e) => setTitle(e.target.value)} />
               </label>
               <label>
-                Version
+                {t("documents.version")}
                 <input value={versionLabel} onChange={(e) => setVersionLabel(e.target.value)} required />
               </label>
             </div>
             <div className="form-row">
               <label>
-                Catégorie
+                {t("documents.category")}
                 <input value={category} onChange={(e) => setCategory(e.target.value)} maxLength={100} />
               </label>
               <label>
-                Description
+                {t("documents.description")}
                 <input
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
@@ -170,11 +173,11 @@ export default function OperatorDocumentsPage() {
                 <li key={`${file.name}-${i}`}>
                   <FileText size={14} aria-hidden="true" />
                   <strong>{file.name}</strong>
-                  <span className="muted small">{Math.round(file.size / 1024)} Ko</span>
+                  <span className="muted small">{formatSize(file.size)}</span>
                   <button
                     type="button"
                     className="button button--ghost button--sm"
-                    aria-label={`Retirer ${file.name}`}
+                    aria-label={t("documents.remove", { name: file.name })}
                     onClick={() => setPending(pending.filter((_, j) => j !== i))}
                   >
                     <X size={13} aria-hidden="true" />
@@ -184,11 +187,11 @@ export default function OperatorDocumentsPage() {
             </ul>
             <div className="row-actions">
               <button type="button" className="button" onClick={() => void upload(pending)}>
-                <Upload size={14} aria-hidden="true" /> Importer{" "}
-                {pending.length > 1 ? `${pending.length} documents` : "le document"}
+                <Upload size={14} aria-hidden="true" />{" "}
+                {pending.length > 1 ? t("documents.importDocs", { count: pending.length }) : t("documents.importDoc")}
               </button>
               <button type="button" className="button button--ghost" onClick={() => setPending([])}>
-                Annuler
+                {t("common.cancel")}
               </button>
             </div>
           </div>
@@ -202,9 +205,9 @@ export default function OperatorDocumentsPage() {
                 </span>
                 <strong>{r.name}</strong>
                 <span className="muted small">
-                  {r.state === "done" && "ajouté à la bibliothèque"}
-                  {r.state === "uploading" && "envoi…"}
-                  {r.state === "waiting" && "en attente"}
+                  {r.state === "done" && t("documents.added")}
+                  {r.state === "uploading" && t("documents.uploading")}
+                  {r.state === "waiting" && t("documents.waiting")}
                   {r.state === "error" && r.message}
                 </span>
               </li>
@@ -217,23 +220,23 @@ export default function OperatorDocumentsPage() {
       <div className="filter-bar">
         <input
           type="search"
-          placeholder="Rechercher un document, une catégorie…"
-          aria-label="Rechercher un document"
+          placeholder={t("documents.searchPlaceholder")}
+          aria-label={t("documents.search")}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
         <label>
-          Tri
+          {t("documents.sort")}
           <select value={sort} onChange={(e) => setSort(e.target.value as "alpha" | "recent")}>
-            <option value="alpha">Ordre alphabétique</option>
-            <option value="recent">Plus récents d&apos;abord</option>
+            <option value="alpha">{t("documents.sortAlpha")}</option>
+            <option value="recent">{t("documents.sortRecent")}</option>
           </select>
         </label>
       </div>
 
       <div className="card-list">
         {visibleDocuments.length === 0 && documents && (
-          <p className="muted">Aucun document ne correspond.</p>
+          <p className="muted">{t("documents.noMatch")}</p>
         )}
         {visibleDocuments.map((doc) => (
           <div key={doc.id} className="card">
@@ -244,7 +247,7 @@ export default function OperatorDocumentsPage() {
               </div>
               {doc.can_delete && (
                 <ConfirmButton onConfirm={() => remove(`/documents/${doc.id}`)}>
-                  <Trash2 size={13} aria-hidden="true" /> Supprimer le document
+                  <Trash2 size={13} aria-hidden="true" /> {t("documents.deleteDocument")}
                 </ConfirmButton>
               )}
             </div>
@@ -252,9 +255,9 @@ export default function OperatorDocumentsPage() {
             <table className="simple-table">
               <thead>
                 <tr>
-                  <th>Version</th>
-                  <th>Statut</th>
-                  <th>Taille</th>
+                  <th>{t("documents.columns.version")}</th>
+                  <th>{t("documents.columns.status")}</th>
+                  <th>{t("documents.columns.size")}</th>
                   <th></th>
                 </tr>
               </thead>
@@ -263,30 +266,30 @@ export default function OperatorDocumentsPage() {
                   <tr key={v.id}>
                     <td>{v.version_label}</td>
                     <td>
-                      <span className={`badge badge--${v.status.toLowerCase()}`}>{v.status}</span>
+                      <span className={`badge badge--${v.status.toLowerCase()}`}>{versionStatus(v.status)}</span>
                     </td>
-                    <td>{Math.round(v.file_size / 1024)} Ko</td>
+                    <td>{formatSize(v.file_size)}</td>
                     <td>
                       <div className="row-actions">
                         {v.status === "DRAFT" && (
                           <button className="button button--secondary button--sm" onClick={() => publish(v.id)}>
-                            <CheckCircle2 size={14} aria-hidden="true" /> Publier
+                            <CheckCircle2 size={14} aria-hidden="true" /> {t("documents.publish")}
                           </button>
                         )}
                         {v.status !== "ARCHIVED" && v.status !== "DRAFT" && (
                           <button className="button button--ghost button--sm" onClick={() => archive(v.id)}>
-                            Archiver
+                            {t("documents.archive")}
                           </button>
                         )}
                         {v.can_delete && (
                           <ConfirmButton onConfirm={() => remove(`/documents/versions/${v.id}`)}>
-                            <Trash2 size={13} aria-hidden="true" /> Supprimer
+                            <Trash2 size={13} aria-hidden="true" /> {t("common.delete")}
                           </ConfirmButton>
                         )}
                       </div>
                       {v.can_delete === false && (
-                        <p className="blocker-note" title="Une version signée ou utilisée fait partie de la preuve">
-                          Conservée — {v.delete_blockers.join(" ; ")}
+                        <p className="blocker-note" title={t("documents.keptHint")}>
+                          {t("documents.kept", { reasons: v.delete_blockers.map(blockerText).join(" ; ") })}
                         </p>
                       )}
                     </td>

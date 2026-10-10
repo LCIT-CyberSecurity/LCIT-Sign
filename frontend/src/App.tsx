@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { useAuth } from "./auth/AuthContext";
 import Shell from "./components/Shell";
@@ -26,12 +27,13 @@ function RoleRoute({ allowed, children }: { allowed: boolean; children: ReactNod
 }
 
 export default function App() {
+  const { t } = useTranslation();
   const { user, loading, hasRole } = useAuth();
 
   if (loading) {
     return (
       <div className="centered-page">
-        <p className="muted">Chargement…</p>
+        <p className="muted">{t("common.loading")}</p>
       </div>
     );
   }

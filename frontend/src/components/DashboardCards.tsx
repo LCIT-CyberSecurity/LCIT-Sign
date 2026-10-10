@@ -1,14 +1,18 @@
 import { AlertTriangle, CheckCircle2, Clock, FileSignature, Megaphone } from "lucide-react";
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import type { OperatorDashboard } from "../api/types";
 
 function Metric({
+  id,
   label,
   value,
   icon,
   tone,
   hint,
 }: {
+  /** A stable name for the tile (tests and automation find it by this, whatever the language). */
+  id: string;
   label: string;
   value: string | number;
   icon: ReactNode;
@@ -23,7 +27,7 @@ function Metric({
           {icon}
         </span>
       </div>
-      <strong data-testid={`stat-${label}`}>{value}</strong>
+      <strong data-testid={`stat-${id}`}>{value}</strong>
       {hint && <small>{hint}</small>}
     </div>
   );
@@ -32,6 +36,7 @@ function Metric({
 /** Overview figures for operators (spec §65), in EARE's metric-tile style, with
  *  a stacked bar splitting the expected signatures. */
 export default function DashboardCards({ data }: { data: OperatorDashboard }) {
+  const { t } = useTranslation();
   const { expected, signed, outstanding, not_viewed, overdue } = data.assignments;
   const rate = data.signature_rate;
   const late = Math.min(overdue, outstanding);
@@ -39,44 +44,48 @@ export default function DashboardCards({ data }: { data: OperatorDashboard }) {
   const pct = (n: number) => (expected ? `${(100 * n) / expected}%` : "0%");
 
   return (
-    <section aria-label="Tableau de bord" className="stack">
+    <section aria-label={t("dashboard.label")} className="stack">
       <div className="metrics">
         <Metric
-          label="Campagnes actives"
+          id="Campagnes actives"
+          label={t("dashboard.activeCampaigns")}
           value={data.campaigns.active}
           icon={<Megaphone size={15} />}
-          hint={`${data.campaigns.closed} terminée(s)`}
+          hint={t("dashboard.closedHint", { count: data.campaigns.closed })}
         />
         <Metric
-          label="Signatures attendues"
+          id="Signatures attendues"
+          label={t("dashboard.expected")}
           value={expected}
           icon={<FileSignature size={15} />}
-          hint={`${not_viewed} non consultée(s)`}
+          hint={t("dashboard.notViewedHint", { count: not_viewed })}
         />
         <Metric
-          label="Signatures réalisées"
+          id="Signatures réalisées"
+          label={t("dashboard.done")}
           value={signed}
           icon={<CheckCircle2 size={15} />}
           tone="green"
-          hint={rate === null ? undefined : `${rate} % des attendues`}
+          hint={rate === null ? undefined : t("dashboard.rateHint", { rate })}
         />
         <Metric
-          label="En retard"
+          id="En retard"
+          label={t("dashboard.late")}
           value={overdue}
           icon={<AlertTriangle size={15} />}
           tone="red"
-          hint={`${data.reminders_sent} relance(s) envoyée(s)`}
+          hint={t("dashboard.remindersHint", { count: data.reminders_sent })}
         />
       </div>
       <div className="panel panel--quiet">
         <div className="panel-title">
-          <h3>Taux de signature</h3>
+          <h3>{t("dashboard.rate")}</h3>
           <strong data-testid="signature-rate">{rate === null ? "—" : `${rate} %`}</strong>
         </div>
         <div
           className="stacked-track"
           role="progressbar"
-          aria-label="Répartition des signatures attendues"
+          aria-label={t("dashboard.split")}
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={rate ?? 0}
@@ -87,16 +96,16 @@ export default function DashboardCards({ data }: { data: OperatorDashboard }) {
         </div>
         <div className="stacked-legend" style={{ marginTop: 10 }}>
           <span>
-            <i className="stacked-dot ok" /> Signées <strong>{signed}</strong>
+            <i className="stacked-dot ok" /> {t("dashboard.signedLegend")} <strong>{signed}</strong>
           </span>
           <span>
-            <i className="stacked-dot warn" /> En attente <strong data-testid="stat-En attente">{waiting}</strong>
+            <i className="stacked-dot warn" /> {t("dashboard.waiting")} <strong data-testid="stat-En attente">{waiting}</strong>
           </span>
           <span>
-            <i className="stacked-dot bad" /> En retard <strong>{late}</strong>
+            <i className="stacked-dot bad" /> {t("dashboard.late")} <strong>{late}</strong>
           </span>
           <span>
-            <Clock size={13} aria-hidden="true" /> Non consultées <strong data-testid="stat-Non consultés">{not_viewed}</strong>
+            <Clock size={13} aria-hidden="true" /> {t("dashboard.notViewed")} <strong data-testid="stat-Non consultés">{not_viewed}</strong>
           </span>
         </div>
       </div>

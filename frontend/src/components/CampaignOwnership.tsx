@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { UserCog } from "lucide-react";
-import { api, ApiError } from "../api/client";
+import { api } from "../api/client";
+import { errorText } from "../i18n/errors";
 import ConfirmButton from "./ConfirmButton";
 import type { Campaign, PersonRef } from "../api/types";
 
@@ -14,6 +16,7 @@ export default function CampaignOwnership({
   campaign: Campaign;
   onChanged: (next: Campaign) => void;
 }) {
+  const { t } = useTranslation();
   const canOperate = campaign.access?.operate ?? false;
   const [candidates, setCandidates] = useState<PersonRef[]>([]);
   const [adding, setAdding] = useState("");
@@ -35,7 +38,7 @@ export default function CampaignOwnership({
       setAdding("");
       setHandingOver("");
     } catch (err) {
-      setProblem(err instanceof ApiError ? err.message : "L'opération a échoué.");
+      setProblem(errorText(err, "campaignDetail.opFailed"));
     }
   };
 
@@ -47,24 +50,24 @@ export default function CampaignOwnership({
   return (
     <div className="card" data-testid="ownership-card">
       <div className="card-title">
-        <UserCog size={16} aria-hidden="true" /> Propriétaire et préparateurs
+        <UserCog size={16} aria-hidden="true" /> {t("ownership.title")}
       </div>
       <dl className="detail-list">
         <div>
-          <dt>Propriétaire</dt>
+          <dt>{t("ownership.owner")}</dt>
           <dd data-testid="owner">{campaign.owner?.display_name ?? "—"}</dd>
         </div>
         {campaign.created_by && campaign.created_by.id !== campaign.owner?.id && (
           <div>
-            <dt>Créée par</dt>
+            <dt>{t("ownership.createdBy")}</dt>
             <dd data-testid="created-by">{campaign.created_by.display_name}</dd>
           </div>
         )}
         <div>
-          <dt>Préparateurs</dt>
+          <dt>{t("ownership.preparers")}</dt>
           <dd>
             {preparers.length === 0 ? (
-              <span className="muted">Aucun autre que le propriétaire.</span>
+              <span className="muted">{t("ownership.noOther")}</span>
             ) : (
               <ul className="plain-list" data-testid="preparers">
                 {preparers.map((p) => (
@@ -72,12 +75,12 @@ export default function CampaignOwnership({
                     {p.display_name}{" "}
                     {canOperate && (
                       <ConfirmButton
-                        confirmLabel="Oui, retirer"
+                        confirmLabel={t("ownership.confirmRemove")}
                         onConfirm={() =>
                           call(() => api.del<Campaign>(`/campaigns/${campaign.id}/preparers/${p.id}`))
                         }
                       >
-                        Retirer
+                        {t("campaignDetail.removeOne")}
                       </ConfirmButton>
                     )}
                   </li>
@@ -89,17 +92,16 @@ export default function CampaignOwnership({
       </dl>
       {!campaign.access?.content && (
         <p className="muted small" data-testid="confidential-note">
-          Le contenu de cette campagne (documents, PDF signés, preuves) est confidentiel : il faut en être le
-          propriétaire ou un préparateur pour y accéder.
+          {t("ownership.confidential")}
         </p>
       )}
       {problem && <p className="error-text" role="alert">{problem}</p>}
       {canOperate && (
         <div className="form-row">
           <label>
-            Ajouter un préparateur
+            {t("ownership.addPreparer")}
             <select value={adding} onChange={(e) => setAdding(e.target.value)}>
-              <option value="">Choisir…</option>
+              <option value="">{t("ownership.choose")}</option>
               {addable.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.display_name}
@@ -113,12 +115,12 @@ export default function CampaignOwnership({
             disabled={!adding}
             onClick={() => void call(() => api.post<Campaign>(`/campaigns/${campaign.id}/preparers`, { user_id: adding }))}
           >
-            Ajouter
+            {t("users.add")}
           </button>
           <label>
-            Changer le propriétaire
+            {t("ownership.changeOwner")}
             <select value={handingOver} onChange={(e) => setHandingOver(e.target.value)}>
-              <option value="">Choisir…</option>
+              <option value="">{t("ownership.choose")}</option>
               {heirs.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.display_name}
@@ -127,13 +129,13 @@ export default function CampaignOwnership({
             </select>
           </label>
           <ConfirmButton
-            confirmLabel="Oui, changer de propriétaire"
+            confirmLabel={t("ownership.confirmChange")}
             disabled={!handingOver}
             onConfirm={() =>
               call(() => api.put<Campaign>(`/campaigns/${campaign.id}/owner`, { user_id: handingOver }))
             }
           >
-            Changer
+            {t("ownership.change")}
           </ConfirmButton>
         </div>
       )}

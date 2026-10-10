@@ -1,10 +1,13 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Link, useNavigate } from "react-router-dom";
 import { FileText, PencilRuler, Upload, X } from "lucide-react";
-import { api, ApiError } from "../api/client";
+import { api } from "../api/client";
+import { errorText } from "../i18n/errors";
+import { collator } from "../i18n/format";
 import ConfirmButton from "./ConfirmButton";
 import UploadDropzone from "./UploadDropzone";
-import { DOCUMENT_HINT, DOCUMENT_REFUSED, isAcceptedDocument } from "../lib/uploads";
+import { documentHint, documentRefused, isAcceptedDocument } from "../lib/uploads";
 import type { Campaign, DocumentDetail } from "../api/types";
 
 /** "charte_informatique-2026.pdf" -> "Charte informatique 2026". */
@@ -34,6 +37,7 @@ export default function CampaignDocuments({
   /** Called after a drop was imported, instead of opening the editor. */
   onImported?: () => void;
 }) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [pending, setPending] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
@@ -49,7 +53,7 @@ export default function CampaignDocuments({
         .filter((v) => (v.status === "DRAFT" || v.status === "PUBLISHED") && !inCampaign.has(v.id))
         .map((v) => ({ id: v.id, label: `${doc.title} — v${v.version_label}` })),
     )
-    .sort((a, b) => a.label.localeCompare(b.label, "fr", { sensitivity: "base", numeric: true }));
+    .sort((a, b) => collator().compare(a.label, b.label));
 
   const stage = (files: File[]) => {
     setNotes([]);
@@ -66,7 +70,7 @@ export default function CampaignDocuments({
     const created: string[] = [];
     for (const file of pending) {
       if (!isAcceptedDocument(file.name)) {
-        messages.push(`${file.name} : ${DOCUMENT_REFUSED}`);
+        messages.push(t("campaignDocs.fileError", { name: file.name, message: documentRefused() }));
         continue;
       }
       try {
@@ -80,7 +84,9 @@ export default function CampaignDocuments({
         });
         created.push(document.versions[0].id);
       } catch (err) {
-        messages.push(`${file.name} : ${err instanceof ApiError ? err.message : "l'envoi a échoué."}`);
+        messages.push(
+          t("campaignDocs.fileError", { name: file.name, message: errorText(err, "campaignDocs.uploadFailed") }),
+        );
       }
     }
     setPending([]);
@@ -102,20 +108,18 @@ export default function CampaignDocuments({
       setExisting("");
       onChanged();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "L'ajout a échoué.");
+      setError(errorText(err, "campaignDocs.addFailed"));
     }
   };
 
   return (
     <div className="card" data-testid="campaign-documents">
-      <div className="card-title">Documents à faire signer</div>
+      <div className="card-title">{t("campaignDocs.title")}</div>
       <p className="muted small">
-        {showPrepare
-          ? "Déposez un ou plusieurs documents (PDF, Word ou LibreOffice), puis « Préparer » chacun : vous placez la signature, la date, le nom… pour chaque signataire."
-          : "Déposez un ou plusieurs documents (PDF, Word ou LibreOffice), ou reprenez-en un déjà déposé. Vous placerez les éléments à signer à l'étape suivante."}
+        {showPrepare ? t("campaignDocs.helpPrepare") : t("campaignDocs.helpWizard")}
       </p>
 
-      {campaign.documents.length === 0 && <p className="muted small">Aucun document pour le moment.</p>}
+      {campaign.documents.length === 0 && <p className="muted small">{t("campaignDocs.none")}</p>}
       <ul className="plain-list">
         {campaign.documents.map((d) => (
           <li key={d.version_id} className="report-row" data-testid={`campaign-doc-${d.title}`}>
@@ -123,12 +127,12 @@ export default function CampaignDocuments({
               <FileText size={14} aria-hidden="true" /> <strong>{d.title}</strong>{" "}
               <span className="muted small">
                 v{d.version_label} —{" "}
-                {d.elements > 0 ? `${d.elements} élément(s) placé(s)` : ""}
+                {d.elements > 0 ? t("counts.elementsPlaced", { count: d.elements }) : ""}
               </span>
-              {active && d.released && <span className="badge badge--signed">Envoyé</span>}
+              {active && d.released && <span className="badge badge--signed">{t("campaignDocs.sent")}</span>}
               {showPrepare && !(active && d.released) && d.elements === 0 && (
                 <span className="badge badge--pending" data-testid="to-prepare">
-                  À préparer : placez la signature, la date, le nom…
+                  {t("campaignDocs.toPrepare")}
                 </span>
               )}
             </span>
@@ -138,38 +142,38 @@ export default function CampaignDocuments({
                   className={`button ${d.elements === 0 ? "button--primary" : "button--secondary"} button--sm`}
                   to={`/documents/versions/${d.version_id}/prepare?campaign=${campaign.id}`}
                 >
-                  <PencilRuler size={14} aria-hidden="true" /> Préparer
+                  <PencilRuler size={14} aria-hidden="true" /> {t("campaignDocs.prepare")}
                 </Link>
               ) : (
-                <span className="muted small">Choisissez d&apos;abord qui signe</span>
+                <span className="muted small">{t("campaignDocs.chooseSignerFirst")}</span>
               )}
               {active && !d.released && (
                 <ConfirmButton
                   className="button button--primary button--sm"
                   confirmClassName="button button--primary button--sm"
-                  confirmLabel="Oui, envoyer aux signataires"
+                  confirmLabel={t("campaignDocs.confirmRelease")}
                   disabled={d.elements === 0}
                   onConfirm={async () => {
                     try {
                       await api.post(`/campaigns/${campaign.id}/documents/${d.version_id}/release`);
                       onChanged();
                     } catch (err) {
-                      setError(err instanceof ApiError ? err.message : "L'envoi a échoué.");
+                      setError(errorText(err, "campaignDocs.releaseFailed"));
                     }
                   }}
                 >
-                  Envoyer ce document
+                  {t("campaignDocs.release")}
                 </ConfirmButton>
               )}
               {!(active && d.released) && (
                 <ConfirmButton
-                  confirmLabel="Retirer de la campagne"
+                  confirmLabel={t("campaignDocs.confirmRemove")}
                   onConfirm={async () => {
                     await api.del(`/campaigns/${campaign.id}/documents/${d.version_id}`);
                     onChanged();
                   }}
                 >
-                  Retirer
+                  {t("campaignDocs.remove")}
                 </ConfirmButton>
               )}
             </span>
@@ -177,7 +181,7 @@ export default function CampaignDocuments({
         ))}
       </ul>
 
-      <UploadDropzone onFiles={stage} disabled={busy} hint={DOCUMENT_HINT} />
+      <UploadDropzone onFiles={stage} disabled={busy} hint={documentHint()} />
       {pending.length > 0 && (
         <div className="stack" data-testid="pending-files">
           <ul className="upload-results">
@@ -188,7 +192,7 @@ export default function CampaignDocuments({
                 <button
                   type="button"
                   className="button button--ghost button--sm"
-                  aria-label={`Retirer ${file.name}`}
+                  aria-label={t("campaignDocs.removeFile", { name: file.name })}
                   onClick={() => setPending(pending.filter((_, j) => j !== i))}
                 >
                   <X size={13} aria-hidden="true" />
@@ -198,10 +202,11 @@ export default function CampaignDocuments({
           </ul>
           <div className="row-actions">
             <button type="button" className="button" disabled={busy} onClick={() => void importAll()}>
-              <Upload size={14} aria-hidden="true" /> Ajouter {pending.length > 1 ? `${pending.length} documents` : "le document"}
+              <Upload size={14} aria-hidden="true" />{" "}
+              {pending.length > 1 ? t("campaignDocs.addDocuments", { count: pending.length }) : t("campaignDocs.addDocument")}
             </button>
             <button type="button" className="button button--ghost" onClick={() => setPending([])}>
-              Annuler
+              {t("common.cancel")}
             </button>
           </div>
         </div>
@@ -218,8 +223,8 @@ export default function CampaignDocuments({
 
       {reusable.length > 0 && (
         <div className="form-row">
-          <select aria-label="Document existant" value={existing} onChange={(e) => setExisting(e.target.value)}>
-            <option value="">Ou reprendre un document déjà déposé…</option>
+          <select aria-label={t("campaignDocs.existingAria")} value={existing} onChange={(e) => setExisting(e.target.value)}>
+            <option value="">{t("campaignDocs.reuse")}</option>
             {reusable.map((v) => (
               <option key={v.id} value={v.id}>
                 {v.label}
@@ -227,7 +232,7 @@ export default function CampaignDocuments({
             ))}
           </select>
           <button className="button button--secondary" onClick={() => void addExisting()} disabled={!existing}>
-            Ajouter
+            {t("users.add")}
           </button>
         </div>
       )}

@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ArrowLeft, ArrowRight, Check, RefreshCw, Rocket } from "lucide-react";
-import { api, ApiError } from "../api/client";
+import { api } from "../api/client";
+import { errorText } from "../i18n/errors";
 import CampaignDocuments from "../components/CampaignDocuments";
 import CampaignSigners from "../components/CampaignSigners";
 import PrepareStep from "../components/PrepareStep";
@@ -26,18 +28,19 @@ interface TargetUserOption {
   external?: boolean;
 }
 
-const STEPS = [
-  "Signataires et relances",
-  "Documents",
-  "Préparer",
-  "Vérifier et envoyer",
-  "Documents signés",
+const STEP_KEYS = [
+  "signRequest.steps.signers",
+  "signRequest.steps.documents",
+  "signRequest.steps.prepare",
+  "signRequest.steps.review",
+  "signRequest.steps.signed",
 ];
 
 /** Preparing and sending a request for signature: who signs, what, for which people.
  *  The last step shows what comes back: the signed documents, live. A request already sent
  *  opens on it, and the whole follow-up (reminders, changes…) is in Suivi. */
 export default function SignRequestPage() {
+  const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [query, setQuery] = useSearchParams();
@@ -120,7 +123,7 @@ export default function SignRequestPage() {
     };
   }, [id, campaign?.status, allUsers, selectedGroupIds, selectedUserIds]);
 
-  if (!campaign) return <p className="muted">Chargement…</p>;
+  if (!campaign) return <p className="muted">{t("common.loading")}</p>;
   // Sent (or scheduled): only the last step is left; before sending, it is not reachable yet.
   const sent = campaign.status !== "DRAFT";
   const step = sent ? 5 : Math.min(asked, 4);
@@ -134,11 +137,11 @@ export default function SignRequestPage() {
   // What stops the sending, in the order a person would fix it.
   const blocker =
     hasList && recipientCount === 0
-      ? "Choisissez les personnes concernées (écran « Signataires et relances »)."
+      ? t("signRequest.chooseRecipients")
       : campaign.documents.length === 0
-        ? "Ajoutez au moins un document."
+        ? t("signRequest.addOneDocument")
         : unprepared.length > 0
-          ? `Placez les éléments (signature, date, nom…) sur : ${unprepared.map((d) => d.title).join(", ")}.`
+          ? t("signRequest.placeElements", { titles: unprepared.map((d) => d.title).join(", ") })
           : noSignature.length > 0
             ? missingSignatureText(noSignature)
             : null;
@@ -162,7 +165,7 @@ export default function SignRequestPage() {
       setCampaign(await api.get<Campaign>(`/campaigns/${id}`));
       navigate(`/sign/${id}?step=5`);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Le lancement a échoué.");
+      setError(errorText(err, "signRequest.launchFailed"));
     } finally {
       setBusy(false);
     }
@@ -174,31 +177,35 @@ export default function SignRequestPage() {
       await api.del(`/campaigns/${id}`);
       navigate("/sign");
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "La suppression a échoué.");
+      setError(errorText(err, "signRequest.deleteFailed"));
     }
   };
 
   return (
     <div className="stack">
       <Link to="/sign" className="back-link">
-        <ArrowLeft size={14} aria-hidden="true" /> Faire signer
+        <ArrowLeft size={14} aria-hidden="true" /> {t("nav.sign")}
       </Link>
 
       <div className="page-title-row">
         <h1 className="page-title">{campaign.name}</h1>
         <span className={`badge badge--${sent ? campaign.status.toLowerCase() : "draft"}`}>
-          {sent ? (campaign.status === "SCHEDULED" ? "Programmée" : "Envoyée") : "En préparation"}
+          {sent
+            ? campaign.status === "SCHEDULED"
+              ? t("signRequest.badgeScheduled")
+              : t("signRequest.badgeSent")
+            : t("signRequest.badgePreparing")}
         </span>
         {!sent && (
-          <ConfirmButton confirmLabel="Oui, supprimer cette demande" onConfirm={deleteDraft}>
-            Supprimer cette demande
+          <ConfirmButton confirmLabel={t("signRequest.confirmDeleteRequest")} onConfirm={deleteDraft}>
+            {t("signRequest.deleteRequest")}
           </ConfirmButton>
         )}
       </div>
 
       <ol className="wizard-steps" data-testid="wizard-steps">
-        {STEPS.map((label, i) => (
-          <li key={label} className={step === i + 1 ? "is-current" : step > i + 1 ? "is-done" : ""}>
+        {STEP_KEYS.map((key, i) => (
+          <li key={key} className={step === i + 1 ? "is-current" : step > i + 1 ? "is-done" : ""}>
             <button
               type="button"
               onClick={() => goTo(i + 1)}
@@ -207,7 +214,7 @@ export default function SignRequestPage() {
               disabled={sent ? i < 4 : i === 4}
             >
               <span className="wizard-steps__n">{step > i + 1 ? <Check size={13} aria-hidden="true" /> : i + 1}</span>
-              {label}
+              {t(key)}
             </button>
           </li>
         ))}
@@ -216,21 +223,19 @@ export default function SignRequestPage() {
       {step === 5 && (
         <>
           <div className="card" data-testid="signed-step">
-            <div className="card-title">Documents signés</div>
+            <div className="card-title">{t("signRequest.signedTitle")}</div>
             <p className="muted small">
-              {campaign.status === "SCHEDULED"
-                ? "Cette demande démarre à la date prévue : rien n'est encore signé."
-                : "Les documents signés arrivent ici au fur et à mesure, avec leur preuve. Les relances, les ajouts de personnes ou de documents se font dans Suivi."}
+              {campaign.status === "SCHEDULED" ? t("signRequest.scheduledNote") : t("signRequest.signedNote")}
             </p>
             <div className="row-actions">
               <button type="button" className="button button--secondary" onClick={() => setRefresh(refresh + 1)}>
-                <RefreshCw size={14} aria-hidden="true" /> Actualiser
+                <RefreshCw size={14} aria-hidden="true" /> {t("signRequest.refresh")}
               </button>
               <Link className="button button--ghost" to={`/campaigns/${campaign.id}`}>
-                Ouvrir le suivi complet
+                {t("signRequest.openTracking")}
               </Link>
               <Link className="button button--ghost" to="/sign">
-                Nouvelle demande
+                {t("signRequest.newRequest")}
               </Link>
             </div>
           </div>
@@ -247,10 +252,10 @@ export default function SignRequestPage() {
             onUserAdded={(person) => setUsers((all) => [...(all ?? []), person])}
           />
           <div className="card">
-            <div className="card-title">{hasList ? "Pour quelles personnes ? (publipostage)" : "Personnes sollicitées"}</div>
+            <div className="card-title">{hasList ? t("signRequest.forWhom") : t("signRequest.peopleAsked")}</div>
             {!hasList && (
               <p className="muted small">
-                Chaque signataire est une personne précise : personne d&apos;autre n&apos;est sollicité.
+                {t("signRequest.oneSpecificPerson")}
               </p>
             )}
             {hasList && (
@@ -271,17 +276,14 @@ export default function SignRequestPage() {
 
 
           <div className="card" data-testid="policy-card">
-            <div className="card-title">Planning</div>
-            <p className="muted small">
-              Quand cela commence, jusqu&apos;à quand on peut signer, à quel rythme relancer ceux qui n&apos;ont
-              pas répondu, et s&apos;il faut redemander la signature régulièrement. Tout est facultatif.
-            </p>
+            <div className="card-title">{t("signRequest.planning")}</div>
+            <p className="muted small">{t("signRequest.planningHelp")}</p>
             <ScheduleFields value={schedule} onChange={setSchedule} />
           </div>
 
           <div className="row-actions">
             <button type="button" className="button button--primary" onClick={() => goTo(2)} disabled={campaign.roles.length === 0}>
-              Suivant : les documents <ArrowRight size={14} aria-hidden="true" />
+              {t("signRequest.nextDocuments")} <ArrowRight size={14} aria-hidden="true" />
             </button>
           </div>
         </>
@@ -298,7 +300,7 @@ export default function SignRequestPage() {
           />
           <div className="row-actions">
             <button type="button" className="button button--ghost" onClick={() => goTo(1)}>
-              <ArrowLeft size={14} aria-hidden="true" /> Les signataires
+              <ArrowLeft size={14} aria-hidden="true" /> {t("signRequest.backSigners")}
             </button>
             <button
               type="button"
@@ -306,7 +308,7 @@ export default function SignRequestPage() {
               onClick={() => goTo(3)}
               disabled={campaign.documents.length === 0}
             >
-              Suivant : préparer les documents <ArrowRight size={14} aria-hidden="true" />
+              {t("signRequest.nextPrepare")} <ArrowRight size={14} aria-hidden="true" />
             </button>
           </div>
         </>
@@ -323,7 +325,7 @@ export default function SignRequestPage() {
           />
           <div className="row-actions">
             <button type="button" className="button button--ghost" onClick={() => goTo(2)}>
-              <ArrowLeft size={14} aria-hidden="true" /> Les documents
+              <ArrowLeft size={14} aria-hidden="true" /> {t("signRequest.backDocuments")}
             </button>
             <button
               type="button"
@@ -333,12 +335,12 @@ export default function SignRequestPage() {
                 unprepared.length > 0 || noSignature.length > 0 || campaign.documents.length === 0
               }
             >
-              Suivant : vérifier et envoyer <ArrowRight size={14} aria-hidden="true" />
+              {t("signRequest.nextReview")} <ArrowRight size={14} aria-hidden="true" />
             </button>
           </div>
           {unprepared.length > 0 && (
             <p className="muted small">
-              Il reste à préparer : {unprepared.map((d) => d.title).join(", ")}.
+              {t("signRequest.stillToPrepare", { titles: unprepared.map((d) => d.title).join(", ") })}
             </p>
           )}
         </>
@@ -347,11 +349,14 @@ export default function SignRequestPage() {
       {step === 4 && (
         <>
           <div className="card" data-testid="recap-card">
-            <div className="card-title">Récapitulatif</div>
+            <div className="card-title">{t("signRequest.recap")}</div>
             <dl className="recap">
               <div>
                 <dt>
-                  Signataires, dans l&apos;ordre <button className="link-button" onClick={() => goTo(1)}>Modifier</button>
+                  {t("signRequest.signersInOrder")}{" "}
+                  <button className="link-button" onClick={() => goTo(1)}>
+                    {t("signRequest.modify")}
+                  </button>
                 </dt>
                 <dd>
                   <ol className="plain-list">
@@ -359,7 +364,9 @@ export default function SignRequestPage() {
                       <li key={r.role}>
                         {r.role}.{" "}
                         {r.mode === "EACH"
-                          ? `Chaque destinataire${recipientCount !== null ? ` (${recipientCount} personne(s))` : ""}`
+                          ? recipientCount !== null
+                            ? t("signRequest.eachRecipientCount", { count: recipientCount })
+                            : t("signRequest.eachRecipient")
                           : r.user_display_name}
                       </li>
                     ))}
@@ -368,13 +375,16 @@ export default function SignRequestPage() {
               </div>
               <div>
                 <dt>
-                  Documents <button className="link-button" onClick={() => goTo(3)}>Modifier</button>
+                  {t("signRequest.documentsRecap")}{" "}
+                  <button className="link-button" onClick={() => goTo(3)}>
+                    {t("signRequest.modify")}
+                  </button>
                 </dt>
                 <dd>
                   <ul className="plain-list">
                     {campaign.documents.map((d) => (
                       <li key={d.version_id}>
-                        {d.title} — {d.elements} élément(s) placé(s)
+                        {t("signRequest.elementsLine", { title: d.title, elements: t("counts.elementsPlaced", { count: d.elements }) })}
                       </li>
                     ))}
                   </ul>
@@ -382,7 +392,10 @@ export default function SignRequestPage() {
               </div>
               <div>
                 <dt>
-                  Planning <button className="link-button" onClick={() => goTo(1)}>Modifier</button>
+                  {t("signRequest.planningRecap")}{" "}
+                  <button className="link-button" onClick={() => goTo(1)}>
+                    {t("signRequest.modify")}
+                  </button>
                 </dt>
                 <dd>
                   <ul className="plain-list">
@@ -396,22 +409,24 @@ export default function SignRequestPage() {
           </div>
 
           <div className="card" data-testid="launch-card">
-            <div className="card-title">Envoyer</div>
+            <div className="card-title">{t("signRequest.send")}</div>
             <p data-testid="send-summary">
-              <strong>{campaign.documents.length}</strong> document(s) à signer par{" "}
-              <strong>
-                {campaign.roles
-                  .map((r) => (r.mode === "EACH" ? "chaque destinataire" : r.user_display_name))
-                  .join(", puis ")}
-              </strong>
-              .{" "}
+              <Trans
+                i18nKey="signRequest.sendSummary"
+                count={campaign.documents.length}
+                values={{
+                  who: campaign.roles
+                    .map((r) => (r.mode === "EACH" ? t("signRequest.eachRecipientLower") : r.user_display_name))
+                    .join(t("signRequest.then")),
+                }}
+                components={{ strong: <strong /> }}
+              />{" "}
               {schedule.startDate && schedule.startDate > new Date().toISOString().slice(0, 10)
-                ? "L'envoi est programmé : personne n'est prévenu avant la date de début."
-                : "Les personnes concernées sont prévenues par e-mail dès l'envoi."}
+                ? t("signRequest.scheduledSend")
+                : t("signRequest.immediateSend")}
             </p>
             <p className="muted small">
-              Une fois envoyée, la demande ne se modifie plus : pour changer quelque chose, on l&apos;annule
-              et on en crée une autre. Elle se suit ensuite dans Suivi.
+              {t("signRequest.finalNote")}
             </p>
             {blocker && (
               <p className="muted small" data-testid="launch-blocker">
@@ -421,17 +436,17 @@ export default function SignRequestPage() {
             {error && <p className="error-text">{error}</p>}
             <div className="row-actions">
               <button type="button" className="button button--ghost" onClick={() => goTo(3)}>
-                <ArrowLeft size={14} aria-hidden="true" /> La préparation
+                <ArrowLeft size={14} aria-hidden="true" /> {t("signRequest.backPreparation")}
               </button>
               <ConfirmButton
                 className="button button--primary"
                 confirmClassName="button button--primary"
-                confirmLabel={scheduled ? "Oui, programmer" : "Oui, envoyer maintenant"}
+                confirmLabel={scheduled ? t("signRequest.confirmSchedule") : t("signRequest.confirmSend")}
                 disabled={busy || blocker !== null}
                 onConfirm={launch}
               >
                 <Rocket size={14} aria-hidden="true" />{" "}
-                {scheduled ? "Programmer l'envoi" : "Envoyer pour signature"}
+                {scheduled ? t("signRequest.scheduleSend") : t("signRequest.sendForSignature")}
               </ConfirmButton>
             </div>
           </div>

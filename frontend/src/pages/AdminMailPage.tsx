@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Mail, Send, Plug } from "lucide-react";
-import { api, ApiError } from "../api/client";
+import { api } from "../api/client";
+import { errorText } from "../i18n/errors";
 import MailConnectorForm from "./MailConnectorForm";
 import type { MailConnectorConfig, MailKindSpec } from "../api/types";
 
 export default function AdminMailPage() {
+  const { t } = useTranslation();
   const [config, setConfig] = useState<MailConnectorConfig | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [kinds, setKinds] = useState<MailKindSpec[] | null>(null);
@@ -30,9 +33,9 @@ export default function AdminMailPage() {
   const sendTest = async () => {
     try {
       await api.post("/admin/mail-connector/send-test", { to: testEmail });
-      setMessage(`E-mail de test envoyé à ${testEmail}.`);
+      setMessage(t("mail.testSent", { to: testEmail }));
     } catch (err) {
-      setMessage(err instanceof ApiError ? err.message : "Échec de l'envoi.");
+      setMessage(errorText(err, "mail.sendFailed"));
     }
   };
 
@@ -46,14 +49,14 @@ export default function AdminMailPage() {
         }),
       );
     } catch (err) {
-      setMessage(err instanceof ApiError ? err.message : "Le test d'isolation a échoué.");
+      setMessage(errorText(err, "mail.isolationFailed"));
     }
   };
 
   return (
     <div className="stack">
       <h1 className="page-title">
-        <Mail size={20} aria-hidden="true" /> Configuration e-mail
+        <Mail size={20} aria-hidden="true" /> {t("mail.title")}
       </h1>
 
       {message && <p className="muted">{message}</p>}
@@ -63,15 +66,15 @@ export default function AdminMailPage() {
           config={config}
           onSaved={(saved) => {
             setConfig(saved);
-            setMessage("Configuration enregistrée (secret chiffré).");
+            setMessage(t("directory.form.saved"));
           }}
         />
       )}
 
       <div className="card">
-        <div className="card-title">Diagnostic</div>
+        <div className="card-title">{t("mail.diagnostic")}</div>
         <button className="button button--secondary" onClick={testConnection}>
-          <Plug size={14} aria-hidden="true" /> Tester la connexion
+          <Plug size={14} aria-hidden="true" /> {t("mail.testConnection")}
         </button>
         {diagnostics && (
           <ul className="plain-list">
@@ -86,21 +89,19 @@ export default function AdminMailPage() {
 
       {config?.kind === "graph" && (
         <div className="card">
-          <div className="card-title">Test d&apos;isolation (obligatoire avant mise en service)</div>
+          <div className="card-title">{t("mail.isolationTitle")}</div>
           <p className="muted small">
-            Tente d&apos;envoyer en tant qu&apos;une AUTRE boîte vers l&apos;adresse de test ci-dessous. Exchange doit
-            refuser : sinon l&apos;application peut envoyer au nom de n&apos;importe qui. Voir
-            docs/microsoft-graph-setup.md.
+            {t("mail.isolationHelp")}
           </p>
           <div className="form-row">
             <input
-              placeholder="autre.boite@example.com"
-              aria-label="Autre boîte à tester"
+              placeholder={t("mail.otherMailboxPlaceholder")}
+              aria-label={t("mail.otherMailbox")}
               value={probeMailbox}
               onChange={(e) => setProbeMailbox(e.target.value)}
             />
             <button className="button button--secondary" onClick={testIsolation}>
-              Tester l&apos;isolation
+              {t("mail.testIsolation")}
             </button>
           </div>
           {isolation && (
@@ -113,15 +114,15 @@ export default function AdminMailPage() {
       )}
 
       <div className="card">
-        <div className="card-title">E-mail de test</div>
+        <div className="card-title">{t("mail.testTitle")}</div>
         <div className="form-row">
           <input
-            placeholder="destinataire@example.com"
+            placeholder={t("mail.recipientPlaceholder")}
             value={testEmail}
             onChange={(e) => setTestEmail(e.target.value)}
           />
           <button className="button button--secondary" onClick={sendTest}>
-            <Send size={14} aria-hidden="true" /> Envoyer
+            <Send size={14} aria-hidden="true" /> {t("mail.send")}
           </button>
         </div>
       </div>

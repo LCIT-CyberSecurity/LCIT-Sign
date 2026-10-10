@@ -1,4 +1,5 @@
 import { AlertTriangle, CheckCircle2, Circle } from "lucide-react";
+import { Trans, useTranslation } from "react-i18next";
 import { missingSignatureText, missingSignatures } from "../lib/signatures";
 import { DocumentEditor } from "../pages/PrepareDocumentPage";
 import type { Campaign } from "../api/types";
@@ -20,11 +21,12 @@ export default function PrepareStep({
   onReload: () => void;
   onDone: () => void;
 }) {
+  const { t } = useTranslation();
   const documents = campaign.documents;
   if (documents.length === 0) {
     return (
       <div className="card" data-testid="prepare-step">
-        <p className="muted">Aucun document : ajoutez-en à l&apos;étape précédente.</p>
+        <p className="muted">{t("prepareStep.none")}</p>
       </div>
     );
   }
@@ -39,15 +41,16 @@ export default function PrepareStep({
     <div className="stack" data-testid="prepare-step">
       <div className="card prepare-strip">
         <div className="prepare-strip__head">
-          <strong>Préparer les documents</strong>
+          <strong>{t("prepareStep.title")}</strong>
           <span className="muted small" data-testid="prepare-progress">
-            <strong>
-              {done}/{documents.length}
-            </strong>{" "}
-            préparé(s) — placez la signature, la date, le nom… de chaque signataire
+            <Trans
+              i18nKey="prepareStep.progress"
+              values={{ done, total: documents.length }}
+              components={{ strong: <strong /> }}
+            />
           </span>
         </div>
-        <ul className="prepare-tabs" role="tablist" aria-label="Documents à préparer">
+        <ul className="prepare-tabs" role="tablist" aria-label={t("prepareStep.tabs")}>
           {documents.map((d) => (
             <li key={d.version_id}>
               <button
@@ -58,11 +61,11 @@ export default function PrepareStep({
                 onClick={() => onSelect(d.version_id)}
               >
                 {missing.some((m) => m.versionId === d.version_id) ? (
-                  <AlertTriangle size={14} aria-label="signature manquante" />
+                  <AlertTriangle size={14} aria-label={t("prepareStep.missingSignature")} />
                 ) : d.elements > 0 ? (
-                  <CheckCircle2 size={14} aria-label="préparé" />
+                  <CheckCircle2 size={14} aria-label={t("prepareStep.prepared")} />
                 ) : (
-                  <Circle size={14} aria-label="à préparer" />
+                  <Circle size={14} aria-label={t("prepareStep.toPrepare")} />
                 )}
                 {d.title}
               </button>

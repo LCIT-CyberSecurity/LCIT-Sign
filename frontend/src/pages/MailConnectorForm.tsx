@@ -1,5 +1,8 @@
 import { useState, type FormEvent } from "react";
-import { api, ApiError } from "../api/client";
+import { useTranslation } from "react-i18next";
+import { api } from "../api/client";
+import { errorText } from "../i18n/errors";
+import { connectorText } from "../i18n/connectors";
 import ConnectorFieldControl from "../components/ConnectorFieldControl";
 import HelpHint from "../components/HelpHint";
 import type { MailConnectorConfig, MailKindSpec } from "../api/types";
@@ -31,6 +34,7 @@ export default function MailConnectorForm({
   config: MailConnectorConfig | null;
   onSaved: (saved: MailConnectorConfig) => void;
 }) {
+  const { t } = useTranslation();
   const [kind, setKind] = useState<MailKindSpec["kind"]>(config?.kind ?? "smtp");
   const [values, setValues] = useState<Record<string, string>>(valuesOf(config));
   const [secret, setSecret] = useState("");
@@ -38,6 +42,10 @@ export default function MailConnectorForm({
   const spec = kinds.find((k) => k.kind === kind);
   if (!spec) return null;
 
+  const scope = `mail.${kind}`;
+  const fieldText = (f: MailKindSpec["fields"][number], part: "label" | "help" | "example") =>
+    connectorText(scope, `fields.${f.name}.${part}`, f[part]);
+  const secretText = (part: "label" | "help" | "example") => connectorText(scope, `secret.${part}`, spec.secret[part]);
   const valueOf = (name: string, fallback: string) => values[name] ?? fallback;
   // The secret saved belongs to the kind saved: another kind needs its own.
   const stored = Boolean(config?.password_configured) && config?.kind === kind;
@@ -64,39 +72,40 @@ export default function MailConnectorForm({
       const saved = await api.put<MailConnectorConfig>("/admin/mail-connector", body);
       // The secret never stays in the page once it has been sent.
       setSecret("");
-      setMessage("Configuration enregistrée (secret chiffré).");
+      setMessage(t("directory.form.saved"));
       onSaved(saved);
     } catch (err) {
-      setMessage(err instanceof ApiError ? err.message : "Échec de l'enregistrement.");
+      setMessage(errorText(err, "directory.form.saveFailed"));
     }
   };
 
   return (
     <form className="card form" onSubmit={save} autoComplete="off">
       <label>
-        Type de connecteur
+        {t("mail.connectorType")}
         <select value={kind} onChange={(e) => setKind(e.target.value as MailKindSpec["kind"])}>
           {kinds.map((k) => (
             <option key={k.kind} value={k.kind}>
-              {k.label}
+              {connectorText(`mail.${k.kind}`, "label", k.label)}
             </option>
           ))}
         </select>
       </label>
       <p className="muted small" data-testid="mail-kind-description">
-        {spec.description}
+        {connectorText(scope, "description", spec.description)}
       </p>
 
       {spec.fields.map((f) => (
         <div key={f.name} className="field">
           <span className="label-line">
-            <label htmlFor={`mail-${f.name}`}>{f.label}</label>
-            <HelpHint title={f.label} example={f.example || undefined}>
-              {f.help}
+            <label htmlFor={`mail-${f.name}`}>{fieldText(f, "label")}</label>
+            <HelpHint title={fieldText(f, "label")} example={fieldText(f, "example") || undefined}>
+              {fieldText(f, "help")}
             </HelpHint>
           </span>
           <ConnectorFieldControl
             id={`mail-${f.name}`}
+            scope={scope}
             field={f}
             value={valueOf(f.name, f.kind === "text" || f.kind === "number" ? f.default : "")}
             onChange={(value) => setValues({ ...values, [f.name]: value })}
@@ -106,13 +115,14 @@ export default function MailConnectorForm({
 
       <div className="field">
         <span className="label-line">
-          <label htmlFor="mail-secret">{spec.secret.label}</label>
-          <HelpHint title={spec.secret.label} example={spec.secret.example || undefined}>
-            {spec.secret.help}
+          <label htmlFor="mail-secret">{secretText("label")}</label>
+          <HelpHint title={secretText("label")} example={secretText("example") || undefined}>
+            {secretText("help")}
           </HelpHint>
         </span>
         <ConnectorFieldControl
           id="mail-secret"
+          scope={scope}
           field={spec.secret}
           value={secret}
           onChange={setSecret}
@@ -123,7 +133,7 @@ export default function MailConnectorForm({
 
       {message && <p className="muted" role="status">{message}</p>}
       <button className="button button--primary" type="submit">
-        Enregistrer
+        {t("common.save")}
       </button>
     </form>
   );

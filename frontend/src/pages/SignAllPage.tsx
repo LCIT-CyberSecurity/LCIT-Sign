@@ -1,14 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, CheckCircle2, PenLine } from "lucide-react";
-import { api, ApiError } from "../api/client";
+import { api } from "../api/client";
+import i18n from "../i18n";
+import { errorText } from "../i18n/errors";
 import type { PublicConfig, SignAllInput, SignAllPlan } from "../api/types";
 
-const defaultLabel = (input: SignAllInput) => input.label || (input.kind === "PLACE" ? "Lieu" : "Texte");
+const defaultLabel = (input: SignAllInput) =>
+  input.label || (input.kind === "PLACE" ? i18n.t("signAll.defaultPlace") : i18n.t("signAll.defaultText"));
 
 /** Sign every document of a campaign in one go: one consent, an answer that several documents
  *  share typed once, one signature (with its own proof) per document. */
 export default function SignAllPage() {
+  const { t } = useTranslation();
   const { campaignId } = useParams<{ campaignId: string }>();
   const [plan, setPlan] = useState<SignAllPlan | null>(null);
   const [config, setConfig] = useState<PublicConfig | null>(null);
@@ -23,7 +28,7 @@ export default function SignAllPage() {
     api
       .get<SignAllPlan>(`/sign-all/${campaignId}`)
       .then(setPlan)
-      .catch((err) => setError(err instanceof ApiError ? err.message : "Campagne introuvable."));
+      .catch((err) => setError(errorText(err, "signAll.notFound")));
     api.get<PublicConfig>("/config").then(setConfig);
   }, [campaignId]);
 
@@ -49,10 +54,10 @@ export default function SignAllPage() {
       }
     }
     return { shared: [...byKey.values()], singles };
-  }, [plan]);
+  }, [plan, i18n.language]);
 
   if (error && !plan) return <p className="error-text">{error}</p>;
-  if (!plan) return <p className="muted">Chargement…</p>;
+  if (!plan) return <p className="muted">{t("common.loading")}</p>;
 
   const missing =
     groups.shared.some((g) => g.required && !(shared[g.key] ?? "").trim()) ||
@@ -69,7 +74,7 @@ export default function SignAllPage() {
       });
       setSigned(done.signed);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "La signature a échoué.");
+      setError(errorText(err, "signAll.failed"));
     } finally {
       setBusy(false);
     }
@@ -80,15 +85,15 @@ export default function SignAllPage() {
       <div className="stack">
         <div className="card" data-testid="sign-all-done">
           <div className="card-title">
-            <CheckCircle2 size={16} aria-hidden="true" /> {signed} document(s) signé(s)
+            <CheckCircle2 size={16} aria-hidden="true" /> {t("signAll.signedCount", { count: signed })}
           </div>
-          <p>Chaque signature a sa propre preuve, que vous retrouvez dans « Mes signatures ».</p>
+          <p>{t("signAll.ownProof")}</p>
           <div className="row-actions">
             <Link className="button button--primary" to="/">
-              Mes signatures
+              {t("nav.mySignatures")}
             </Link>
             <Link className="button button--ghost" to="/">
-              Retour
+              {t("common.back")}
             </Link>
           </div>
         </div>
@@ -99,18 +104,18 @@ export default function SignAllPage() {
   return (
     <div className="stack">
       <Link to="/" className="back-link">
-        <ArrowLeft size={14} aria-hidden="true" /> À signer
+        <ArrowLeft size={14} aria-hidden="true" /> {t("signAll.toSign")}
       </Link>
       <h1 className="page-title">
-        <PenLine size={20} aria-hidden="true" /> Tout signer — {plan.campaign.name}
+        <PenLine size={20} aria-hidden="true" /> {t("signAll.title", { name: plan.campaign.name })}
       </h1>
 
       {plan.documents.length === 0 ? (
-        <p className="muted">Rien à signer pour vous dans cette campagne pour le moment.</p>
+        <p className="muted">{t("signAll.nothing")}</p>
       ) : (
         <>
           <div className="card" data-testid="sign-all-documents">
-            <div className="card-title">{plan.documents.length} document(s) à signer</div>
+            <div className="card-title">{t("signAll.documentsToSign", { count: plan.documents.length })}</div>
             <ul className="plain-list">
               {plan.documents.map((d) => (
                 <li key={d.version_id}>
@@ -120,20 +125,22 @@ export default function SignAllPage() {
             </ul>
             {plan.waiting > 0 && (
               <p className="muted small">
-                {plan.waiting} autre(s) document(s) vous attendent, mais ce n&apos;est pas encore votre tour.
+                {t("signAll.othersWaiting", { count: plan.waiting })}
               </p>
             )}
           </div>
 
           {(groups.shared.length > 0 || groups.singles.length > 0) && (
             <div className="card form" data-testid="sign-all-inputs">
-              <div className="card-title">À renseigner</div>
+              <div className="card-title">{t("signAll.toFill")}</div>
               {groups.shared.map((g) => (
                 <label key={g.key}>
                   {g.label}
                   {g.required && " *"}{" "}
                   <span className="muted small">
-                    (une seule réponse, reprise sur {g.titles.length > 1 ? `${g.titles.length} documents` : g.titles[0]})
+                    {t("signAll.oneAnswer", {
+                      where: g.titles.length > 1 ? t("signAll.documentsN", { count: g.titles.length }) : g.titles[0],
+                    })}
                   </span>
                   <input
                     value={shared[g.key] ?? ""}
@@ -157,7 +164,7 @@ export default function SignAllPage() {
           <div className="card">
             <label className="consent-row">
               <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
-              <span>{config?.consent_text ?? "J'atteste avoir pris connaissance de ces documents."}</span>
+              <span>{config?.consent_text ?? t("signAll.consentDefault")}</span>
             </label>
             {error && <p className="error-text" role="alert">{error}</p>}
             <button
@@ -165,7 +172,7 @@ export default function SignAllPage() {
               onClick={() => void signAll()}
               disabled={!consent || busy || missing}
             >
-              {busy ? "Signature en cours…" : `Signer les ${plan.documents.length} documents`}
+              {busy ? t("signing.inProgress") : t("signAll.signAllButton", { count: plan.documents.length })}
             </button>
           </div>
         </>

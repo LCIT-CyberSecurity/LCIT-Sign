@@ -1,7 +1,9 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { Link, useNavigate } from "react-router-dom";
 import { PenLine, Plus } from "lucide-react";
-import { api, ApiError } from "../api/client";
+import { api } from "../api/client";
+import { errorText } from "../i18n/errors";
 import ConfirmButton from "../components/ConfirmButton";
 import type { Campaign } from "../api/types";
 
@@ -9,6 +11,7 @@ import type { Campaign } from "../api/types";
  *  Requests still being prepared are listed to be picked up again; once sent, they are
  *  followed in Campagnes. */
 export default function SignPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [campaigns, setCampaigns] = useState<Campaign[] | null>(null);
   const [name, setName] = useState("");
@@ -37,7 +40,7 @@ export default function SignPage() {
       await api.del(`/campaigns/${id}`);
       setCampaigns((all) => (all ?? []).filter((c) => c.id !== id));
     } catch (err) {
-      setProblem(err instanceof ApiError ? err.message : "La suppression a échoué.");
+      setProblem(errorText(err, "signPage.deleteFailed"));
     }
   };
 
@@ -50,35 +53,34 @@ export default function SignPage() {
       <div className="page-header">
         <div>
           <h1 className="page-title" style={{ margin: 0 }}>
-            <PenLine size={22} aria-hidden="true" /> Faire signer
+            <PenLine size={22} aria-hidden="true" /> {t("nav.sign")}
           </h1>
           <p className="page-subtitle" style={{ margin: "6px 0 0" }}>
-            Faites signer un ou plusieurs documents : choisissez qui signe, déposez les documents, placez
-            les éléments, puis envoyez.
+            {t("signPage.subtitle")}
           </p>
         </div>
       </div>
 
-      <form className="card form" onSubmit={create} aria-label="Nouvelle demande de signature">
-        <div className="card-title">Nouvelle demande de signature</div>
+      <form className="card form" onSubmit={create} aria-label={t("signPage.newRequest")}>
+        <div className="card-title">{t("signPage.newRequest")}</div>
         <div className="inline-create">
           <input
-            placeholder="Nom de la demande (ex : PSSI 2026)"
-            aria-label="Nom de la demande"
+            placeholder={t("signPage.namePlaceholder")}
+            aria-label={t("signPage.name")}
             value={name}
             onChange={(e) => setName(e.target.value)}
             required
           />
           <button className="button button--primary" type="submit" disabled={creating}>
-            <Plus size={14} aria-hidden="true" /> Commencer
+            <Plus size={14} aria-hidden="true" /> {t("signPage.start")}
           </button>
         </div>
       </form>
 
       <section>
-        <h2 className="card-title">En préparation</h2>
+        <h2 className="card-title">{t("signPage.inPreparation")}</h2>
         {drafts.length === 0 ? (
-          <p className="muted">Aucune demande en préparation.</p>
+          <p className="muted">{t("signPage.noDrafts")}</p>
         ) : (
           <div className="card-list">
             {drafts.map((c) => (
@@ -87,16 +89,16 @@ export default function SignPage() {
                   <div>
                     <div className="card-title">{c.name}</div>
                     <div className="muted small">
-                      {c.documents.length} document(s) — {c.roles.length} signataire(s) défini(s)
+                      {t("signPage.draftSummary", { count: c.documents.length, documents: c.documents.length, signers: c.roles.length })}
                     </div>
                   </div>
-                  <div className="card-meta">Reprendre</div>
+                  <div className="card-meta">{t("signPage.resume")}</div>
                 </Link>
                 <ConfirmButton
-                  confirmLabel="Oui, supprimer cette demande"
+                  confirmLabel={t("signPage.confirmDelete")}
                   onConfirm={() => remove(c.id)}
                 >
-                  Supprimer
+                  {t("common.delete")}
                 </ConfirmButton>
               </div>
             ))}
@@ -104,7 +106,7 @@ export default function SignPage() {
         )}
         {problem && <p className="error-text">{problem}</p>}
         <p className="muted small">
-          Les demandes envoyées se suivent dans <Link to="/campaigns">Suivi</Link>.
+          <Trans i18nKey="signPage.followedIn" components={{ view: <Link to="/campaigns" /> }} />
         </p>
       </section>
     </div>

@@ -1,10 +1,11 @@
 import { useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 
 /** A destructive action behind a deliberate second click, with no modal: the
  *  first click asks, the second one does it, "Annuler" backs out. */
 export default function ConfirmButton({
   children,
-  confirmLabel = "Confirmer la suppression",
+  confirmLabel,
   onConfirm,
   className = "button button--ghost button--sm",
   confirmClassName = "button button--danger button--sm",
@@ -18,6 +19,7 @@ export default function ConfirmButton({
   confirmClassName?: string;
   disabled?: boolean;
 }) {
+  const { t } = useTranslation();
   const [asking, setAsking] = useState(false);
 
   if (!asking) {
@@ -37,10 +39,10 @@ export default function ConfirmButton({
           setAsking(false);
         }}
       >
-        {confirmLabel}
+        {confirmLabel ?? t("common.confirmDelete")}
       </button>
       <button type="button" className="button button--ghost button--sm" onClick={() => setAsking(false)}>
-        Annuler
+        {t("common.cancel")}
       </button>
     </span>
   );

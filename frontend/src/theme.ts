@@ -6,19 +6,17 @@
 export type ThemeId = "violet" | "blue" | "aurora" | "azure" | "studio";
 export type Appearance = "light" | "dark" | "system";
 
-export const THEMES: { id: ThemeId; name: string; summary: string }[] = [
-  { id: "violet", name: "Violet", summary: "La palette LCIT" },
-  { id: "blue", name: "Bleu", summary: "Sobre, accent bleu" },
-  { id: "aurora", name: "Aurora", summary: "Indigo, voile aurore" },
-  { id: "azure", name: "Azur", summary: "Bleu clair, surfaces blanches" },
-  { id: "studio", name: "Studio", summary: "Précis, presque monochrome" },
+// Their names and descriptions are in the i18n catalogues (theme.<id>.name / .summary,
+// appearance.<id>); only the stable ids live here.
+export const THEMES: { id: ThemeId }[] = [
+  { id: "violet" },
+  { id: "blue" },
+  { id: "aurora" },
+  { id: "azure" },
+  { id: "studio" },
 ];
 
-export const APPEARANCES: { id: Appearance; label: string }[] = [
-  { id: "light", label: "Jour" },
-  { id: "dark", label: "Nuit" },
-  { id: "system", label: "Système" },
-];
+export const APPEARANCES: { id: Appearance }[] = [{ id: "light" }, { id: "dark" }, { id: "system" }];
 
 const THEME_KEY = "lcit-sign.theme";
 const APPEARANCE_KEY = "lcit-sign.appearance";

@@ -1,16 +1,16 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { Download, ExternalLink, ShieldCheck } from "lucide-react";
 import { api } from "../api/client";
+import { formatDate } from "../i18n/format";
+import i18n from "../i18n";
 import type { SignedDocumentsResponse } from "../api/types";
 
-const STATUS_LABEL: Record<string, string> = {
-  WAITING: "Pas encore son tour",
-  PENDING: "À signer",
-  VIEWED: "Consulté, pas signé",
-};
+const statusLabel = (status: string) =>
+  i18n.exists(`signedDocs.status.${status}`) ? i18n.t(`signedDocs.status.${status}`) : status;
 
-const day = (value: string | null) => (value ? new Date(value).toLocaleDateString("fr-FR") : "—");
+const day = (value: string | null) => (value ? formatDate(value) : "—");
 
 /** The signed documents of one or several campaigns: who signed what, who still has to, the
  *  PDFs, and a ZIP of them all. With `campaignIds` it is about those campaigns only (a campaign's
@@ -22,6 +22,7 @@ export default function SignedDocuments({
   campaignIds?: string[];
   refreshKey?: number;
 }) {
+  const { t } = useTranslation();
   const [data, setData] = useState<SignedDocumentsResponse | null>(null);
   const [picked, setPicked] = useState<string[]>([]);
   const [query, setQuery] = useState("");
@@ -54,8 +55,8 @@ export default function SignedDocuments({
       <div className="signed-toolbar">
         <input
           type="search"
-          placeholder="Rechercher une personne, un document, une campagne…"
-          aria-label="Rechercher"
+          placeholder={t("signedDocs.searchPlaceholder")}
+          aria-label={t("signedDocs.search")}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
@@ -64,16 +65,16 @@ export default function SignedDocuments({
           aria-disabled={!data || data.totals.signed === 0}
           href={data && data.totals.signed > 0 ? `/api/signed/export.zip?${params()}` : undefined}
         >
-          <Download size={14} aria-hidden="true" /> Tout télécharger (ZIP)
+          <Download size={14} aria-hidden="true" /> {t("signedDocs.downloadAll")}
         </a>
       </div>
 
       {!fixed && (
         <div className="card" data-testid="signed-filters">
           <div className="field-label">
-            Campagnes{" "}
+            {t("signedDocs.campaigns")}{" "}
             <span className="muted small">
-              {selected.length === 0 ? "— toutes" : `— ${selected.length} sélectionnée(s)`}
+              {selected.length === 0 ? t("signedDocs.allLower") : t("signedDocs.selectedLower", { count: selected.length })}
             </span>
           </div>
           <div className="chip-list">
@@ -90,7 +91,7 @@ export default function SignedDocuments({
             ))}
             {selected.length > 0 && (
               <button type="button" className="button button--ghost button--sm" onClick={() => setSelected([])}>
-                Toutes les campagnes
+                {t("signedDocs.allCampaigns")}
               </button>
             )}
           </div>
@@ -100,35 +101,35 @@ export default function SignedDocuments({
       {data && (
         <div className="metrics" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(170px, 240px))" }}>
           <div className="metric">
-            <div className="metric-label">Signés</div>
+            <div className="metric-label">{t("signedDocs.signed")}</div>
             <strong data-testid="total-signed">{data.totals.signed}</strong>
           </div>
           <div className="metric">
-            <div className="metric-label">Reste à signer</div>
+            <div className="metric-label">{t("signedDocs.left")}</div>
             <strong data-testid="total-outstanding">{data.totals.outstanding}</strong>
           </div>
           <div className="metric">
-            <div className="metric-label">Pas encore leur tour</div>
+            <div className="metric-label">{t("signedDocs.waiting")}</div>
             <strong data-testid="total-waiting">{data.totals.waiting}</strong>
           </div>
         </div>
       )}
 
       <section className="card" data-testid="signed-table">
-        <div className="card-title">Documents signés</div>
+        <div className="card-title">{t("signedDocs.signedTitle")}</div>
         {!data ? (
-          <p className="muted">Chargement…</p>
+          <p className="muted">{t("common.loading")}</p>
         ) : data.signed.length === 0 ? (
-          <p className="muted">Aucun document signé pour cette sélection.</p>
+          <p className="muted">{t("signedDocs.noneSigned")}</p>
         ) : (
           <div className="table-wrap">
             <table className="simple-table">
               <thead>
                 <tr>
-                  <th>Document</th>
-                  <th>Signataire</th>
-                  <th>Campagne</th>
-                  <th>Signé le</th>
+                  <th>{t("signedDocs.columns.document")}</th>
+                  <th>{t("signedDocs.columns.signer")}</th>
+                  <th>{t("signedDocs.columns.campaign")}</th>
+                  <th>{t("signedDocs.columns.signedOn")}</th>
                   <th />
                 </tr>
               </thead>
@@ -152,13 +153,13 @@ export default function SignedDocuments({
                           target="_blank"
                           rel="noreferrer"
                         >
-                          <ExternalLink size={12} aria-hidden="true" /> Ouvrir
+                          <ExternalLink size={12} aria-hidden="true" /> {t("signedDocs.open")}
                         </a>
                         <a className="button button--ghost button--sm" href={`/api/signatures/${row.id}/signed-pdf`}>
                           <Download size={12} aria-hidden="true" /> PDF
                         </a>
                         <Link className="button button--ghost button--sm" to={`/signatures/${row.id}`}>
-                          <ShieldCheck size={12} aria-hidden="true" /> Preuve
+                          <ShieldCheck size={12} aria-hidden="true" /> {t("signedDocs.proof")}
                         </Link>
                       </div>
                     </td>
@@ -171,21 +172,21 @@ export default function SignedDocuments({
       </section>
 
       <section className="card" data-testid="outstanding-table">
-        <div className="card-title">Reste à signer</div>
+        <div className="card-title">{t("signedDocs.left")}</div>
         {!data ? (
-          <p className="muted">Chargement…</p>
+          <p className="muted">{t("common.loading")}</p>
         ) : data.outstanding.length === 0 ? (
-          <p className="muted">Personne n&apos;a de document en attente pour cette sélection.</p>
+          <p className="muted">{t("signedDocs.nobodyWaiting")}</p>
         ) : (
           <div className="table-wrap">
             <table className="simple-table">
               <thead>
                 <tr>
-                  <th>Signataire</th>
-                  <th>Document</th>
-                  <th>Campagne</th>
-                  <th>Statut</th>
-                  <th>Échéance</th>
+                  <th>{t("signedDocs.columns.signer")}</th>
+                  <th>{t("signedDocs.columns.document")}</th>
+                  <th>{t("signedDocs.columns.campaign")}</th>
+                  <th>{t("signedDocs.columns.status")}</th>
+                  <th>{t("signedDocs.columns.deadline")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -205,7 +206,7 @@ export default function SignedDocuments({
                     </td>
                     <td>
                       <span className={`badge badge--${row.status.toLowerCase()}`}>
-                        {STATUS_LABEL[row.status] ?? row.status}
+                        {statusLabel(row.status)}
                       </span>
                     </td>
                     <td>{day(row.deadline)}</td>

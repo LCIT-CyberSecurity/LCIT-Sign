@@ -1,3 +1,5 @@
+import i18n from "../i18n";
+
 const BASE = "/api";
 
 export class ApiError extends Error {
@@ -14,8 +16,8 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     response = await fetch(`${BASE}${path}`, { credentials: "include", ...init });
   } catch {
     // The request never got an answer (server restarting, network cut): say so,
-    // instead of a generic "failed" that hides the cause.
-    throw new ApiError(0, "Le serveur ne répond pas pour le moment : réessayez dans un instant.");
+    // instead of a generic "failed" that hides the cause (worded in the active language).
+    throw new ApiError(0, i18n.t("errors.unreachable"));
   }
   if (!response.ok) {
     let message = response.statusText;

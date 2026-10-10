@@ -1,3 +1,4 @@
+import i18n from "../i18n";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import * as pdfjs from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
@@ -53,7 +54,7 @@ export default function PdfPages({
         const loaded = await task.promise;
         if (!cancelled) setDoc(loaded);
       } catch {
-        if (!cancelled) setError("Impossible d'afficher le document.");
+        if (!cancelled) setError(i18n.t("pdf.cannotDisplay"));
       }
     })();
     return () => {
@@ -65,7 +66,7 @@ export default function PdfPages({
   return (
     <div ref={containerRef} className="prep-pages">
       {error && <p className="error-text">{error}</p>}
-      {!doc && !error && <p className="muted">Chargement du document…</p>}
+      {!doc && !error && <p className="muted">{i18n.t("pdf.loading")}</p>}
       {doc &&
         pages.map((page) => (
           <Page key={page.number} doc={doc} page={page} width={width} renderOverlay={renderOverlay} />
@@ -119,7 +120,7 @@ function Page({
 
   return (
     <div className="prep-page-wrap">
-      <div className="prep-page-number">Page {page.number}</div>
+      <div className="prep-page-number">{i18n.t("pdf.page", { n: page.number })}</div>
       <div
         ref={frameRef}
         className="prep-page"

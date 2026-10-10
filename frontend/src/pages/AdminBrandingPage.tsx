@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { ImageIcon, Trash2, Upload } from "lucide-react";
-import { api, ApiError } from "../api/client";
+import { api } from "../api/client";
+import { errorText } from "../i18n/errors";
 import ConfirmButton from "../components/ConfirmButton";
 import { announceBrandingChange } from "../lib/branding";
 import type { Branding } from "../api/types";
@@ -8,6 +10,7 @@ import type { Branding } from "../api/types";
 /** The logo shown at the top left of every page, on the sign-in page and on signed documents.
  *  An administrator replaces the LCIT one with the company's own, or goes back to it. */
 export default function AdminBrandingPage() {
+  const { t } = useTranslation();
   const [branding, setBranding] = useState<Branding | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -30,9 +33,9 @@ export default function AdminBrandingPage() {
       await api.putForm("/admin/branding/logo", form);
       await load();
       announceBrandingChange();
-      setMessage("Logo enregistré : il apparaît dès maintenant en haut à gauche.");
+      setMessage(t("branding.uploaded"));
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "L'envoi du logo a échoué.");
+      setError(errorText(err, "branding.uploadFailed"));
     } finally {
       setBusy(false);
       if (input.current) input.current.value = "";
@@ -44,29 +47,27 @@ export default function AdminBrandingPage() {
     await api.del("/admin/branding/logo");
     await load();
     announceBrandingChange();
-    setMessage("Le logo LCIT est de retour.");
+    setMessage(t("branding.reverted"));
   };
 
   return (
     <div className="stack">
       <h1 className="page-title">
-        <ImageIcon size={20} aria-hidden="true" /> Logo
+        <ImageIcon size={20} aria-hidden="true" /> {t("branding.title")}
       </h1>
       <div className="card" data-testid="branding-card">
-        <div className="card-title">Le logo de votre entreprise</div>
+        <div className="card-title">{t("branding.cardTitle")}</div>
         <p className="muted small">
-          Il remplace le logo LCIT en haut à gauche, sur la page de connexion et sur les documents signés qui
-          comportent un logo. Image PNG ou JPEG, 512 Ko au plus, d&apos;au moins 16 px ; un fond transparent
-          (PNG) rend mieux.
+          {t("branding.help")}
         </p>
         <div className="branding-preview">
           {branding?.has_logo ? (
-            <img src={`/api/branding/logo?v=${branding.logo_sha256}`} alt="Logo actuel" />
+            <img src={`/api/branding/logo?v=${branding.logo_sha256}`} alt={t("branding.currentAlt")} />
           ) : (
-            <img src="/lcit-mark.png" alt="Logo LCIT par défaut" />
+            <img src="/lcit-mark.png" alt={t("branding.defaultAlt")} />
           )}
           <span className="muted small">
-            {branding?.has_logo ? "Votre logo" : "Logo LCIT par défaut"}
+            {branding?.has_logo ? t("branding.yours") : t("branding.default")}
           </span>
         </div>
         <div className="row-actions">
@@ -84,11 +85,11 @@ export default function AdminBrandingPage() {
             disabled={busy}
             onClick={() => input.current?.click()}
           >
-            <Upload size={14} aria-hidden="true" /> {branding?.has_logo ? "Changer le logo" : "Choisir mon logo"}
+            <Upload size={14} aria-hidden="true" /> {branding?.has_logo ? t("branding.change") : t("branding.choose")}
           </button>
           {branding?.has_logo && (
-            <ConfirmButton confirmLabel="Oui, revenir au logo LCIT" onConfirm={remove}>
-              <Trash2 size={13} aria-hidden="true" /> Revenir au logo LCIT
+            <ConfirmButton confirmLabel={t("branding.confirmRevert")} onConfirm={remove}>
+              <Trash2 size={13} aria-hidden="true" /> {t("branding.revert")}
             </ConfirmButton>
           )}
         </div>

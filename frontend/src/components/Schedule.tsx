@@ -1,3 +1,6 @@
+import { useTranslation } from "react-i18next";
+import i18n from "../i18n";
+import { formatDate } from "../i18n/format";
 import type { CampaignPlan, CampaignPolicies } from "../api/types";
 
 /** When a request starts and ends, how often to remind those who have not answered, and
@@ -11,21 +14,22 @@ export interface Schedule {
 
 export const EMPTY_SCHEDULE: Schedule = { startDate: "", deadline: "", reminderDays: "", renewalMonths: "" };
 
+// [value sent, catalogue key of the label]: the label is worded in the active language when drawn.
 export const REMINDER_CHOICES: [string, string][] = [
-  ["", "Aucune relance"],
-  ["1", "Tous les jours"],
-  ["2", "Tous les 2 jours"],
-  ["7", "Toutes les semaines"],
-  ["14", "Toutes les 2 semaines"],
-  ["30", "Tous les mois"],
+  ["", "schedule.reminder.none"],
+  ["1", "schedule.reminder.1"],
+  ["2", "schedule.reminder.2"],
+  ["7", "schedule.reminder.7"],
+  ["14", "schedule.reminder.14"],
+  ["30", "schedule.reminder.30"],
 ];
 
 export const RENEWAL_CHOICES: [string, string][] = [
-  ["", "Jamais"],
-  ["1", "Tous les mois"],
-  ["3", "Tous les 3 mois"],
-  ["6", "Tous les 6 mois"],
-  ["12", "Tous les ans"],
+  ["", "schedule.renewal.none"],
+  ["1", "schedule.renewal.1"],
+  ["3", "schedule.renewal.3"],
+  ["6", "schedule.renewal.6"],
+  ["12", "schedule.renewal.12"],
 ];
 
 const two = (n: number) => String(n).padStart(2, "0");
@@ -88,27 +92,35 @@ export function scheduleFromPlan(plan: CampaignPlan): Schedule {
 
 /** What would make the API refuse, said before sending. */
 export function scheduleProblem(s: Schedule): string | null {
-  if (s.deadline && s.deadline < today()) return "L'échéance est déjà passée.";
+  if (s.deadline && s.deadline < today()) return i18n.t("schedule.deadlinePassed");
   if (s.startDate && s.deadline && s.deadline <= s.startDate) {
-    return "L'échéance doit être après la date de début.";
+    return i18n.t("schedule.deadlineAfterStart");
   }
   return null;
 }
 
-const frDate = (value: string) => new Date(`${value}T12:00:00`).toLocaleDateString("fr-FR");
+const dayLabel = (value: string) => formatDate(`${value}T12:00:00`);
 
 /** The settings in a sentence each, for the review screen. */
 export function describeSchedule(s: Schedule): string[] {
-  const lines = [s.startDate && s.startDate > today() ? `Début le ${frDate(s.startDate)}` : "Début dès l'envoi"];
-  lines.push(s.deadline ? `Échéance le ${frDate(s.deadline)}` : "Sans échéance");
+  const lines = [
+    s.startDate && s.startDate > today()
+      ? i18n.t("schedule.startOn", { date: dayLabel(s.startDate) })
+      : i18n.t("schedule.startOnSend"),
+  ];
+  lines.push(s.deadline ? i18n.t("schedule.deadlineOn", { date: dayLabel(s.deadline) }) : i18n.t("schedule.noDeadline"));
   const reminder = REMINDER_CHOICES.find(([value]) => value === s.reminderDays);
   lines.push(
     s.reminderDays && reminder
-      ? `Relance en cas de non-réponse : ${reminder[1].toLowerCase()}`
-      : "Pas de relance automatique",
+      ? i18n.t("schedule.reminderLine", { choice: i18n.t(reminder[1]).toLowerCase() })
+      : i18n.t("schedule.noReminder"),
   );
   const renewal = RENEWAL_CHOICES.find(([value]) => value === s.renewalMonths);
-  lines.push(s.renewalMonths && renewal ? `Renouvellement : ${renewal[1].toLowerCase()}` : "Pas de renouvellement");
+  lines.push(
+    s.renewalMonths && renewal
+      ? i18n.t("schedule.renewalLine", { choice: i18n.t(renewal[1]).toLowerCase() })
+      : i18n.t("schedule.noRenewal"),
+  );
   return lines;
 }
 
@@ -116,17 +128,20 @@ export function describeSchedule(s: Schedule): string[] {
 export function describePolicies(p: CampaignPolicies): string[] {
   const lines: string[] = [];
   if (p.reminder_first_days !== null) {
-    const max = p.reminder_max_count !== null ? `, ${p.reminder_max_count} fois au maximum` : "";
+    const max = p.reminder_max_count !== null ? i18n.t("schedule.policyMax", { count: p.reminder_max_count }) : "";
     lines.push(
-      `Relance à J+${p.reminder_first_days}, puis tous les ${p.reminder_interval_days} jours${max}.`,
+      i18n.t("schedule.policyReminder", { first: p.reminder_first_days, interval: p.reminder_interval_days, max }),
     );
   }
   if (p.reminder_before_deadline_days !== null) {
-    lines.push(`Relance ${p.reminder_before_deadline_days} jour(s) avant l'échéance.`);
+    lines.push(i18n.t("schedule.policyBeforeDeadline", { count: p.reminder_before_deadline_days }));
   }
   if (p.renewal_every !== null) {
-    const unit = p.renewal_unit === "DAYS" ? "jour(s)" : "mois";
-    lines.push(`Renouvellement tous les ${p.renewal_every} ${unit}.`);
+    lines.push(
+      i18n.t(p.renewal_unit === "DAYS" ? "schedule.policyRenewalDays" : "schedule.policyRenewalMonths", {
+        count: p.renewal_every,
+      }),
+    );
   }
   return lines;
 }
@@ -138,6 +153,7 @@ export default function ScheduleFields({
   value: Schedule;
   onChange: (next: Schedule) => void;
 }) {
+  const { t } = useTranslation();
   const set = (patch: Partial<Schedule>) => onChange({ ...value, ...patch });
   // Starting after the deadline makes no sense: the deadline follows, keeping the same time to sign.
   const setStart = (startDate: string) =>
@@ -153,11 +169,11 @@ export default function ScheduleFields({
     <div className="stack" style={{ gap: 12 }}>
       <div className="form-row">
         <label>
-          Date de début <span className="muted small">(aujourd&apos;hui : dès l&apos;envoi)</span>
+          {t("schedule.startDate")} <span className="muted small">{t("schedule.startHint")}</span>
           <input type="date" value={value.startDate} min={today()} onChange={(e) => setStart(e.target.value)} />
         </label>
         <label>
-          Date d&apos;échéance <span className="muted small">(dernier jour pour signer, 30 jours par défaut)</span>
+          {t("schedule.deadlineDate")} <span className="muted small">{t("schedule.deadlineHint")}</span>
           <input
             type="date"
             value={value.deadline}
@@ -168,21 +184,21 @@ export default function ScheduleFields({
       </div>
       <div className="form-row">
         <label>
-          Relance en cas de non-réponse
+          {t("schedule.reminderLabel")}
           <select value={value.reminderDays} onChange={(e) => set({ reminderDays: e.target.value })}>
-            {REMINDER_CHOICES.map(([v, label]) => (
+            {REMINDER_CHOICES.map(([v, key]) => (
               <option key={v} value={v}>
-                {label}
+                {t(key)}
               </option>
             ))}
           </select>
         </label>
         <label>
-          Renouvellement <span className="muted small">(redemander la signature)</span>
+          {t("schedule.renewalLabel")} <span className="muted small">{t("schedule.renewalHint")}</span>
           <select value={value.renewalMonths} onChange={(e) => set({ renewalMonths: e.target.value })}>
-            {RENEWAL_CHOICES.map(([v, label]) => (
+            {RENEWAL_CHOICES.map(([v, key]) => (
               <option key={v} value={v}>
-                {label}
+                {t(key)}
               </option>
             ))}
           </select>
