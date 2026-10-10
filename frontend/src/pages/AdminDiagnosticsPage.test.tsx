@@ -24,7 +24,8 @@ describe("AdminDiagnosticsPage", () => {
     render(<AdminDiagnosticsPage />);
     expect(await screen.findByTestId("check-database")).toHaveTextContent("PostgreSQL");
     expect(screen.getByTestId("check-oidc")).toHaveTextContent("SSO (OIDC)");
-    expect(screen.getByText("discovery endpoint unreachable")).toBeInTheDocument();
+    // The server's fixed phrases are worded in the interface language (French by default).
+    expect(screen.getByText("Le point de découverte est injoignable")).toBeInTheDocument();
     expect(screen.getByText("DISABLED")).toBeInTheDocument();
     expect(api.get).toHaveBeenCalledWith("/admin/diagnostics");
   });
