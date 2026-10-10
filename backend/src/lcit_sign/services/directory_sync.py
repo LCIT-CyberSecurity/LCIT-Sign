@@ -105,6 +105,9 @@ def sync_directory(db: DbSession, connector: DirectoryConnector) -> DirectorySyn
         run.status = "FAILED"
         run.error = str(exc)[:2000]
         run.finished_at = datetime.now(UTC)
+        logger.warning(
+            "directory sync source=%s operation=fetch status=FAILED error=%s", source, run.error
+        )
         append_audit_event(
             db, action="DIRECTORY_SYNC_FAILED",
             target_type="directory_sync_run", target_id=str(run.id),

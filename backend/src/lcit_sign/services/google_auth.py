@@ -11,6 +11,8 @@ import httpx
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
+from lcit_sign.services.directory import diagnostics as diag
+
 TOKEN_URI = "https://oauth2.googleapis.com/token"  # noqa: S105
 
 
@@ -83,19 +85,61 @@ def describe_google_token_error(response: httpx.Response, scopes: str, subject: 
     short = scopes.replace("https://www.googleapis.com/auth/", "").replace(" ", ", ")
     if code == "unauthorized_client":
         return (
-            "Google refuse la délégation : dans la console Admin (Sécurité → Contrôle des accès "
-            "et des données → Contrôles des API → Délégation à l'échelle du domaine), autorisez "
+            f"Google refuse la délégation ({code}) : dans la console Admin (Sécurité → Contrôle "
+            "des accès et des données → Contrôles des API → Délégation à l'échelle du domaine), "
+            "autorisez "
             f"l'ID client du compte de service pour les portées : {short}."
         )
     if code == "invalid_grant":
         return (
-            f"Google refuse d'agir au nom de {subject} : cette adresse n'existe pas dans le "
-            "domaine, ou la délégation à l'échelle du domaine n'est pas encore active (jusqu'à "
+            f"Google refuse d'agir au nom de {subject} ({code}) : cette adresse n'existe pas dans "
+            "le domaine, ou la délégation à l'échelle du domaine n'est pas encore active (jusqu'à "
             "quelques minutes après l'autorisation)."
         )
     if code in ("invalid_client", "invalid_request"):
         return (
-            "La clé du compte de service n'est pas valide : "
+            f"La clé du compte de service n'est pas valide ({code}) : "
             "générez-en une nouvelle (format JSON)."
         )
     return f"Google a refusé l'authentification (HTTP {response.status_code}, {code or 'inconnu'})."
+
+
+def classify_google_token_error(response: httpx.Response, subject: str) -> diag.CheckResult:
+    """The connection test's view of a refused token request. Never echoes the body."""
+    code = diag.provider_error_code(response) or ""
+    provider = code or f"HTTP {response.status_code}"
+    if code == "unauthorized_client":
+        return diag.fail(
+            "delegation",
+            diag.INSUFFICIENT_PERMISSIONS,
+            "Le compte de service n'est pas autorisé pour la délégation à l'échelle du domaine.",
+            provider_code=provider,
+            action="Console Admin > Sécurité > Contrôles des API > Délégation à l'échelle du "
+            "domaine : autorisez l'ID client du compte de service avec les trois portées en "
+            "lecture seule.",
+        )
+    if code == "invalid_grant":
+        return diag.fail(
+            "delegation",
+            diag.INVALID_CONFIGURATION,
+            f"Google refuse d'agir au nom de {subject} : adresse inexistante dans le domaine, "
+            "ou délégation pas encore active.",
+            provider_code=provider,
+            action="Vérifiez l'e-mail de l'administrateur ; la délégation peut demander "
+            "quelques minutes pour s'activer.",
+        )
+    if code in ("invalid_client", "invalid_request"):
+        return diag.fail(
+            "token_exchange",
+            diag.INVALID_CONFIGURATION,
+            "La clé du compte de service est refusée par Google.",
+            provider_code=provider,
+            action="Générez une nouvelle clé JSON pour le compte de service.",
+        )
+    return diag.fail(
+        "token_exchange",
+        diag.AUTH_FAILED,
+        "Google a refusé l'authentification du compte de service.",
+        provider_code=provider,
+        action="Vérifiez la clé du compte de service et l'e-mail de l'administrateur.",
+    )

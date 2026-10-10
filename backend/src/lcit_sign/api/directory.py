@@ -21,6 +21,7 @@ from lcit_sign.models.directory import (
 from lcit_sign.models.user import Role, User
 from lcit_sign.services.audit import append_audit_event
 from lcit_sign.services.crypto import encrypt_secret
+from lcit_sign.services.directory import diagnostics
 from lcit_sign.services.directory.base import DirectoryConnector, DirectoryConnectorError
 from lcit_sign.services.directory.registry import (
     SPECS,
@@ -55,6 +56,9 @@ def _run_payload(run: DirectorySyncRun) -> dict[str, Any]:
         "memberships_added": run.memberships_added,
         "memberships_removed": run.memberships_removed,
         "error": run.error,
+        # What a failed run says, with the provider's code and the advice when the sentence has
+        # them (older runs just keep their sentence).
+        "error_detail": diagnostics.explain_sync_error(run.error),
     }
 
 
@@ -202,6 +206,66 @@ def delete_source_config(
             target_type="directory_connector", target_id=source,
         )
         db.commit()
+
+
+@router.post("/sources/{source}/test")
+def test_source_connection(
+    source: str,
+    request: Request,
+    db: DbSession = Depends(get_db),
+    http_client: httpx.Client = Depends(get_directory_http_client),
+    user: User = Depends(_admin),
+) -> dict[str, Any]:
+    """Check that the saved connector can really read its directory: a few read-only requests
+    for one user, one group, one member. Writes nothing but the audit line, and is not a
+    synchronisation (that is `/sync`)."""
+    if source == "local":
+        raise HTTPException(status_code=409, detail="Aucune connexion à tester pour cet annuaire.")
+    if source not in SPECS:
+        raise HTTPException(status_code=404, detail=f"unknown directory source {source!r}")
+    config = db.get(DirectoryConnectorConfig, source)
+    if config is None or not config.encrypted_secret:
+        raise HTTPException(status_code=409, detail=f"connector {source!r} is not configured")
+    try:
+        connector = build_remote_connector(
+            config, request.app.state.settings.master_key, http_client
+        )
+    except DirectoryConnectorError as exc:
+        # The settings are saved but unusable (an unreadable key, a different master key…).
+        checks = [
+            diagnostics.fail(
+                "configuration",
+                diagnostics.INVALID_CONFIGURATION,
+                "La configuration enregistrée est inutilisable : "
+                + (
+                    "la clé du compte de service n'est pas un JSON Google valide."
+                    if source == "google"
+                    else str(exc)[:300]
+                ),
+                action="Enregistrez à nouveau la configuration du connecteur.",
+            )
+        ]
+    else:
+        checks = connector.test_connection()  # type: ignore[attr-defined]
+    for check in checks:
+        diagnostics.log_check(source, check)
+    result = diagnostics.result_payload(source, checks)
+    first_problem = next((c for c in checks if c.status != diagnostics.OK), None)
+    append_audit_event(
+        db,
+        action="DIRECTORY_CONNECTION_TESTED",
+        actor_id=user.id,
+        target_type="directory_connector",
+        target_id=source,
+        metadata={
+            "source": source,
+            "status": result["status"],
+            "error_code": first_problem.code if first_problem else None,
+            "provider_code": first_problem.provider_code if first_problem else None,
+        },
+    )
+    db.commit()
+    return result
 
 
 @router.post("/sync")

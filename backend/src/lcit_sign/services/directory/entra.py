@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterator
+from dataclasses import replace
 from typing import Any
 
 import httpx
 
+from lcit_sign.services.aad_errors import classify_token_error
 from lcit_sign.services.connector_fields import FieldSpec
+from lcit_sign.services.directory import diagnostics as diag
 from lcit_sign.services.directory.base import (
     ConnectorSpec,
     DirectoryConnector,
@@ -71,6 +74,91 @@ class EntraConnector:
             page = get_json(self._client, next_url, headers=headers)
             yield from page.get("value", [])
             next_url = page.get("@odata.nextLink")
+
+    def test_connection(self) -> list[diag.CheckResult]:
+        """Read-only: a token, then one user, one group, one member. Nothing is stored."""
+        checks: list[diag.CheckResult] = []
+        try:
+            response = self._client.post(
+                f"https://login.microsoftonline.com/{self._tenant_id}/oauth2/v2.0/token",
+                data={
+                    "grant_type": "client_credentials",
+                    "client_id": self._client_id,
+                    "client_secret": self._client_secret,
+                    "scope": "https://graph.microsoft.com/.default",
+                },
+                timeout=diag.TEST_TIMEOUT,
+            )
+        except httpx.HTTPError as exc:
+            return [diag.transport_failure("authentication", exc, service="Microsoft Entra ID")]
+        if response.status_code != 200:
+            return [classify_token_error(response)]
+        try:
+            token = str(response.json()["access_token"])
+        except (ValueError, KeyError):
+            return [
+                diag.fail(
+                    "authentication",
+                    diag.UPSTREAM_ERROR,
+                    "Microsoft a répondu sans jeton d'accès.",
+                    provider_code=f"HTTP {response.status_code}",
+                )
+            ]
+        checks.append(diag.ok("authentication", "Authentification réussie"))
+        headers = {"Authorization": f"Bearer {token}"}
+
+        def read(
+            name: str, path: str, what: str, permission: str, read_failed: str, success: str
+        ) -> tuple[diag.CheckResult, dict[str, Any] | None]:
+            return diag.probe_get(
+                self._client,
+                f"{self.GRAPH}/{path}",
+                name=name,
+                headers=headers,
+                params={"$top": "1", "$select": "id"},
+                service="Microsoft Graph",
+                what=what,
+                permission=permission,
+                read_failed=read_failed,
+                success=success,
+            )
+
+        users, body = read(
+            "users_read", "users", "des utilisateurs", "User.Read.All",
+            diag.USER_READ_FAILED, "Lecture des utilisateurs autorisée",
+        )
+        # Graph answered at all (even with a refusal): the service itself is reachable.
+        if users.code in (diag.NETWORK_ERROR, diag.TIMEOUT, diag.TLS_ERROR, diag.AUTH_FAILED):
+            checks.append(replace(users, name="service_access"))
+            return checks
+        checks.append(diag.ok("service_access", "Accès à Microsoft Graph"))
+        checks.append(users)
+        if not self._groups:
+            return checks
+        groups, body = read(
+            "groups_read", "groups", "des groupes", "Group.Read.All",
+            diag.GROUP_READ_FAILED, "Lecture des groupes autorisée",
+        )
+        checks.append(groups)
+        if body is None:
+            return checks
+        first = (body.get("value") or [{}])[0].get("id")
+        if not first:
+            checks.append(
+                diag.warn(
+                    "memberships_read",
+                    "Aucun groupe dans l'annuaire : la lecture des appartenances n'a pas pu "
+                    "être vérifiée.",
+                )
+            )
+            return checks
+        members, _ = read(
+            "memberships_read", f"groups/{first}/members", "des appartenances",
+            "GroupMember.Read.All", diag.MEMBERSHIP_READ_FAILED,
+            "Lecture des appartenances autorisée",
+        )
+        checks.append(members)
+        return checks
 
     def fetch(self) -> DirectorySnapshot:
         token = post_token(

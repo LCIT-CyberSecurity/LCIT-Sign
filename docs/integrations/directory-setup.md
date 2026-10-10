@@ -275,6 +275,33 @@ You can also choose a schedule (manual, every 15 minutes, hourly, every 6 hours,
 the active one (only one at a time); *Use this directory* switches back to another configured one. The secret is stored encrypted with the master key, so keep
 `LCIT_SIGN_MASTER_KEY` unchanged (see the README).
 
+## Testing the connection
+
+On each configured connector (*Administration → Identities & access → Directory*), **Test the connection** checks
+that the saved settings really work, *before* you synchronise. It is read-only: it asks for one user, one group and one
+member, writes nothing to the directory or to LCIT Sign's users, groups and memberships (only an audit line,
+`DIRECTORY_CONNECTION_TESTED`, with the source, the status and the error codes), and is not a synchronisation. **Synchronise
+now** is the separate button that updates users and groups.
+
+Each step is shown on its own, so a partial result tells you what to fix:
+
+| Connector | Steps |
+|---|---|
+| Microsoft Entra ID | authentication (token), access to Microsoft Graph, users, groups, memberships |
+| Google Workspace | service account key, signed assertion, access token, domain-wide delegation, users, groups, memberships |
+| LDAP / Active Directory | network, TLS, bind, search base, users query, groups query |
+
+A failed step carries our own code (`INSUFFICIENT_PERMISSIONS`, `SECRET_EXPIRED`, `TIMEOUT`, `TLS_ERROR`, `BASE_DN_ERROR`…),
+the provider's own code when it helps (`AADSTS7000222`, `unauthorized_client`, `HTTP 403`…) and a recommended action. A
+warning means the step works but returned nothing (for example a user filter that matches nobody).
+
+Nothing a provider answers is shown as it came: no secret, token, private key, JWT, `Authorization` header or raw
+response body ever reaches the page, the logs or the audit. The server log has one line per step
+(`source=… operation=… status=… provider_code=…`).
+
+In the synchronisation history, a **failed** run has a *View detail* button: the date, the source, the error, the
+provider's code and the recommended action when the message contains them. Older runs only show their error sentence.
+
 ## Quick checks if a sync fails
 
 | Symptom | Likely cause |

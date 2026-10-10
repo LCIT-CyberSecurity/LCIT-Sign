@@ -9,6 +9,7 @@ from typing import Any
 import httpx
 
 from lcit_sign.services.connector_fields import FieldSpec
+from lcit_sign.services.directory import diagnostics as diag
 from lcit_sign.services.directory.base import (
     ConnectorSpec,
     DirectoryConnector,
@@ -20,7 +21,12 @@ from lcit_sign.services.directory.base import (
     team_selector_field,
     teams_from_values,
 )
-from lcit_sign.services.google_auth import GoogleAuthError, ServiceAccount
+from lcit_sign.services.google_auth import (
+    TOKEN_URI,
+    GoogleAuthError,
+    ServiceAccount,
+    classify_google_token_error,
+)
 
 TEAM_ATTRIBUTES = (
     ("orgunit", "Unité d'organisation (OU)"),
@@ -88,6 +94,109 @@ class GoogleWorkspaceConnector:
             page_token = page.get("nextPageToken")
             if not page_token:
                 return
+
+    def test_connection(self) -> list[diag.CheckResult]:
+        """Read-only: the key, the signed assertion, the token for the impersonated
+        administrator, then one user, one group, one member. Nothing is stored."""
+        checks = [diag.ok("service_account", "Clé du compte de service lisible")]
+        try:
+            assertion = self._account.assertion(self.SCOPES, self._admin_email)
+        except Exception as exc:  # the key parsed but cannot sign
+            return [
+                *checks,
+                diag.fail(
+                    "assertion",
+                    diag.INVALID_CONFIGURATION,
+                    "La clé privée du compte de service ne permet pas de signer l'assertion.",
+                    provider_code=type(exc).__name__,
+                    action="Générez une nouvelle clé JSON pour le compte de service.",
+                ),
+            ]
+        checks.append(diag.ok("assertion", "Assertion signée"))
+        try:
+            response = self._client.post(
+                TOKEN_URI,
+                data={
+                    "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+                    "assertion": assertion,
+                },
+                timeout=diag.TEST_TIMEOUT,
+            )
+        except httpx.HTTPError as exc:
+            return [*checks, diag.transport_failure("token_exchange", exc, service="Google")]
+        if response.status_code != 200:
+            return [*checks, classify_google_token_error(response, self._admin_email)]
+        try:
+            token = str(response.json()["access_token"])
+        except (ValueError, KeyError):
+            return [
+                *checks,
+                diag.fail(
+                    "token_exchange",
+                    diag.UPSTREAM_ERROR,
+                    "Google a répondu sans jeton d'accès.",
+                    provider_code=f"HTTP {response.status_code}",
+                ),
+            ]
+        checks.append(diag.ok("token_exchange", "Jeton d'accès obtenu"))
+        checks.append(diag.ok("delegation", "Délégation à l'échelle du domaine active"))
+        headers = {"Authorization": f"Bearer {token}"}
+
+        def read(
+            name: str,
+            url: str,
+            what: str,
+            permission: str,
+            read_failed: str,
+            success: str,
+            **params: str,
+        ) -> tuple[diag.CheckResult, dict[str, Any] | None]:
+            return diag.probe_get(
+                self._client,
+                url,
+                name=name,
+                headers=headers,
+                params={"maxResults": "1", **params},
+                service="Google Admin SDK",
+                what=what,
+                permission=permission,
+                read_failed=read_failed,
+                success=success,
+            )
+
+        users, _ = read(
+            "users_read", f"{self.API}/users", "des utilisateurs",
+            "admin.directory.user.readonly", diag.USER_READ_FAILED,
+            "Lecture des utilisateurs autorisée", customer="my_customer",
+        )
+        checks.append(users)
+        if not self._groups:
+            return checks
+        groups, body = read(
+            "groups_read", f"{self.API}/groups", "des groupes",
+            "admin.directory.group.readonly", diag.GROUP_READ_FAILED,
+            "Lecture des groupes autorisée", customer="my_customer",
+        )
+        checks.append(groups)
+        if body is None:
+            return checks
+        first = (body.get("groups") or [{}])[0].get("id")
+        if not first:
+            checks.append(
+                diag.warn(
+                    "memberships_read",
+                    "Aucun groupe dans l'annuaire : la lecture des appartenances n'a pas pu "
+                    "être vérifiée.",
+                )
+            )
+            return checks
+        members, _ = read(
+            "memberships_read", f"{self.API}/groups/{first}/members", "des appartenances",
+            "admin.directory.group.member.readonly", diag.MEMBERSHIP_READ_FAILED,
+            "Lecture des appartenances autorisée",
+        )
+        checks.append(members)
+        return checks
 
     def fetch(self) -> DirectorySnapshot:
         try:

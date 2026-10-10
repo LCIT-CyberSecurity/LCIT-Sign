@@ -9,11 +9,13 @@ from typing import Any
 from urllib.parse import urlparse
 
 import httpx
+from ldap3 import BASE as BASE_SCOPE
 from ldap3 import NONE, SUBTREE, Connection, Server, Tls
 from ldap3.core.exceptions import LDAPException
 from ldap3.utils.dn import parse_dn
 
 from lcit_sign.services.connector_fields import FieldSpec
+from lcit_sign.services.directory import diagnostics as diag
 from lcit_sign.services.directory.base import (
     ConnectorSpec,
     DirectoryConnector,
@@ -102,7 +104,10 @@ class LdapConnector:
 
     def _connect(self) -> Connection:
         if self._factory is not None:
-            return self._factory()
+            try:
+                return self._factory()
+            except LDAPException as exc:  # the same wording as a real connection failure
+                raise DirectoryConnectorError(self._describe(exc)) from exc
         url = urlparse(self._server_url)
         host = url.hostname or ""
         port = url.port or (636 if url.scheme == "ldaps" else 389)
@@ -170,6 +175,215 @@ class LdapConnector:
             return [e for e in found if e.get("type", "searchResEntry") == "searchResEntry"]
         except LDAPException as exc:
             raise DirectoryConnectorError(self._describe(exc)) from exc
+
+    # --- connection test ---------------------------------------------------------------
+
+    @staticmethod
+    def _connect_failure(exc: Exception) -> diag.CheckResult:
+        """Which step of getting connected failed, from what the library raised."""
+        kind = type(exc).__name__
+        text = f"{kind} {exc}".lower()
+        if "invalidcredentials" in text or "bind" in kind.lower():
+            return diag.fail(
+                "bind",
+                diag.AUTH_FAILED,
+                "Le bind LDAP est refusé : vérifiez le DN et le mot de passe du compte de liaison.",
+                provider_code=kind,
+                action="Vérifiez le DN du compte de liaison et son mot de passe.",
+            )
+        if "certificate" in text or "ssl" in text or "tls" in text:
+            return diag.fail(
+                "tls",
+                diag.TLS_ERROR,
+                "Le serveur LDAP répond mais le certificat TLS n'est pas reconnu.",
+                provider_code=kind,
+                action="Installez l'autorité de certification du serveur LDAP sur le serveur "
+                "LCIT Sign, ou fournissez la chaîne complète.",
+            )
+        if "timed out" in text or "timeout" in text:
+            return diag.fail(
+                "network",
+                diag.TIMEOUT,
+                "Le serveur LDAP ne répond pas dans le délai imparti.",
+                provider_code=kind,
+                action="Vérifiez l'adresse, le port et le pare-feu.",
+            )
+        return diag.fail(
+            "network",
+            diag.NETWORK_ERROR,
+            "Le serveur LDAP est injoignable depuis le serveur LCIT Sign.",
+            provider_code=kind,
+            action="Vérifiez l'adresse, le port, le DNS et le pare-feu.",
+        )
+
+    def _open_for_test(self) -> tuple[Connection | None, list[diag.CheckResult]]:
+        """The connection steps, one by one: network, TLS, bind."""
+        checks: list[diag.CheckResult] = []
+        if self._factory is not None:
+            try:
+                connection = self._factory()
+            except Exception as exc:
+                return None, [self._connect_failure(exc)]
+            return connection, [diag.ok("bind", "Connexion et bind réussis")]
+        url = urlparse(self._server_url)
+        host = url.hostname or ""
+        port = url.port or (636 if url.scheme == "ldaps" else 389)
+        try:
+            validate_outbound_target(host, port, allow_ports=LDAP_PORTS)
+        except OutboundTargetError as exc:
+            return None, [
+                diag.fail(
+                    "network",
+                    diag.INVALID_CONFIGURATION,
+                    f"Serveur LDAP refusé : {exc}",
+                    action="Vérifiez l'adresse et le port du serveur.",
+                )
+            ]
+        secure = url.scheme == "ldaps" or self._start_tls
+        tls = Tls(validate=ssl.CERT_REQUIRED, version=ssl.PROTOCOL_TLS_CLIENT) if secure else None
+        server = Server(
+            host, port=port, use_ssl=url.scheme == "ldaps", tls=tls, get_info=NONE,
+            connect_timeout=8,
+        )
+        connection = Connection(
+            server, user=self._bind_dn, password=self._bind_password, receive_timeout=15,
+            raise_exceptions=True,
+        )
+        try:
+            connection.open()
+        except Exception as exc:
+            return None, [self._connect_failure(exc)]
+        checks.append(diag.ok("network", "Serveur LDAP joignable"))
+        if url.scheme == "ldaps":
+            checks.append(diag.ok("tls", "Connexion LDAPS établie, certificat reconnu"))
+        elif self._start_tls:
+            try:
+                connection.start_tls()
+            except Exception as exc:
+                failure = self._connect_failure(exc)
+                return None, [*checks, diag.CheckResult(**{**failure.payload(), "name": "tls"})]
+            checks.append(diag.ok("tls", "StartTLS établi, certificat reconnu"))
+        try:
+            connection.bind()
+        except Exception as exc:
+            return None, [*checks, self._connect_failure(exc)]
+        checks.append(diag.ok("bind", "Bind réussi"))
+        return connection, checks
+
+    @staticmethod
+    def _search_failure(exc_or_result: Any) -> tuple[int, str]:
+        """(LDAP result code, its name) of a failed search, whether it raised or answered."""
+        if isinstance(exc_or_result, dict):
+            return int(exc_or_result.get("result", -1) or 0), str(
+                exc_or_result.get("description", "")
+            )
+        return int(getattr(exc_or_result, "result", -1)), type(exc_or_result).__name__
+
+    def _probe_search(
+        self, connection: Connection, base: str, flt: str, scope: str, attributes: list[str]
+    ) -> tuple[int | None, str, int]:
+        """One search for at most one entry. Returns (failure code or None, name, entries)."""
+        try:
+            connection.search(
+                base, flt, search_scope=scope, attributes=attributes, size_limit=1
+            )
+        except LDAPException as exc:
+            code, name = self._search_failure(exc)
+            if code == 4:  # sizeLimitExceeded: there is more than the one entry we asked for
+                return None, "", 1
+            return code, name, 0
+        result = connection.result or {}
+        code = int(result.get("result", 0) or 0)
+        entries = [e for e in (connection.response or []) if e.get("type") == "searchResEntry"]
+        if code not in (0, 4):
+            return code, str(result.get("description", "")), 0
+        return None, "", len(entries)
+
+    def test_connection(self) -> list[diag.CheckResult]:
+        """Read-only: the connection step by step, then the base DN, one user, one group (each
+        a search for a single entry, never the whole directory). Nothing is stored."""
+        connection, checks = self._open_for_test()
+        if connection is None:
+            return checks
+        try:
+            failure, name, found = self._probe_search(
+                connection, self._base_dn, "(objectClass=*)", BASE_SCOPE, ["objectClass"]
+            )
+            if failure is not None:
+                denied = failure == 50
+                checks.append(
+                    diag.fail(
+                        "base_dn",
+                        diag.INSUFFICIENT_PERMISSIONS if denied else diag.BASE_DN_ERROR,
+                        "Le compte de liaison n'a pas le droit de lire la base de recherche."
+                        if denied
+                        else "La base de recherche (DN) n'existe pas ou n'est pas accessible.",
+                        provider_code=name or None,
+                        action="Donnez au compte de liaison un droit de lecture sur la base."
+                        if denied
+                        else "Vérifiez la base de recherche (DN) saisie dans le connecteur.",
+                    )
+                )
+                return checks
+            checks.append(diag.ok("base_dn", "Base de recherche accessible"))
+
+            failure, name, found = self._probe_search(
+                connection, self._base_dn, self._user_filter, SUBTREE, [self._email]
+            )
+            if failure is not None:
+                checks.append(
+                    diag.fail(
+                        "users_query",
+                        diag.USER_QUERY_ERROR,
+                        "La requête des utilisateurs échoue : vérifiez le filtre des personnes.",
+                        provider_code=name or None,
+                        action="Vérifiez le filtre des personnes et les droits du compte.",
+                    )
+                )
+                return checks
+            if found == 0:
+                checks.append(
+                    diag.warn(
+                        "users_query",
+                        "La requête fonctionne mais ne renvoie aucun utilisateur.",
+                        code=diag.USER_QUERY_ERROR,
+                        action="Vérifiez le filtre des personnes et la base de recherche.",
+                    )
+                )
+            else:
+                checks.append(diag.ok("users_query", "Lecture des utilisateurs autorisée"))
+
+            if self._groups:
+                failure, name, found = self._probe_search(
+                    connection, self._base_dn, self._group_filter, SUBTREE, ["cn", self._member]
+                )
+                if failure is not None:
+                    checks.append(
+                        diag.fail(
+                            "groups_query",
+                            diag.GROUP_QUERY_ERROR,
+                            "La requête des groupes échoue : vérifiez le filtre des groupes.",
+                            provider_code=name or None,
+                            action="Vérifiez le filtre des groupes et les droits du compte.",
+                        )
+                    )
+                elif found == 0:
+                    checks.append(
+                        diag.warn(
+                            "groups_query",
+                            "La requête fonctionne mais ne renvoie aucun groupe.",
+                            code=diag.GROUP_QUERY_ERROR,
+                            action="Vérifiez le filtre des groupes et la base de recherche.",
+                        )
+                    )
+                else:
+                    checks.append(diag.ok("groups_query", "Lecture des groupes autorisée"))
+            return checks
+        finally:
+            try:
+                connection.unbind()
+            except LDAPException:
+                pass
 
     def fetch(self) -> DirectorySnapshot:
         connection = self._connect()
