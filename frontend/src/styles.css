@@ -1353,3 +1353,21 @@ a.attention:hover strong { color: var(--primary); }
 .auth-local--main { border-top: 0; padding-top: 0; margin-top: 4px; }
 .auth-local--main form { margin-top: 0; }
 .auth-crashtest { margin: 0 0 12px; padding: 8px 10px; border-radius: 8px; background: #fff7e0; color: #6b4e00; font-size: 12.5px; }
+
+/* German words are long ("Signaturschlüssel", "Identitäten & Zugriffe"): in the places where a word
+   can hit the edge (table cells, buttons, tiles) let it hyphenate; elsewhere a word only breaks when
+   it would otherwise overflow. */
+html[lang="de"] .simple-table th,
+html[lang="de"] .simple-table td,
+html[lang="de"] .metric,
+html[lang="de"] .button {
+  overflow-wrap: anywhere;
+  hyphens: auto;
+}
+html[lang="de"] .card { overflow-wrap: break-word; }
+
+/* A choice with a long option text (a German sentence, say) must not stretch its row past the screen. */
+select { max-width: 100%; }
+.signer-rows li { min-width: 0; }
+.signer-rows select { min-width: 0; flex: 1 1 auto; }
+.form-row > select { min-width: 0; }

@@ -271,3 +271,125 @@ describe("dialogs", () => {
     expect(api.post).not.toHaveBeenCalled();
   });
 });
+
+describe("German", () => {
+  it("words the login page", async () => {
+    await setLocale("de");
+    vi.mocked(api.get).mockImplementation(async (path: string) =>
+      path === "/auth/options" ? { sso: true, provider: "google", local: true } : { has_logo: false, logo_sha256: null },
+    );
+    auth.user = null;
+    const { container } = rendered(<LoginPage />);
+    expect(await screen.findByRole("link", { name: /Weiter mit Google/ })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Anmelden" })).toBeInTheDocument();
+    expect(screen.getByText("Unterschreiben Sie Ihre Dokumente ganz einfach!")).toBeInTheDocument();
+    expect(container).not.toHaveTextContent(/Connexion|Sign in|Continue/);
+  });
+
+  it("offers Deutsch in the account menu, switches at once, and keeps the data", async () => {
+    const user = userEvent.setup();
+    render(<UserMenu user={{ id: "1", ...admin, roles: ["ADMIN"] }} onSignOut={vi.fn()} />);
+    expect(screen.getByRole("button", { name: /Français/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /English/ })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Deutsch/ }));
+    expect(screen.getByText("Sprache")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Abmelden/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Deutsch/ })).toHaveAttribute("aria-pressed", "true");
+    expect(document.documentElement.lang).toBe("de");
+    expect(document.documentElement.dir).toBe("ltr");
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe("de");
+    expect(screen.getAllByText("Alice Martin").length).toBeGreaterThan(0);
+    expect(screen.getByText("alice.martin@lcit-test.local")).toBeInTheDocument();
+    expect(screen.getAllByText("Administrator").length).toBeGreaterThan(0);
+    for (const call of [api.get, api.post, api.put, api.patch, api.del]) expect(call).not.toHaveBeenCalled();
+  });
+
+  it("labels the sidebar", async () => {
+    await setLocale("de");
+    rendered(<App />, "/admin/users");
+    const nav = await screen.findByRole("navigation", { name: "Hauptnavigation" });
+    for (const label of ["Meine Unterschriften", "Dokumente", "Zur Unterschrift senden", "Nachverfolgung", "Benutzer", "Identitäten & Zugriffe", "Signaturschlüssel", "Diagnose"]) {
+      expect(within(nav).getByRole("link", { name: label })).toBeInTheDocument();
+    }
+  });
+
+  it("words the documents page and keeps the file name", async () => {
+    await setLocale("de");
+    rendered(<OperatorDocumentsPage />);
+    fireEvent.change(screen.getByTestId("dropzone-input"), { target: { files: [new File(["%PDF"], "charte_it-2026.pdf")] } });
+    expect(await screen.findByRole("button", { name: "Dokument importieren" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "charte_it-2026.pdf entfernen" })).toBeInTheDocument();
+    expect(screen.getByTestId("pending-files")).toHaveTextContent("charte_it-2026.pdf");
+  });
+
+  it("words the tracking page with the campaign's name, status and date", async () => {
+    await setLocale("de");
+    vi.mocked(api.get).mockImplementation(async (path: string) =>
+      path === "/campaigns"
+        ? [
+            {
+              id: "c1", name: "Signature NDA France 2026", description: "", status: "ACTIVE", target_mode: "ALL_USERS",
+              created_at: "2026-10-01T10:00:00Z", launch_at: "2026-10-02T10:00:00Z", scheduled_start: null,
+              deadline: "2026-10-30T10:00:00Z", closed_at: null, delete_blockers: [], document_version_ids: ["v1", "v2"],
+              plan: null, roles_required: 1, roles: [], documents: [], policies: {}, renewal_of_campaign_id: null,
+              assignment_counts: { SIGNED: 1, PENDING: 2, WAITING: 0, VIEWED: 0, EXPIRED: 0, CANCELLED: 0 },
+            },
+          ]
+        : null,
+    );
+    rendered(<OperatorCampaignsPage />);
+    expect(await screen.findByText("Signature NDA France 2026")).toBeInTheDocument();
+    expect(screen.getByText("Aktiv")).toBeInTheDocument();
+    expect(screen.getByText("Alle Benutzer")).toBeInTheDocument();
+    expect(screen.getByText("2 Dokumente")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Unterzeichnete Dokumente" })).toBeInTheDocument();
+    expect(screen.getByText("02.10.2026")).toBeInTheDocument();
+  });
+
+  it("words the users page and the reasons a person is kept", async () => {
+    await setLocale("de");
+    vi.mocked(api.get).mockResolvedValue([
+      {
+        id: "u1", email: "jean.dupont@entreprise.fr", display_name: "Jean Dupont", active: true, manually_disabled: false,
+        external: false, source: "ldap", last_login_at: null, roles: ["SIGNER"], can_delete: false,
+        delete_blockers: ["3 signature(s)", "géré par la source « ldap »"],
+      },
+    ]);
+    rendered(<AdminUsersPage />);
+    expect(await screen.findByText("Person per E-Mail hinzufügen")).toBeInTheDocument();
+    const row = screen.getByTestId("user-jean.dupont@entreprise.fr");
+    expect(row).toHaveTextContent("Jean Dupont");
+    expect(row).toHaveTextContent("Noch nie angemeldet");
+    expect(row).toHaveTextContent("Aufbewahrt — 3 Signaturen ; von der Quelle „ldap“ verwaltet");
+  });
+
+  it("words a directory page and its history", async () => {
+    await setLocale("de");
+    const secret = { name: "s", label: "x", help: "x", example: "", kind: "password", options: [], default: "", required: true };
+    vi.mocked(api.get).mockImplementation(async (path: string) =>
+      path.endsWith("/sources")
+        ? [{ source: "ldap", configured: true, active: true, fields: {}, sync_interval_minutes: 360, spec: { label: "LDAP / Active Directory", description: "x", fields: [], secret } }]
+        : path.endsWith("/sync-runs")
+          ? [{ id: "r1", source: "ldap", status: "FAILED", started_at: "2026-10-05T10:00:00Z", finished_at: null, users_added: 0, users_updated: 0, users_deactivated: 0, groups_added: 0, groups_updated: 0, memberships_added: 0, memberships_removed: 0, error: null }]
+          : [],
+    );
+    rendered(<AdminDirectoryPage />);
+    expect(await screen.findByRole("heading", { name: /Verzeichnis/ })).toBeInTheDocument();
+    expect(await screen.findByText("Synchronisierungsverlauf")).toBeInTheDocument();
+    expect(screen.getByText("Fehlgeschlagen")).toBeInTheDocument();
+    expect(screen.getByText("Alle 6 Stunden")).toBeInTheDocument();
+  });
+
+  it("words the password dialog and its error", async () => {
+    await setLocale("de");
+    const user = userEvent.setup();
+    render(<ChangePasswordDialog onClose={vi.fn()} />);
+    expect(screen.getByRole("dialog", { name: "Passwort ändern" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Später" })).toBeInTheDocument();
+    await user.type(screen.getByLabelText("Aktuelles Passwort"), "old-password-1");
+    await user.type(screen.getByLabelText("Neues Passwort"), "a-new-long-password");
+    await user.type(screen.getByLabelText("Neues Passwort bestätigen"), "another-long-password");
+    await user.click(screen.getByRole("button", { name: "Passwort ändern" }));
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Die beiden neuen Passwörter stimmen nicht überein."));
+  });
+});

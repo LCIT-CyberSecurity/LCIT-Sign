@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
 import { api } from "../api/client";
+import { currentLocale } from "../i18n";
 import { useCompanyLogo } from "../lib/branding";
 import ChangePasswordDialog from "./ChangePasswordDialog";
 import PasswordReminder, { REMINDER_KEY } from "./PasswordReminder";
@@ -147,7 +148,7 @@ export default function Shell() {
           <strong>
             <ShieldCheck size={13} aria-hidden="true" /> LCIT Cybersecurity
           </strong>
-          {t("shell.signedInAs", { role: roleLabel.toLowerCase() })}
+          {t("shell.signedInAs", { role: currentLocale() === "de" ? roleLabel : roleLabel.toLowerCase() })}
         </div>
       </aside>
       {open && <div className="sidebar-scrim" onClick={close} aria-hidden="true" />}

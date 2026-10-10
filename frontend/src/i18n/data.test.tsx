@@ -101,6 +101,11 @@ describe("changing the language never changes the data", () => {
     expect(versionStatus("SUPERSEDED")).toBe("Superseded");
     // A value this build has no word for is shown as the API sent it.
     expect(assignmentStatus("SOMETHING_NEW")).toBe("SOMETHING_NEW");
+    await setLocale("de");
+    expect(pending.status).toBe("PENDING");
+    expect(assignmentStatus(pending.status)).toBe("Ausstehend");
+    expect(assignmentStatus("SIGNED")).toBe("Unterzeichnet");
+    expect(campaignStatus("CLOSED")).toBe("Abgeschlossen");
   });
 
   it("words the server's known sentences, and shows anything else as it came", async () => {
