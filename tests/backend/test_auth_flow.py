@@ -18,7 +18,7 @@ def make_app(
     tmp_path, mock_oidc_base_url: str, *, bootstrap_admin: str = BOOTSTRAP_ADMIN_EMAIL, **overrides
 ):
     settings = Settings(
-        database_url=f"sqlite:///{tmp_path}/test.db",
+        database_url=overrides.pop("database_url", f"sqlite:///{tmp_path}/test.db"),
         session_secret=overrides.pop("session_secret", "test-session-secret"),
         cookie_secure=overrides.pop("cookie_secure", False),
         public_base_url="http://testserver",

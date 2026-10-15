@@ -19,6 +19,7 @@ from lcit_sign.models.campaign import (
     Campaign,
     CampaignDocument,
     CampaignPreparer,
+    CampaignRole,
     CampaignStatus,
     CampaignTargetGroup,
     CampaignTargetMode,
@@ -971,7 +972,14 @@ def delete_campaign(
     )
     # Queued e-mails about these assignments go with them.
     db.execute(delete(Notification).where(Notification.related_assignment_id.in_(assignment_ids)))
-    for model in (SignatureAssignment, CampaignTargetUser, CampaignTargetGroup, CampaignDocument):
+    for model in (
+        SignatureAssignment,
+        CampaignTargetUser,
+        CampaignTargetGroup,
+        CampaignDocument,
+        CampaignRole,
+        CampaignPreparer,
+    ):
         db.execute(delete(model).where(model.campaign_id == campaign.id))
     name = campaign.name
     db.delete(campaign)
