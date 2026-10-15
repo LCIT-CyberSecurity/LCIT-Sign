@@ -178,12 +178,17 @@ export default function DirectoryConnectorForm({
           {attributes && attributes.length > 0 && (
             <div className="table-wrap" style={{ marginTop: 8 }}>
               <table className="simple-table directory-attributes-table">
-                <thead><tr><th>Attribut</th><th>Disponibilité</th><th>Renseigné</th><th>Exemples</th></tr></thead>
+                <thead><tr><th>Attribut</th><th>Renseigné</th><th>Exemples</th></tr></thead>
                 <tbody>
                   {attributes.map((attribute) => (
                     <tr key={attribute.name}>
-                      <td>{attribute.label}<br /><code>{attribute.name}</code></td>
-                      <td>{attribute.available ? "Accessible" : "Non accessible"}</td>
+                      <td>
+                        {attribute.label}<br />
+                        <span className="muted small">
+                          {attribute.available ? "Accessible" : "Non accessible"}
+                        </span><br />
+                        <code>{attribute.name}</code>
+                      </td>
                       <td>{attribute.populated_count}/{attribute.sample_count} ({Math.round(attribute.population_ratio * 100)} %)</td>
                       <td>{attribute.examples.join(", ") || "—"}</td>
                     </tr>
