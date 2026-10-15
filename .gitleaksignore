@@ -1,0 +1,15 @@
+f09a9bc4dcd6964e1a894457caf1fa7472df9d14:tests/backend/test_directory_connectors.py:generic-api-key:505
+2af6965b0e586101969f6d14dfe83434d5b358b3:tests/backend/test_login_provider_test.py:generic-api-key:21
+f05330133ae617bcc7a29107fc2c8b6e1ae1fd87:frontend/src/i18n/de.json:azure-ad-client-secret:735
+f05330133ae617bcc7a29107fc2c8b6e1ae1fd87:frontend/src/i18n/de.json:azure-ad-client-secret:939
+f9b9c3f9f231408c16ec79aaa41ef881b2681029:frontend/src/i18n/en.json:azure-ad-client-secret:735
+f9b9c3f9f231408c16ec79aaa41ef881b2681029:frontend/src/i18n/en.json:azure-ad-client-secret:939
+f9b9c3f9f231408c16ec79aaa41ef881b2681029:frontend/src/i18n/fr.json:azure-ad-client-secret:722
+f9b9c3f9f231408c16ec79aaa41ef881b2681029:frontend/src/i18n/fr.json:azure-ad-client-secret:926
+7b7a62d8b0bd54187568391457e9081b86968196:tests/test_local_accounts.py:generic-api-key:96
+776aa12fc04303ad3f1b60e53bf42296678ecd37:src/lcit_sign/services/mail_graph.py:azure-ad-client-secret:196
+c8f610f9f1b79910a7f3fd67b85751583691d9b0:src/lcit_sign/services/directory/entra.py:azure-ad-client-secret:223
+3557d6bb29cbcdcfc53ba7b179f27b57d68800bf:tests/test_directory_connectors.py:azure-ad-client-secret:405
+3557d6bb29cbcdcfc53ba7b179f27b57d68800bf:tests/test_directory_connectors.py:generic-api-key:413
+2d73169a99d95582f094b60546954a77b169dc40:web/src/pages/DirectoryConnectorForm.tsx:azure-ad-client-secret:44
+edb763ec13802e3a1152e52f08b393c5082e58e8:tests/test_local_auth.py:generic-api-key:21

@@ -220,7 +220,7 @@ SPEC = ConnectorSpec(
         "La VALEUR du secret créé dans Entra → Certificats et secrets (colonne « Valeur », pas "
         "« ID de secret »). Elle n'est montrée qu'une fois à la création ; ici elle est chiffrée "
         "et jamais réaffichée.",
-        "abC8Q~xYzTn3kLw0pQe5vRsU9dFgHjKlMnOpQr",
+        "EXAMPLE_ONLY_NOT_A_REAL_SECRET",
         kind="password",
     ),
     validate=validate,

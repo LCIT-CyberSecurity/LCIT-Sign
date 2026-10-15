@@ -89,11 +89,11 @@ def test_a_local_account_signs_in_with_its_password_and_must_change_it(
     assert me["email"] == EMAIL and me["source"] == "local" and me["must_change_password"] is True
 
     changed = client.post("/api/auth/change-password", json={
-        "current_password": PASSWORD, "new_password": "Une-phrase-secrete-longue-2026"})
+        "current_password": PASSWORD, "new_password": "test phrase for local account"})
     assert changed.status_code == 204
     assert client.get("/api/auth/me").json()["must_change_password"] is False
     assert local_login(app)[1].status_code == 401  # the first password no longer works
-    assert local_login(app, password="Une-phrase-secrete-longue-2026")[1].status_code == 204
+    assert local_login(app, password="test phrase for local account")[1].status_code == 204
 
 
 def test_wrong_password_and_disabled_account_are_refused(tmp_path, mock_oidc_base_url):

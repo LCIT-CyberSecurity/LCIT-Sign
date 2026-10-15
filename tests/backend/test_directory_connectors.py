@@ -408,7 +408,7 @@ def test_each_known_entra_error_has_its_own_advice():
 def test_the_classic_entra_mix_ups_are_caught_when_typing(tmp_path, mock_oidc_base_url):
     app, admin, *_ = setup_campaign_fixture(tmp_path, mock_oidc_base_url)
     url = "/api/admin/directory/sources/entra/config"
-    secret = "abC8Q~xYzTn3kLw0pQe5vRsU9dFgHjKlMnOpQr"
+    secret = "TEST~ONLY"
 
     # The secret typed into the application-id field (what actually happened).
     swapped = admin.put(url, json={"fields": {**ENTRA_FIELDS, "client_id": secret}, "secret": ENTRA_FIELDS["client_id"]})  # noqa: E501
@@ -416,7 +416,7 @@ def test_the_classic_entra_mix_ups_are_caught_when_typing(tmp_path, mock_oidc_ba
     assert secret not in swapped.text
 
     # An identifier (a "secret ID") given as the secret.
-    as_id = admin.put(url, json={"fields": ENTRA_FIELDS, "secret": "eccc92e6-42b7-4470-8ea9-54706c4d5e54"})  # noqa: E501
+    as_id = admin.put(url, json={"fields": ENTRA_FIELDS, "secret": "00000000-0000-4000-8000-000000000003"})  # noqa: E501
     assert as_id.status_code == 422 and "Valeur" in as_id.text
 
     # A tenant that is neither a GUID nor a domain, an application id that is not a GUID.
