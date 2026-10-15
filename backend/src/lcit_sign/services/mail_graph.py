@@ -193,7 +193,7 @@ SPEC = MailSpec(
         "Secret client",
         "La VALEUR du secret créé dans Entra → Certificats et secrets (colonne « Valeur »). "
         "Chiffrée ici, jamais réaffichée.",
-        "abC8Q~xYzTn3kLw0pQe5vRsU9dFgHjKlMnOpQr",
+        "EXAMPLE_ONLY_NOT_A_REAL_SECRET",
         kind="password",
     ),
     validate=validate,

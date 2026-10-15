@@ -18,7 +18,7 @@ from lcit_sign.services.passwords import (
     verify_password,
 )
 
-PASSWORD = "Une-phrase-secrete-longue-2026"  # noqa: S105
+PASSWORD = "test phrase for local account"  # noqa: S105
 DEFAULT = "SecretPassword"  # noqa: S105 - the documented non-production default
 
 
