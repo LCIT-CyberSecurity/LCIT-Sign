@@ -93,6 +93,58 @@ def test_a_newcomer_waits_for_the_rssi_when_the_documents_have_two_signers(
     assert operator.delete(f"{base}/recipients/{rssi}").status_code == 409
 
 
+def test_a_new_recipient_added_after_the_rssi_signed_does_not_restart_the_fixed_role(
+    tmp_path, mock_oidc_base_url
+):
+    app, admin, operator, rssi_client, employee = setup_campaign_fixture(
+        tmp_path, mock_oidc_base_url
+    )
+    rssi = get_user_id(rssi_client)
+    employee_id = get_user_id(employee)
+    newcomer = get_user_id(operator)
+    version_id = prepare_two_role_document(operator)
+    campaign = new_campaign(operator, version_id)
+    launched_campaign = operator.post(
+        f"/api/campaigns/{campaign['id']}/launch",
+        json={
+            "user_ids": [employee_id],
+            "roles": [
+                {"role": 1, "mode": "FIXED", "user_id": rssi},
+                {"role": 2, "mode": "EACH"},
+            ],
+        },
+    )
+    assert launched_campaign.status_code == 200, launched_campaign.text
+    base = f"/api/campaigns/{campaign['id']}"
+
+    signed = rssi_client.post(
+        f"/api/documents/versions/{version_id}/sign", json={"consent": True}
+    )
+    assert signed.status_code == 201, signed.text
+    before = operator.get(f"{base}/assignments").json()
+    rssi_assignment = next(row for row in before if row["user_id"] == rssi)
+    assert rssi_assignment["status"] == "SIGNED"
+    signature_id = rssi_assignment["signature_id"]
+
+    added = operator.post(f"{base}/recipients", json={"user_ids": [newcomer]})
+    assert added.status_code == 200 and added.json()["added"] == 1
+    after = operator.get(f"{base}/assignments").json()
+    newcomer_assignment = next(row for row in after if row["user_id"] == newcomer)
+    assert newcomer_assignment["role"] == 2 and newcomer_assignment["status"] == "PENDING"
+    rssi_assignments = [row for row in after if row["user_id"] == rssi]
+    assert len(rssi_assignments) == 1
+    assert rssi_assignments[0]["status"] == "SIGNED"
+    assert rssi_assignments[0]["signature_id"] == signature_id
+    assert operator.get(f"/api/signatures/{signature_id}").status_code == 200
+
+    removed = operator.delete(f"{base}/recipients/{newcomer}")
+    assert removed.status_code == 200 and removed.json()["cancelled"] == 1
+    after_removal = operator.get(f"{base}/assignments").json()
+    assert next(row for row in after_removal if row["user_id"] == newcomer)["status"] == "CANCELLED"
+    retained_signature = next(row for row in after_removal if row["user_id"] == rssi)
+    assert retained_signature["signature_id"] == signature_id
+
+
 def test_a_document_added_after_the_launch_is_prepared_then_sent(tmp_path, mock_oidc_base_url):
     app, admin, operator, signer1, signer2 = setup_campaign_fixture(tmp_path, mock_oidc_base_url)
     one, two = get_user_id(signer1), get_user_id(signer2)

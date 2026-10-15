@@ -198,6 +198,31 @@ def test_an_operator_sees_every_campaign_and_its_progress_but_not_its_content(
     assert "Doc Entretiens RH 2027" in w.operator.get("/api/documents").text
 
 
+def test_a_signer_owner_can_manage_recipients_and_delete_their_unsigned_campaign(
+    tmp_path, mock_oidc_base_url
+):
+    w = build(tmp_path, mock_oidc_base_url)
+    base = f"/api/campaigns/{w.hr}"
+    newcomer = w.ids["rh2"]
+
+    added = w.rh.post(f"{base}/recipients", json={"user_ids": [newcomer]})
+    assert added.status_code == 200 and added.json()["added"] == 1
+    assignments = w.rh.get(f"{base}/assignments").json()
+    new_assignment = next(row for row in assignments if row["user_id"] == newcomer)
+    assert new_assignment["status"] == "PENDING"
+
+    removed = w.rh.delete(f"{base}/recipients/{newcomer}")
+    assert removed.status_code == 200 and removed.json()["cancelled"] == 1
+    assignments = w.rh.get(f"{base}/assignments").json()
+    assert next(row for row in assignments if row["user_id"] == newcomer)["status"] == "CANCELLED"
+
+    # An operator can supervise but cannot erase another person's campaign.
+    assert w.operator.delete(base).status_code == 403
+    assert w.rh.post(f"{base}/cancel").status_code == 200
+    assert w.rh.delete(base).status_code == 200
+    assert w.rh.get(base).status_code == 404
+
+
 def test_an_operator_made_a_preparer_can_then_read_it_and_it_leaves_a_trace(
     tmp_path, mock_oidc_base_url
 ):

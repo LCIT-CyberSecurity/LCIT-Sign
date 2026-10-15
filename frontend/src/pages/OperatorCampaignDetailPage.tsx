@@ -439,7 +439,7 @@ export default function OperatorCampaignDetailPage() {
           </button>
         </div>
       )}
-      {campaign.status !== "ACTIVE" && campaign.status !== "SCHEDULED" && (
+      {canContent && campaign.status !== "ACTIVE" && campaign.status !== "SCHEDULED" && (
         <div className="button-row" data-testid="delete-row">
           {campaign.delete_blockers.length === 0 ? (
             <ConfirmButton confirmLabel="Oui, supprimer la campagne" onConfirm={deleteCampaign}>
