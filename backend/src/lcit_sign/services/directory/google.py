@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Iterator
 from typing import Any
 
@@ -11,14 +12,19 @@ import httpx
 from lcit_sign.services.connector_fields import FieldSpec
 from lcit_sign.services.directory.base import (
     ConnectorSpec,
+    DirectoryAttribute,
     DirectoryConnector,
     DirectoryConnectorError,
     DirectorySnapshot,
     DirGroup,
     DirUser,
+    describe_attributes,
+    ensure_custom_teams_present,
     get_json,
+    path_exists,
     team_selector_field,
     teams_from_values,
+    value_at_path,
 )
 from lcit_sign.services.google_auth import GoogleAuthError, ServiceAccount
 
@@ -26,6 +32,8 @@ TEAM_ATTRIBUTES = (
     ("orgunit", "Unité d'organisation (OU)"),
     ("department", "Service (champ « Service » de l'utilisateur)"),
 )
+DISCOVERY_SAMPLE_SIZE = 50
+MAX_CUSTOM_SCHEMA_FIELDS = 200
 
 
 class GoogleWorkspaceConnector:
@@ -52,6 +60,8 @@ class GoogleWorkspaceConnector:
         admin_email: str,
         team_selector: str = "groups",
         team_attribute: str = "orgunit",
+        custom_team_attribute: str = "",
+        custom_team_groups: bool = False,
     ) -> None:
         try:
             self._account = ServiceAccount(service_account_json)
@@ -59,8 +69,17 @@ class GoogleWorkspaceConnector:
             raise DirectoryConnectorError(str(exc)) from exc
         self._client = client
         self._admin_email = admin_email
-        self._groups = team_selector in ("groups", "both")
+        self._groups = team_selector in ("groups", "both") or (
+            team_selector == "custom_attribute" and custom_team_groups
+        )
         self._team_attribute = team_attribute if team_selector in ("attribute", "both") else None
+        self._custom_team_attribute = (
+            custom_team_attribute if team_selector == "custom_attribute" else ""
+        )
+        if self._custom_team_attribute and not self._valid_custom_attribute(
+            self._custom_team_attribute
+        ):
+            raise DirectoryConnectorError("Attribut personnalisé Google Workspace invalide.")
         if self._team_attribute and self._team_attribute not in dict(TEAM_ATTRIBUTES):
             raise DirectoryConnectorError(f"Attribut d'équipe inconnu : {team_attribute!r}")
 
@@ -72,35 +91,104 @@ class GoogleWorkspaceConnector:
         *,
         customer: bool = True,
         extra: dict[str, str] | None = None,
+        limit: int | None = None,
     ) -> Iterator[dict[str, Any]]:
         """Every page of a list. `customer=my_customer` scopes users.list and groups.list to the
         whole account; members.list takes none (the group already says whose it is)."""
         extra_params = extra or {}
         page_token: str | None = None
+        yielded = 0
         while True:
-            params = {"maxResults": "200", **extra_params}
+            params = {"maxResults": str(min(200, limit) if limit else 200), **extra_params}
             if customer:
                 params["customer"] = "my_customer"
             if page_token:
                 params["pageToken"] = page_token
             page = get_json(self._client, url, headers=headers, params=params)
-            yield from page.get(key, [])
+            for item in page.get(key, []):
+                yield item
+                yielded += 1
+                if limit is not None and yielded >= limit:
+                    return
             page_token = page.get("nextPageToken")
             if not page_token:
                 return
 
-    def fetch(self) -> DirectorySnapshot:
+    @staticmethod
+    def _valid_custom_attribute(name: str) -> bool:
+        return name in {"orgUnitPath", "organizations.department"} or bool(
+            re.fullmatch(r"customSchemas\.[A-Za-z0-9_-]{1,100}\.[A-Za-z0-9_-]{1,100}", name)
+        )
+
+    @staticmethod
+    def _field_value(user: dict[str, Any], path: str) -> Any:
+        value = value_at_path(user, path)
+        if isinstance(value, dict) and "value" in value:
+            return value["value"]
+        return value
+
+    def _headers(self) -> dict[str, str]:
         try:
             token = self._account.token(self._client, self.SCOPES, self._admin_email)
         except GoogleAuthError as exc:
             raise DirectoryConnectorError(str(exc)) from exc
-        headers = {"Authorization": f"Bearer {token}"}
+        return {"Authorization": f"Bearer {token}"}
+
+    def discover_attributes(self) -> list[DirectoryAttribute]:
+        """Read one bounded full-projection page, including available custom schemas."""
+        headers = self._headers()
+        page = get_json(
+            self._client,
+            f"{self.API}/users",
+            headers=headers,
+            params={
+                "customer": "my_customer",
+                "maxResults": str(DISCOVERY_SAMPLE_SIZE),
+                "projection": "full",
+            },
+        )
+        users = page.get("users", [])[:DISCOVERY_SAMPLE_SIZE]
+        paths = {
+            "orgUnitPath": "Unité d'organisation",
+            "organizations.department": "Service (organisation)",
+        }
+        custom_paths = sorted(
+            {
+                f"customSchemas.{schema}.{field}"
+                for user in users
+                for schema, schema_values in (user.get("customSchemas") or {}).items()
+                if isinstance(schema_values, dict)
+                for field in schema_values
+            }
+        )[:MAX_CUSTOM_SCHEMA_FIELDS]
+        paths.update({path: path.removeprefix("customSchemas.") for path in custom_paths})
+        values = {path: [self._field_value(user, path) for user in users] for path in paths}
+        available = {
+            path: path in ("orgUnitPath", "organizations.department")
+            or any(path_exists(user, path) for user in users)
+            for path in paths
+        }
+        return describe_attributes(
+            values,
+            paths,
+            sample_count=len(users),
+            available_by_attribute=available,
+        )
+
+    def fetch(self, *, sample_size: int | None = None) -> DirectorySnapshot:
+        headers = self._headers()
 
         users: dict[str, DirUser] = {}
-        team_values: dict[str, str] = {}
+        team_values: dict[str, Any] = {}
         # The department lives in the user's "organizations", only returned in full projection.
-        extra = {"projection": "full"} if self._team_attribute == "department" else {}
-        for raw in self._pages(f"{self.API}/users", "users", headers, extra=extra):
+        extra = (
+            {"projection": "full"}
+            if self._team_attribute == "department" or self._custom_team_attribute
+            else {}
+        )
+        for raw in self._pages(
+            f"{self.API}/users", "users", headers, extra=extra, limit=sample_size
+        ):
             if self._team_attribute == "orgunit":
                 team_values[raw["id"]] = (
                     str(raw.get("orgUnitPath") or "").strip("/").replace("/", " / ")
@@ -108,6 +196,11 @@ class GoogleWorkspaceConnector:
             elif self._team_attribute == "department":
                 orgs = raw.get("organizations") or [{}]
                 team_values[raw["id"]] = str(orgs[0].get("department") or "")
+            attrs: dict[str, Any] = {}
+            if self._custom_team_attribute:
+                custom_value = self._field_value(raw, self._custom_team_attribute)
+                attrs[self._custom_team_attribute] = custom_value
+                team_values[raw["id"]] = custom_value
             name = raw.get("name", {})
             users[raw["id"]] = DirUser(
                 external_id=raw["id"],
@@ -115,15 +208,22 @@ class GoogleWorkspaceConnector:
                 given_name=name.get("givenName", ""),
                 family_name=name.get("familyName", ""),
                 active=not raw.get("suspended", False),
+                attributes=attrs,
             )
 
         groups: list[DirGroup] = []
-        for raw in self._pages(f"{self.API}/groups", "groups", headers) if self._groups else ():
+        for raw in (
+            self._pages(f"{self.API}/groups", "groups", headers, limit=sample_size)
+            if self._groups
+            else ()
+        ):
             groups.append(
                 DirGroup(raw["id"], raw.get("name") or raw["email"], raw.get("description") or "")
             )
             members_url = f"{self.API}/groups/{raw['id']}/members"
-            for member in self._pages(members_url, "members", headers, customer=False):
+            for member in self._pages(
+                members_url, "members", headers, customer=False, limit=sample_size
+            ):
                 if member.get("type") == "USER" and member.get("id") in users:
                     users[member["id"]].group_ids.add(raw["id"])
                 elif member.get("type") == "GROUP" and member.get("id"):
@@ -131,7 +231,15 @@ class GoogleWorkspaceConnector:
         snapshot = DirectorySnapshot(users=list(users.values()), groups=groups)
         if self._team_attribute:
             teams_from_values(snapshot, team_values, prefix=f"team-{self._team_attribute}")
+        if self._custom_team_attribute:
+            prefix = f"team-{self._custom_team_attribute}"
+            teams_from_values(snapshot, team_values, prefix=prefix)
+            ensure_custom_teams_present(snapshot, prefix, sample_size=sample_size)
         return snapshot
+
+    def fetch_sample(self) -> DirectorySnapshot:
+        """Preview at most one bounded page of users and groups."""
+        return self.fetch(sample_size=DISCOVERY_SAMPLE_SIZE)
 
 
 def validate(fields: dict[str, str], secret: str | None) -> None:
@@ -154,6 +262,12 @@ def validate(fields: dict[str, str], secret: str | None) -> None:
         "team_attribute"
     ) not in dict(TEAM_ATTRIBUTES):
         raise ValueError("Choisissez l'attribut qui donne le nom de l'équipe.")
+    if fields.get(
+        "team_selector"
+    ) == "custom_attribute" and not GoogleWorkspaceConnector._valid_custom_attribute(
+        fields.get("custom_team_attribute", "")
+    ):
+        raise ValueError("Découvrez puis choisissez un attribut d'équipe disponible.")
 
 
 def build(client: httpx.Client, fields: dict[str, str], secret: str) -> DirectoryConnector:
@@ -163,6 +277,8 @@ def build(client: httpx.Client, fields: dict[str, str], secret: str) -> Director
         admin_email=fields.get("admin_email", ""),
         team_selector=fields.get("team_selector", "groups"),
         team_attribute=fields.get("team_attribute", "orgunit"),
+        custom_team_attribute=fields.get("custom_team_attribute", ""),
+        custom_team_groups=fields.get("custom_team_groups") == "true",
     )
 
 
@@ -183,6 +299,25 @@ SPEC = ConnectorSpec(
             "admin@votre-domaine.fr",
         ),
         team_selector_field(),
+        FieldSpec(
+            "custom_team_attribute",
+            "Attribut de rattachement à l'équipe",
+            "Attribut découvert dans l'annuaire et utilisé comme nom d'équipe.",
+            "Choisissez un attribut découvert",
+            kind="select",
+            options=(),
+            default="",
+            required=False,
+        ),
+        FieldSpec(
+            "custom_team_groups",
+            "Inclure aussi les groupes de l'annuaire",
+            "Ajoute les groupes natifs en complément des équipes créées depuis l'attribut.",
+            "Non",
+            kind="checkbox",
+            default="false",
+            required=False,
+        ),
         FieldSpec(
             "team_attribute",
             "Attribut qui donne l'équipe",

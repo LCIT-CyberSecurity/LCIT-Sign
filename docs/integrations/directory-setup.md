@@ -270,6 +270,23 @@ For LDAP, the fields are listed in the OpenLDAP and Active Directory tables abov
 | Secret (encrypted, never shown again) | Client secret value | Content of the service account JSON key |
 | Team name from | Directory groups, an attribute, or both | Directory groups, organizational unit / department, or both |
 
+The **Other attribute** choice is optional and does not change existing configurations. After the
+connector credentials have been saved, use **Discover attributes** to inspect a bounded sample and
+select a field; Entra includes standard profile fields, employee organization data and exposed
+on-premises extension attributes, while Google includes organization fields and accessible
+`customSchemas`. LDAP uses the directory schema when permitted and otherwise samples user entries.
+Custom-schema paths are shown in full (for example `customSchemas.LCIT.teamName`). You may also
+include native groups alongside the selected attribute. **Test mapping** previews teams and sampled
+members without saving settings or synchronizing. A preview may show personal data from the sampled
+directory records, so restrict administration access as usual.
+
+Examples: choose `employeeOrgData.division` in Entra, `customSchemas.LCIT.teamName` in Google, or
+`departmentNumber` in LDAP. Empty or incompatible values do not create teams. If a full sync using a
+custom mapping produces no attribute-based teams, it is aborted before existing directory data is
+changed; correct the mapping and preview it again. Saving still activates the selected connector,
+as it does for existing configurations. SSO remains a separate setting and is not changed by team
+mapping.
+
 Save, then **Sync now**. The result (users added, updated, disabled; groups; memberships) is shown under the card.
 You can also choose a schedule (manual, every 15 minutes, hourly, every 6 hours, daily). Saving a directory makes it
 the active one (only one at a time); *Use this directory* switches back to another configured one. The secret is stored encrypted with the master key, so keep

@@ -313,6 +313,25 @@ export interface DirectorySource {
   spec?: ConnectorSpec;
 }
 
+export interface DirectoryAttribute {
+  name: string;
+  label: string;
+  data_type: string;
+  available: boolean;
+  populated_count: number;
+  sample_count: number;
+  population_ratio: number;
+  examples: string[];
+}
+
+export interface DirectoryMappingPreview {
+  sampled_users: number;
+  teams: { name: string; member_count: number; members: { name: string; email: string }[] }[];
+  unassigned_users: { name: string; email: string }[];
+  warnings: string[];
+  active_comparison: { added: number; removed: number } | null;
+}
+
 export interface OperatorDashboard {
   campaigns: { active: number; closed: number; draft: number };
   assignments: {

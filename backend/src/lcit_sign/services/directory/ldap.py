@@ -9,18 +9,21 @@ from typing import Any
 from urllib.parse import urlparse
 
 import httpx
-from ldap3 import NONE, SUBTREE, Connection, Server, Tls
+from ldap3 import BASE, NONE, SUBTREE, Connection, Server, Tls
 from ldap3.core.exceptions import LDAPException
 from ldap3.utils.dn import parse_dn
 
 from lcit_sign.services.connector_fields import FieldSpec
 from lcit_sign.services.directory.base import (
     ConnectorSpec,
+    DirectoryAttribute,
     DirectoryConnector,
     DirectoryConnectorError,
     DirectorySnapshot,
     DirGroup,
     DirUser,
+    describe_attributes,
+    ensure_custom_teams_present,
     split_name,
     team_selector_field,
     teams_from_values,
@@ -31,9 +34,17 @@ TEAM_SELECTORS = (
     ("groups", "Les groupes LDAP"),
     ("attribute", "Un attribut de chaque personne (ex : department)"),
     ("container", "Le dossier (OU) où se trouve la personne"),
+    ("custom_attribute", "Autre attribut"),
 )
 LDAP_PORTS = frozenset({389, 636})
 PAGE = 500
+DISCOVERY_SAMPLE_SIZE = 50
+MAX_DISCOVERY_ATTRIBUTES = 300
+SENSITIVE_ATTRIBUTE = re.compile(
+    r"(?:password|passwd|credential|secret|token|private.?key|certificate|jpegphoto|thumbnailphoto)",
+    re.IGNORECASE,
+)
+ATTRIBUTE_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9;-]{0,127}$")
 
 
 def _norm(dn: str) -> str:
@@ -45,6 +56,13 @@ def _first(value: Any) -> str:
     if isinstance(value, (list, tuple)):
         return str(value[0]) if value else ""
     return "" if value is None else str(value)
+
+
+def _single_team_value(value: Any) -> Any:
+    """LDAP returns every attribute as a list; only a single string can name one team."""
+    if isinstance(value, list) and len(value) == 1 and isinstance(value[0], str):
+        return value[0]
+    return value
 
 
 def _container(dn: str) -> str:
@@ -78,6 +96,8 @@ class LdapConnector:
         family_name_attribute: str = "sn",
         team_selector: str = "groups",
         team_attribute: str = "",
+        custom_team_attribute: str = "",
+        custom_team_groups: bool = False,
         start_tls: bool = False,
         connection_factory: Callable[[], Connection] | None = None,
         paged: bool = True,
@@ -93,9 +113,19 @@ class LdapConnector:
         self._email = email_attribute or "mail"
         self._given = given_name_attribute or "givenName"
         self._family = family_name_attribute or "sn"
-        self._groups = team_selector in ("groups", "both") and bool(group_filter)
+        self._groups = (
+            team_selector in ("groups", "both")
+            or (team_selector == "custom_attribute" and custom_team_groups)
+        ) and bool(group_filter)
         self._by_attribute = team_attribute if team_selector in ("attribute", "both") else ""
         self._by_container = team_selector == "container"
+        self._custom_team_attribute = (
+            custom_team_attribute if team_selector == "custom_attribute" else ""
+        )
+        if self._custom_team_attribute and not ATTRIBUTE_NAME.fullmatch(
+            self._custom_team_attribute
+        ):
+            raise DirectoryConnectorError("Attribut personnalisé LDAP invalide.")
         self._start_tls = start_tls
         self._factory = connection_factory
         self._paged = paged
@@ -171,7 +201,102 @@ class LdapConnector:
         except LDAPException as exc:
             raise DirectoryConnectorError(self._describe(exc)) from exc
 
-    def fetch(self) -> DirectorySnapshot:
+    def _search_sample(
+        self, connection: Connection, flt: str, attributes: list[str], limit: int
+    ) -> list[dict[str, Any]]:
+        """Read at most `limit` entries and stop a paged cursor once enough arrive."""
+        try:
+            if not self._paged:
+                connection.search(
+                    self._base_dn,
+                    flt,
+                    search_scope=SUBTREE,
+                    attributes=attributes,
+                    size_limit=limit,
+                )
+                found = connection.response or []
+            else:
+                found = connection.extend.standard.paged_search(
+                    self._base_dn,
+                    flt,
+                    search_scope=SUBTREE,
+                    attributes=attributes,
+                    paged_size=min(PAGE, limit),
+                    generator=True,
+                )
+            entries: list[dict[str, Any]] = []
+            for entry in found:
+                if entry.get("type", "searchResEntry") != "searchResEntry":
+                    continue
+                entries.append(entry)
+                if len(entries) >= limit:
+                    break
+            return entries
+        except LDAPException as exc:
+            raise DirectoryConnectorError(self._describe(exc)) from exc
+
+    @staticmethod
+    def _schema_attributes(connection: Connection) -> set[str]:
+        """Read attribute names from the advertised subschema when the bind can access it."""
+        try:
+            if not connection.search(
+                "", "(objectClass=*)", search_scope=BASE, attributes=["subschemaSubentry"]
+            ):
+                return set()
+            root = (connection.response or [{}])[0].get("attributes", {})
+            schema_dn = _first(root.get("subschemaSubentry"))
+            if not schema_dn or not connection.search(
+                schema_dn,
+                "(objectClass=*)",
+                search_scope=BASE,
+                attributes=["attributeTypes"],
+            ):
+                return set()
+            raw_values = (
+                (connection.response or [{}])[0].get("attributes", {}).get("attributeTypes", [])
+            )
+            values = raw_values if isinstance(raw_values, list) else [raw_values]
+            names: set[str] = set()
+            for raw in values:
+                match = re.search(r"\bNAME\s+(?:\(\s*)?'([^']+)'", str(raw), re.IGNORECASE)
+                if match:
+                    name = match.group(1)
+                    if ATTRIBUTE_NAME.fullmatch(name) and not SENSITIVE_ATTRIBUTE.search(name):
+                        names.add(name)
+            return names
+        except LDAPException:
+            return set()
+
+    def discover_attributes(self) -> list[DirectoryAttribute]:
+        """Sample a bounded set of users; never return credentials or common secret fields."""
+        connection = self._connect()
+        try:
+            sample = self._search_sample(
+                connection, self._user_filter, ["*"], DISCOVERY_SAMPLE_SIZE
+            )
+            observed: dict[str, list[Any]] = {}
+            for entry in sample:
+                attrs = entry.get("attributes", {})
+                for name, value in attrs.items():
+                    if ATTRIBUTE_NAME.fullmatch(name) and not SENSITIVE_ATTRIBUTE.search(name):
+                        observed.setdefault(name, []).append(value)
+            schema_names = self._schema_attributes(connection)
+            names = sorted(set(observed) | schema_names)[:MAX_DISCOVERY_ATTRIBUTES]
+            values = {name: observed.get(name, [None] * len(sample)) for name in names}
+            return describe_attributes(
+                values,
+                sample_count=len(sample),
+                available_by_attribute={
+                    name: name in schema_names or name in observed for name in names
+                },
+            )
+        finally:
+            try:
+                connection.unbind()
+            except LDAPException:
+                pass
+
+    def fetch(self, *, sample_size: int | None = None) -> DirectorySnapshot:
         connection = self._connect()
         try:
             user_attributes = [
@@ -186,10 +311,17 @@ class LdapConnector:
             ]
             if self._by_attribute:
                 user_attributes.append(self._by_attribute)
+            if self._custom_team_attribute:
+                user_attributes.append(self._custom_team_attribute)
             users: dict[str, DirUser] = {}
             dn_to_user: dict[str, str] = {}
-            team_values: dict[str, str] = {}
-            for entry in self._search(connection, self._user_filter, user_attributes):
+            team_values: dict[str, Any] = {}
+            user_entries = (
+                self._search_sample(connection, self._user_filter, user_attributes, sample_size)
+                if sample_size is not None
+                else self._search(connection, self._user_filter, user_attributes)
+            )
+            for entry in user_entries:
                 attrs = entry.get("attributes", {})
                 email = _first(attrs.get(self._email)).lower()
                 if not email:
@@ -208,18 +340,30 @@ class LdapConnector:
                 )
                 users[external_id] = DirUser(external_id, email, given, family, active=not disabled)
                 dn_to_user[dn] = external_id
+                user_attrs: dict[str, Any] = {}
+                if self._custom_team_attribute:
+                    custom_value = attrs.get(self._custom_team_attribute)
+                    user_attrs[self._custom_team_attribute] = custom_value
+                    team_values[external_id] = _single_team_value(custom_value)
                 if self._by_attribute:
                     team_values[external_id] = _first(attrs.get(self._by_attribute))
                 elif self._by_container:
                     team_values[external_id] = _container(entry["dn"])
+                users[external_id].attributes = user_attrs
 
             groups: list[DirGroup] = []
             if self._groups:
                 by_dn: dict[str, DirGroup] = {}
                 members_of: dict[str, list[str]] = {}
-                for entry in self._search(
-                    connection, self._group_filter, ["cn", "description", self._member]
-                ):
+                group_attributes = ["cn", "description", self._member]
+                group_entries = (
+                    self._search_sample(
+                        connection, self._group_filter, group_attributes, sample_size
+                    )
+                    if sample_size is not None
+                    else self._search(connection, self._group_filter, group_attributes)
+                )
+                for entry in group_entries:
                     attrs = entry.get("attributes", {})
                     dn = _norm(entry["dn"])
                     group = DirGroup(
@@ -237,13 +381,22 @@ class LdapConnector:
                             by_dn[dn].child_group_ids.add(member)
             snapshot = DirectorySnapshot(users=list(users.values()), groups=groups)
             if team_values:
-                teams_from_values(snapshot, team_values, prefix="team")
+                prefix = (
+                    f"team-{self._custom_team_attribute}" if self._custom_team_attribute else "team"
+                )
+                teams_from_values(snapshot, team_values, prefix=prefix)
+                if self._custom_team_attribute:
+                    ensure_custom_teams_present(snapshot, prefix, sample_size=sample_size)
             return snapshot
         finally:
             try:
                 connection.unbind()
             except LDAPException:
                 pass
+
+    def fetch_sample(self) -> DirectorySnapshot:
+        """Preview at most one bounded page of users and groups."""
+        return self.fetch(sample_size=DISCOVERY_SAMPLE_SIZE)
 
 
 def validate(fields: dict[str, str], secret: str | None) -> None:
@@ -284,6 +437,10 @@ def validate(fields: dict[str, str], secret: str | None) -> None:
         raise ValueError(
             "Indiquez l'attribut qui donne le nom de l'équipe (par exemple department)."
         )
+    if fields.get("team_selector") == "custom_attribute" and not ATTRIBUTE_NAME.fullmatch(
+        fields.get("custom_team_attribute", "")
+    ):
+        raise ValueError("Découvrez puis choisissez un attribut d'équipe disponible.")
     if (
         fields.get("team_selector") in ("groups", "both")
         and not fields.get("group_filter", "").strip()
@@ -306,6 +463,8 @@ def build(client: httpx.Client, fields: dict[str, str], secret: str) -> Director
         family_name_attribute=fields.get("family_name_attribute", ""),
         team_selector=fields.get("team_selector", "groups"),
         team_attribute=fields.get("team_attribute", ""),
+        custom_team_attribute=fields.get("custom_team_attribute", ""),
+        custom_team_groups=fields.get("custom_team_groups") == "true",
         start_tls=fields.get("start_tls") == "yes",
     )
 
@@ -395,6 +554,25 @@ SPEC = ConnectorSpec(
             required=False,
         ),
         team_selector_field(options=TEAM_SELECTORS),
+        FieldSpec(
+            "custom_team_attribute",
+            "Attribut de rattachement à l'équipe",
+            "Attribut découvert dans l'annuaire et utilisé comme nom d'équipe.",
+            "Choisissez un attribut découvert",
+            kind="select",
+            options=(),
+            default="",
+            required=False,
+        ),
+        FieldSpec(
+            "custom_team_groups",
+            "Inclure aussi les groupes LDAP",
+            "Ajoute les groupes natifs en complément des équipes créées depuis l'attribut.",
+            "Non",
+            kind="checkbox",
+            default="false",
+            required=False,
+        ),
         FieldSpec(
             "group_filter",
             "Filtre des groupes",

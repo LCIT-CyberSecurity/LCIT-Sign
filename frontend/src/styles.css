@@ -1133,6 +1133,12 @@ a.attention:hover strong { color: var(--primary); }
 .table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
 .table-wrap .simple-table { margin: 0; }
 .table-wrap .simple-table tbody tr:last-child td { border-bottom: 0; }
+.directory-attributes-table { table-layout: fixed; }
+.directory-attributes-table th:nth-child(1) { width: 38%; }
+.directory-attributes-table th:nth-child(2),
+.directory-attributes-table th:nth-child(3) { width: 17%; }
+.directory-attributes-table td { overflow-wrap: anywhere; }
+.directory-attributes-table code { white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
 .row-link { color: var(--text-primary); font-weight: 620; text-decoration: none; }
 .row-link:hover { color: var(--primary); }
 .campaigns-table td { padding-top: 11px; padding-bottom: 11px; }

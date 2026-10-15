@@ -7,7 +7,7 @@ import type { ConnectorField, DirectorySource } from "../api/types";
 
 vi.mock("../api/client", async () => {
   const actual = await vi.importActual<typeof import("../api/client")>("../api/client");
-  return { ...actual, api: { put: vi.fn(), del: vi.fn() } };
+  return { ...actual, api: { put: vi.fn(), del: vi.fn(), post: vi.fn() } };
 });
 
 const field = (
@@ -36,6 +36,8 @@ const entra: DirectorySource = {
         options: [
           { value: "groups", label: "Les groupes" },
           { value: "attribute", label: "Un attribut" },
+          { value: "both", label: "Les deux" },
+          { value: "custom_attribute", label: "Autre attribut" },
         ],
       }),
       field("team_attribute", "Attribut qui donne l'équipe", "department", {
@@ -43,6 +45,12 @@ const entra: DirectorySource = {
         default: "department",
         required: false,
         options: [{ value: "department", label: "Service" }],
+      }),
+      field("custom_team_attribute", "Attribut de rattachement à l'équipe", "division", {
+        kind: "select", required: false, default: "", options: [],
+      }),
+      field("custom_team_groups", "Inclure aussi les groupes natifs", "Non", {
+        kind: "checkbox", required: false, default: "false",
       }),
     ],
     secret: field("client_secret", "Secret client", "abC8Q~xYz", { kind: "password" }),
@@ -70,9 +78,11 @@ describe("DirectoryConnectorForm — credentials are write-only", () => {
 
     await waitFor(() => expect(api.put).toHaveBeenCalled());
     expect(api.put).toHaveBeenCalledWith("/admin/directory/sources/entra/config", {
-      // "Where does the team name come from" keeps its default; the attribute only
-      // applies when teams are read from an attribute, so it is not sent.
-      fields: { tenant_id: "tenant-1", client_id: "client-1", team_selector: "groups" },
+      // The custom mapping stays opt-in; its empty/default settings remain reversible.
+      fields: {
+        tenant_id: "tenant-1", client_id: "client-1", team_selector: "groups",
+        custom_team_attribute: "", custom_team_groups: "false",
+      },
       secret: "FAKE-UI-SECRET",
       sync_interval_minutes: 60,
     });
@@ -140,5 +150,44 @@ describe("DirectoryConnectorForm — every setting explains itself", () => {
     await user.selectOptions(screen.getByLabelText("D'où vient le nom de l'équipe ?"), "attribute");
     expect(screen.getByLabelText("Attribut qui donne l'équipe")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Aide : Attribut qui donne l'équipe" })).toBeInTheDocument();
+  });
+});
+
+describe("DirectoryConnectorForm — custom team discovery", () => {
+  it("discovers attributes and previews the selected mapping without saving", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.post).mockImplementation(async (path) => {
+      if (path.endsWith("/attributes/discover")) {
+        return {
+          attributes: [{
+            name: "employeeOrgData.division", label: "Division", data_type: "str",
+            available: true, populated_count: 2, sample_count: 2,
+            population_ratio: 1, examples: ["Cyber"],
+          }],
+        } as never;
+      }
+      return {
+        sampled_users: 2,
+        teams: [{ name: "Cyber", member_count: 2, members: [
+          { name: "Alice Example", email: "alice@example.test" },
+          { name: "Bob Example", email: "bob@example.test" },
+        ] }],
+        unassigned_users: [], warnings: [], active_comparison: null,
+      } as never;
+    });
+    render(<DirectoryConnectorForm source={{ ...entra, configured: true }} onChanged={vi.fn()} />);
+
+    await user.selectOptions(screen.getByLabelText("D'où vient le nom de l'équipe ?"), "custom_attribute");
+    await user.click(screen.getByRole("button", { name: "Découvrir les attributs" }));
+    expect(await screen.findByText("Division")).toBeInTheDocument();
+    expect(screen.getByText("employeeOrgData.division")).toBeInTheDocument();
+    await user.selectOptions(
+      screen.getByLabelText("Attribut de rattachement à l'équipe"),
+      "employeeOrgData.division",
+    );
+    await user.click(screen.getByRole("button", { name: "Tester le mapping" }));
+    expect(await screen.findByText("Cyber — 2 membre(s)")).toBeInTheDocument();
+    expect(screen.getByText("Alice Example — alice@example.test")).toBeInTheDocument();
+    expect(api.put).not.toHaveBeenCalled();
   });
 });

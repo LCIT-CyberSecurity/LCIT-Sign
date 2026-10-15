@@ -47,6 +47,28 @@ def build_remote_connector(
     return spec.build(client, fields, secret)
 
 
+def build_candidate_connector(
+    source: str,
+    fields: dict[str, str],
+    config: DirectoryConnectorConfig,
+    master_key: str,
+    client: httpx.Client,
+) -> DirectoryConnector:
+    """Build an unsaved candidate with the configured secret; never writes or activates it."""
+    if not master_key:
+        raise DirectoryConnectorError("LCIT_SIGN_MASTER_KEY is not configured")
+    spec = SPECS.get(source)
+    if spec is None:
+        raise DirectoryConnectorError(f"unknown directory source {source!r}")
+    if not config.encrypted_secret:
+        raise DirectoryConnectorError(f"connector {source!r} has no secret configured")
+    try:
+        secret = decrypt_secret(master_key, config.encrypted_secret)
+    except Exception as exc:  # wrong master key / corrupted ciphertext
+        raise DirectoryConnectorError(f"cannot decrypt {source!r} secret") from exc
+    return spec.build(client, fields, secret)
+
+
 DEMO_SOURCE = "local"  # the fictional directory: CrashTest only (settings.crashtest)
 
 
@@ -60,11 +82,16 @@ def active_source(db: DbSession, settings: Settings) -> str | None:
     """The one directory in use: the remote connector marked active, else the fictional one on
     CrashTest, else None (a fresh installation has no directory). Only this source is synced,
     by hand or on schedule."""
-    found = db.execute(
-        select(DirectoryConnectorConfig.source).where(
-            DirectoryConnectorConfig.active.is_(True), DirectoryConnectorConfig.source != "local"
+    found = (
+        db.execute(
+            select(DirectoryConnectorConfig.source).where(
+                DirectoryConnectorConfig.active.is_(True),
+                DirectoryConnectorConfig.source != "local",
+            )
         )
-    ).scalars().first()
+        .scalars()
+        .first()
+    )
     return found or (DEMO_SOURCE if settings.crashtest else None)
 
 

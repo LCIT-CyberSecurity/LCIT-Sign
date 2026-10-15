@@ -4,6 +4,7 @@ with a help bubble per field)."""
 
 from __future__ import annotations
 
+import unicodedata
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
@@ -27,6 +28,8 @@ class DirUser:
     family_name: str
     active: bool = True
     group_ids: set[str] = field(default_factory=set)
+    # Provider properties read for team mapping. Kept in memory for the snapshot only.
+    attributes: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -43,6 +46,100 @@ class DirGroup:
 class DirectorySnapshot:
     users: list[DirUser]
     groups: list[DirGroup]
+    warnings: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class DirectoryAttribute:
+    """A safe-to-display attribute found in a bounded directory sample."""
+
+    name: str
+    label: str
+    data_type: str
+    available: bool
+    populated_count: int
+    sample_count: int
+    examples: tuple[str, ...] = ()
+
+    def payload(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "label": self.label,
+            "data_type": self.data_type,
+            "available": self.available,
+            "populated_count": self.populated_count,
+            "sample_count": self.sample_count,
+            "population_ratio": (
+                round(self.populated_count / self.sample_count, 4) if self.sample_count else 0.0
+            ),
+            "examples": list(self.examples),
+        }
+
+
+def describe_attributes(
+    values_by_attribute: dict[str, list[Any]],
+    labels: dict[str, str] | None = None,
+    *,
+    sample_count: int,
+    available_by_attribute: dict[str, bool] | None = None,
+) -> list[DirectoryAttribute]:
+    """Summarize already-bounded, provider-read values without retaining full records."""
+    result: list[DirectoryAttribute] = []
+    for name, values in sorted(values_by_attribute.items()):
+        non_empty = [value for value in values if value is not None and value != "" and value != []]
+        types = {type(value).__name__ for value in non_empty}
+        data_type = next(iter(types)) if len(types) == 1 else "mixed" if types else "string"
+        examples: list[str] = []
+        for value in non_empty:
+            rendered = (
+                ", ".join(str(part) for part in value) if isinstance(value, list) else str(value)
+            )
+            rendered = " ".join(rendered.split())
+            if rendered and rendered not in examples:
+                examples.append(rendered[:120])
+            if len(examples) == 3:
+                break
+        result.append(
+            DirectoryAttribute(
+                name=name,
+                label=(labels or {}).get(name, name),
+                data_type=data_type,
+                available=(available_by_attribute or {}).get(
+                    name, bool(values) and any(value is not None for value in values)
+                ),
+                populated_count=len(non_empty),
+                sample_count=sample_count,
+                examples=tuple(examples),
+            )
+        )
+    return result
+
+
+def value_at_path(record: Any, path: str) -> Any:
+    """Read a provider-neutral dotted path; arrays use their first object entry."""
+    value = record
+    for part in path.split("."):
+        if isinstance(value, list):
+            value = value[0] if value else None
+        if not isinstance(value, dict):
+            return None
+        value = value.get(part)
+    return value
+
+
+def path_exists(record: Any, path: str) -> bool:
+    """Whether a provider response contains a path, even if its value is empty."""
+    parts = path.split(".")
+    value = record
+    for part in parts[:-1]:
+        if isinstance(value, list):
+            value = value[0] if value else None
+        if not isinstance(value, dict) or part not in value:
+            return False
+        value = value[part]
+    if isinstance(value, list):
+        value = value[0] if value else None
+    return isinstance(value, dict) and parts[-1] in value
 
 
 MAX_GROUP_DEPTH = 10
@@ -181,6 +278,7 @@ TEAM_SELECTORS = (
     ("groups", "Les groupes de l'annuaire"),
     ("attribute", "Un attribut de chaque personne"),
     ("both", "Les deux"),
+    ("custom_attribute", "Autre attribut"),
 )
 
 
@@ -201,18 +299,50 @@ def team_selector_field(*, options: tuple[tuple[str, str], ...] = TEAM_SELECTORS
 
 
 def teams_from_values(
-    snapshot: DirectorySnapshot, value_by_user: dict[str, str], *, prefix: str = "team"
+    snapshot: DirectorySnapshot, value_by_user: dict[str, Any], *, prefix: str = "team"
 ) -> None:
     """Make one team per distinct value (the "Comptabilité" department → a group with every
     person who has it). Added to the snapshot, next to the directory's real groups."""
     members: dict[str, list[DirUser]] = {}
+    display_by_key: dict[str, str] = {}
     by_id = {u.external_id: u for u in snapshot.users}
     for user_id, raw in value_by_user.items():
-        value = raw.strip()
+        if not isinstance(raw, str):
+            if raw is not None:
+                snapshot.warnings.append(
+                    "Une valeur d'équipe a été ignorée : une valeur unique en texte est attendue."
+                )
+            continue
+        value = unicodedata.normalize("NFC", " ".join(raw.split()))
         if value and user_id in by_id:
-            members.setdefault(value, []).append(by_id[user_id])
-    for value, people in sorted(members.items()):
+            key = value.casefold()
+            display_by_key[key] = min(display_by_key.get(key, value), value)
+            members.setdefault(key, []).append(by_id[user_id])
+    for key, people in sorted(members.items()):
+        value = display_by_key[key]
         group_id = f"{prefix}:{value.lower()}"
+        # Existing snapshots may contain duplicate values with case-only differences.
+        if any(group.external_id == group_id for group in snapshot.groups):
+            snapshot.warnings.append(f"Identifiant d'équipe en collision ignoré : {group_id!r}.")
+            continue
         snapshot.groups.append(DirGroup(group_id, value, f"Équipe « {value} »"))
         for person in people:
             person.group_ids.add(group_id)
+
+
+def ensure_custom_teams_present(
+    snapshot: DirectorySnapshot, prefix: str, *, sample_size: int | None
+) -> None:
+    """Fail a full sync before writes if a newly selected mapping yields no teams.
+
+    Preview samples are allowed to be empty; a full sync must not interpret a missing,
+    inaccessible, or entirely blank custom attribute as a request to remove all teams.
+    """
+    if (
+        sample_size is None
+        and snapshot.users
+        and not any(group.external_id.startswith(f"{prefix}:") for group in snapshot.groups)
+    ):
+        raise DirectoryConnectorError(
+            "Le mapping personnalisé n'a produit aucune équipe ; la synchronisation est annulée."
+        )

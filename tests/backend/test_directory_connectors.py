@@ -29,31 +29,63 @@ def _entra_handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"access_token": "tok"})
     assert request.headers["Authorization"] == "Bearer tok"
     if "/users?" in url and "page2" not in url:
-        return httpx.Response(200, json={
-            "value": [
-                {"id": "e1", "mail": "Ann.One@corp.test", "givenName": "Ann",
-                 "surname": "One", "accountEnabled": True},
-                {"id": "e2", "userPrincipalName": "bo.two@corp.test",
-                 "displayName": "Bo Two", "accountEnabled": False},
-            ],
-            "@odata.nextLink": "https://graph.microsoft.com/v1.0/users?page2",
-        })
+        return httpx.Response(
+            200,
+            json={
+                "value": [
+                    {
+                        "id": "e1",
+                        "mail": "Ann.One@corp.test",
+                        "givenName": "Ann",
+                        "surname": "One",
+                        "accountEnabled": True,
+                    },
+                    {
+                        "id": "e2",
+                        "userPrincipalName": "bo.two@corp.test",
+                        "displayName": "Bo Two",
+                        "accountEnabled": False,
+                    },
+                ],
+                "@odata.nextLink": "https://graph.microsoft.com/v1.0/users?page2",
+            },
+        )
     if "page2" in url:
-        return httpx.Response(200, json={"value": [
-            {"id": "e3", "mail": "cy.three@corp.test", "givenName": "Cy",
-             "surname": "Three", "accountEnabled": True},
-            {"id": "e4", "accountEnabled": True},  # no mail at all: skipped
-        ]})
+        return httpx.Response(
+            200,
+            json={
+                "value": [
+                    {
+                        "id": "e3",
+                        "mail": "cy.three@corp.test",
+                        "givenName": "Cy",
+                        "surname": "Three",
+                        "accountEnabled": True,
+                    },
+                    {"id": "e4", "accountEnabled": True},  # no mail at all: skipped
+                ]
+            },
+        )
     if "/groups?" in url:
-        return httpx.Response(200, json={"value": [
-            {"id": "g1", "displayName": "Finance", "description": "Money"},
-        ]})
+        return httpx.Response(
+            200,
+            json={
+                "value": [
+                    {"id": "g1", "displayName": "Finance", "description": "Money"},
+                ]
+            },
+        )
     if "/groups/g1/members" in url:
-        return httpx.Response(200, json={"value": [
-            {"@odata.type": "#microsoft.graph.user", "id": "e1"},
-            {"@odata.type": "#microsoft.graph.user", "id": "e3"},
-            {"@odata.type": "#microsoft.graph.group", "id": "nested"},
-        ]})
+        return httpx.Response(
+            200,
+            json={
+                "value": [
+                    {"@odata.type": "#microsoft.graph.user", "id": "e1"},
+                    {"@odata.type": "#microsoft.graph.user", "id": "e3"},
+                    {"@odata.type": "#microsoft.graph.group", "id": "nested"},
+                ]
+            },
+        )
     return httpx.Response(404)
 
 
@@ -91,8 +123,9 @@ def test_sources_listing(tmp_path, mock_oidc_base_url):
     app = _entra_app(tmp_path, mock_oidc_base_url)
     admin = _admin(app, mock_oidc_base_url)
     _configure_entra(admin)
-    sources = {s["source"]: s["configured"] for s in
-               admin.get("/api/admin/directory/sources").json()}
+    sources = {
+        s["source"]: s["configured"] for s in admin.get("/api/admin/directory/sources").json()
+    }
     # A normal installation: the real connectors only (the demonstration directory is CrashTest's).
     assert sources == {"entra": True, "google": False, "ldap": False}
 
@@ -107,8 +140,7 @@ def test_entra_sync(tmp_path, mock_oidc_base_url):
     groups = admin.get("/api/admin/directory/groups").json()
     assert [(g["name"], g["member_count"]) for g in groups] == [("Finance", 2)]
     again = admin.post("/api/admin/directory/sync?source=entra").json()
-    assert (again["users_added"], again["users_updated"], again["memberships_added"]) == (
-        0, 3, 0)
+    assert (again["users_added"], again["users_updated"], again["memberships_added"]) == (0, 3, 0)
 
     with app.state.session_factory() as db:
         bo = db.execute(select(User).where(User.email == "bo.two@corp.test")).scalar_one()
@@ -134,8 +166,10 @@ def test_entra_failure_touches_nothing(tmp_path, mock_oidc_base_url):
     assert run["status"] == "FAILED"
     assert "Microsoft a refusé" in run["error"]
     with app.state.session_factory() as db:
-        assert db.execute(select(User).where(User.email == "ann.one@corp.test")
-                          ).scalar_one().active is True
+        assert (
+            db.execute(select(User).where(User.email == "ann.one@corp.test")).scalar_one().active
+            is True
+        )
         assert db.execute(select(Group).where(Group.source == "entra")).scalar_one().active
 
 
@@ -185,19 +219,47 @@ def test_google_sync(tmp_path, mock_oidc_base_url):
         assert request.headers["Authorization"] == "Bearer gtok"
         if url.path.endswith("/users"):
             if url.params.get("pageToken") == "p2":
-                return httpx.Response(200, json={"users": [
-                    {"id": "u2", "primaryEmail": "Zed@corp.test", "suspended": True,
-                     "name": {"givenName": "Zed", "familyName": "Z"}}]})
-            return httpx.Response(200, json={"users": [
-                {"id": "u1", "primaryEmail": "yan@corp.test",
-                 "name": {"givenName": "Yan", "familyName": "Y"}}], "nextPageToken": "p2"})
+                return httpx.Response(
+                    200,
+                    json={
+                        "users": [
+                            {
+                                "id": "u2",
+                                "primaryEmail": "Zed@corp.test",
+                                "suspended": True,
+                                "name": {"givenName": "Zed", "familyName": "Z"},
+                            }
+                        ]
+                    },
+                )
+            return httpx.Response(
+                200,
+                json={
+                    "users": [
+                        {
+                            "id": "u1",
+                            "primaryEmail": "yan@corp.test",
+                            "name": {"givenName": "Yan", "familyName": "Y"},
+                        }
+                    ],
+                    "nextPageToken": "p2",
+                },
+            )
         if url.path.endswith("/groups"):
-            return httpx.Response(200, json={"groups": [
-                {"id": "gg1", "email": "team@corp.test", "name": "Team"}]})
+            return httpx.Response(
+                200, json={"groups": [{"id": "gg1", "email": "team@corp.test", "name": "Team"}]}
+            )
         if url.path.endswith("/groups/gg1/members"):
-            return httpx.Response(200, json={"members": [
-                {"id": "u1", "type": "USER"}, {"id": "u2", "type": "USER"},
-                {"id": "x", "type": "GROUP"}]})
+            return httpx.Response(
+                200,
+                json={
+                    "members": [
+                        {"id": "u1", "type": "USER"},
+                        {"id": "u2", "type": "USER"},
+                        {"id": "x", "type": "GROUP"},
+                    ]
+                },
+            )
         return httpx.Response(404)
 
     app = make_app(tmp_path, mock_oidc_base_url, master_key=TEST_MASTER_KEY)
@@ -245,6 +307,8 @@ def test_secret_is_encrypted_at_rest_and_never_returned(tmp_path, mock_oidc_base
         **ENTRA_FIELDS,
         "team_selector": "groups",
         "team_attribute": "department",
+        "custom_team_attribute": "",
+        "custom_team_groups": "false",
     }
     assert "s3cr3t-value~Xyz" not in admin.get("/api/admin/directory/sources").text
 
@@ -342,18 +406,32 @@ def test_entra_sync_resolves_nested_groups(tmp_path, mock_oidc_base_url):
         if "oauth2/v2.0/token" in url:
             return httpx.Response(200, json={"access_token": "tok"})
         if "/users?" in url:
-            return httpx.Response(200, json={"value": [
-                {"id": "e1", "mail": "ann@corp.test", "givenName": "Ann", "surname": "One"}]})
+            return httpx.Response(
+                200,
+                json={
+                    "value": [
+                        {"id": "e1", "mail": "ann@corp.test", "givenName": "Ann", "surname": "One"}
+                    ]
+                },
+            )
         if "/groups?" in url:
-            return httpx.Response(200, json={"value": [
-                {"id": "parent", "displayName": "Parent"},
-                {"id": "child", "displayName": "Child"}]})
+            return httpx.Response(
+                200,
+                json={
+                    "value": [
+                        {"id": "parent", "displayName": "Parent"},
+                        {"id": "child", "displayName": "Child"},
+                    ]
+                },
+            )
         if "/groups/parent/members" in url:
-            return httpx.Response(200, json={"value": [
-                {"@odata.type": "#microsoft.graph.group", "id": "child"}]})
+            return httpx.Response(
+                200, json={"value": [{"@odata.type": "#microsoft.graph.group", "id": "child"}]}
+            )
         if "/groups/child/members" in url:
-            return httpx.Response(200, json={"value": [
-                {"@odata.type": "#microsoft.graph.user", "id": "e1"}]})
+            return httpx.Response(
+                200, json={"value": [{"@odata.type": "#microsoft.graph.user", "id": "e1"}]}
+            )
         return httpx.Response(404)
 
     app = _entra_app(tmp_path, mock_oidc_base_url, handler)
@@ -369,8 +447,12 @@ def test_entra_sync_resolves_nested_groups(tmp_path, mock_oidc_base_url):
 def _entra_refuses(status: int, codes: list[int], description: str = "x"):
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
-            status, json={"error": "invalid_client", "error_codes": codes,
-                          "error_description": description + " FAKE-SECRET-VALUE"},
+            status,
+            json={
+                "error": "invalid_client",
+                "error_codes": codes,
+                "error_description": description + " FAKE-SECRET-VALUE",
+            },
         )
 
     return handler
@@ -411,17 +493,32 @@ def test_the_classic_entra_mix_ups_are_caught_when_typing(tmp_path, mock_oidc_ba
     secret = "abC8Q~xYzTn3kLw0pQe5vRsU9dFgHjKlMnOpQr"
 
     # The secret typed into the application-id field (what actually happened).
-    swapped = admin.put(url, json={"fields": {**ENTRA_FIELDS, "client_id": secret}, "secret": ENTRA_FIELDS["client_id"]})  # noqa: E501
+    swapped = admin.put(
+        url,
+        json={"fields": {**ENTRA_FIELDS, "client_id": secret}, "secret": ENTRA_FIELDS["client_id"]},
+    )  # noqa: E501
     assert swapped.status_code == 422 and "ressemble à un secret" in swapped.text
     assert secret not in swapped.text
 
     # An identifier (a "secret ID") given as the secret.
-    as_id = admin.put(url, json={"fields": ENTRA_FIELDS, "secret": "eccc92e6-42b7-4470-8ea9-54706c4d5e54"})  # noqa: E501
+    as_id = admin.put(
+        url, json={"fields": ENTRA_FIELDS, "secret": "eccc92e6-42b7-4470-8ea9-54706c4d5e54"}
+    )  # noqa: E501
     assert as_id.status_code == 422 and "Valeur" in as_id.text
 
     # A tenant that is neither a GUID nor a domain, an application id that is not a GUID.
-    assert admin.put(url, json={"fields": {**ENTRA_FIELDS, "tenant_id": "mon tenant"}, "secret": secret}).status_code == 422  # noqa: E501
-    assert admin.put(url, json={"fields": {**ENTRA_FIELDS, "client_id": "pas-un-guid"}, "secret": secret}).status_code == 422  # noqa: E501
+    assert (
+        admin.put(
+            url, json={"fields": {**ENTRA_FIELDS, "tenant_id": "mon tenant"}, "secret": secret}
+        ).status_code
+        == 422
+    )  # noqa: E501
+    assert (
+        admin.put(
+            url, json={"fields": {**ENTRA_FIELDS, "client_id": "pas-un-guid"}, "secret": secret}
+        ).status_code
+        == 422
+    )  # noqa: E501
 
     # Nothing wrong was stored; the right values go through.
     assert admin.get("/api/admin/directory/sources").json()[1]["configured"] is False
@@ -431,8 +528,30 @@ def test_the_classic_entra_mix_ups_are_caught_when_typing(tmp_path, mock_oidc_ba
 def test_google_input_is_checked_too(tmp_path, mock_oidc_base_url):
     app, admin, *_ = setup_campaign_fixture(tmp_path, mock_oidc_base_url)
     url = "/api/admin/directory/sources/google/config"
-    good_key = json.dumps({"client_email": "sa@p.iam.gserviceaccount.com", "private_key": "-----BEGIN"})  # noqa: E501
-    assert admin.put(url, json={"fields": {"admin_email": "pas une adresse"}, "secret": good_key}).status_code == 422  # noqa: E501
-    assert admin.put(url, json={"fields": {"admin_email": "a@corp.test"}, "secret": "{not json"}).status_code == 422  # noqa: E501
-    assert admin.put(url, json={"fields": {"admin_email": "a@corp.test"}, "secret": '{"x": 1}'}).status_code == 422  # noqa: E501
-    assert admin.put(url, json={"fields": {"admin_email": "a@corp.test"}, "secret": good_key}).status_code == 200  # noqa: E501
+    good_key = json.dumps(
+        {"client_email": "sa@p.iam.gserviceaccount.com", "private_key": "-----BEGIN"}
+    )  # noqa: E501
+    assert (
+        admin.put(
+            url, json={"fields": {"admin_email": "pas une adresse"}, "secret": good_key}
+        ).status_code
+        == 422
+    )  # noqa: E501
+    assert (
+        admin.put(
+            url, json={"fields": {"admin_email": "a@corp.test"}, "secret": "{not json"}
+        ).status_code
+        == 422
+    )  # noqa: E501
+    assert (
+        admin.put(
+            url, json={"fields": {"admin_email": "a@corp.test"}, "secret": '{"x": 1}'}
+        ).status_code
+        == 422
+    )  # noqa: E501
+    assert (
+        admin.put(
+            url, json={"fields": {"admin_email": "a@corp.test"}, "secret": good_key}
+        ).status_code
+        == 200
+    )  # noqa: E501

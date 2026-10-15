@@ -7,7 +7,7 @@ from typing import Any
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as DbSession
 
@@ -26,6 +26,7 @@ from lcit_sign.services.directory.registry import (
     SPECS,
     active_source,
     available_sources,
+    build_candidate_connector,
     build_remote_connector,
     make_active,
 )
@@ -87,13 +88,15 @@ def list_sources(
     payloads: list[dict[str, Any]] = []
     if "local" in available_sources(settings):  # CrashTest only
         local = db.get(DirectoryConnectorConfig, "local")
-        payloads.append({
-            "source": "local",
-            "active": active == "local",
-            "configured": True,
-            "fields": {},
-            "sync_interval_minutes": local.sync_interval_minutes if local else None,
-        })
+        payloads.append(
+            {
+                "source": "local",
+                "active": active == "local",
+                "configured": True,
+                "fields": {},
+                "sync_interval_minutes": local.sync_interval_minutes if local else None,
+            }
+        )
     for source, spec in SPECS.items():
         payloads.append(
             {
@@ -112,6 +115,58 @@ class ConnectorConfigRequest(BaseModel):
     secret: str | None = None
     # Run this source automatically every N minutes (None = manual only).
     sync_interval_minutes: int | None = Field(default=None, ge=5, le=10080)
+
+
+class ConnectorReadRequest(BaseModel):
+    """Unsaved, non-secret connector settings used only by read-only tools."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+    fields: dict[str, str] = Field(default_factory=dict)
+
+
+def _readonly_candidate(
+    source: str,
+    body: ConnectorReadRequest,
+    request: Request,
+    db: DbSession,
+    http_client: httpx.Client,
+) -> tuple[Any, dict[str, str]]:
+    if source not in available_sources(request.app.state.settings):
+        raise HTTPException(status_code=404, detail="Connecteur d'annuaire inconnu.")
+    spec = SPECS.get(source)
+    if spec is None:
+        raise HTTPException(status_code=404, detail="Connecteur d'annuaire inconnu.")
+    config = db.get(DirectoryConnectorConfig, source)
+    if config is None or not config.encrypted_secret:
+        raise HTTPException(
+            status_code=409, detail="Enregistrez d'abord les identifiants du connecteur."
+        )
+    unknown = set(body.fields) - {field.name for field in spec.fields}
+    if unknown:
+        raise HTTPException(status_code=422, detail="Paramètre de connecteur inconnu.")
+    current = json.loads(config.settings_json)
+    fields = spec.with_defaults({**current, **body.fields})
+    validation_fields = fields
+    if fields.get("team_selector") == "custom_attribute" and not fields.get(
+        "custom_team_attribute"
+    ):
+        # Discovery must work before an attribute has been selected.
+        validation_fields = dict(fields)
+        validation_fields["team_selector"] = "container" if source == "ldap" else "groups"
+    try:
+        spec.validate(validation_fields, None)
+        connector = build_candidate_connector(
+            source,
+            fields,
+            config,
+            request.app.state.settings.master_key,
+            http_client,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except DirectoryConnectorError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return connector, fields
 
 
 @router.put("/sources/{source}/config")
@@ -160,12 +215,134 @@ def put_source_config(
             raise HTTPException(503, "LCIT_SIGN_MASTER_KEY is not configured")
         config.encrypted_secret = encrypt_secret(master_key, body.secret)
     append_audit_event(
-        db, action="DIRECTORY_CONNECTOR_CONFIGURED", actor_id=user.id,
-        target_type="directory_connector", target_id=source,
+        db,
+        action="DIRECTORY_CONNECTOR_CONFIGURED",
+        actor_id=user.id,
+        target_type="directory_connector",
+        target_id=source,
     )
     db.commit()
     db.refresh(config)
     return _config_payload(source, config, active_source(db, request.app.state.settings))
+
+
+@router.post("/sources/{source}/attributes/discover")
+def discover_source_attributes(
+    source: str,
+    body: ConnectorReadRequest,
+    request: Request,
+    db: DbSession = Depends(get_db),
+    http_client: httpx.Client = Depends(get_directory_http_client),
+    user: User = Depends(_admin),
+) -> dict[str, Any]:
+    """Read a bounded, provider-specific user sample without saving or activating anything."""
+    connector, _ = _readonly_candidate(source, body, request, db, http_client)
+    discover = getattr(connector, "discover_attributes", None)
+    if not callable(discover):
+        raise HTTPException(status_code=501, detail="La découverte n'est pas disponible.")
+    try:
+        attributes = discover()
+    except DirectoryConnectorError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"attributes": [attribute.payload() for attribute in attributes]}
+
+
+@router.post("/sources/{source}/mapping/preview")
+def preview_source_mapping(
+    source: str,
+    body: ConnectorReadRequest,
+    request: Request,
+    db: DbSession = Depends(get_db),
+    http_client: httpx.Client = Depends(get_directory_http_client),
+    user: User = Depends(_admin),
+) -> dict[str, Any]:
+    """Evaluate an unsaved candidate mapping in memory; this endpoint performs no SQL writes."""
+    connector, fields = _readonly_candidate(source, body, request, db, http_client)
+    custom_attribute = fields.get("custom_team_attribute", "")
+    if fields.get("team_selector") == "custom_attribute":
+        discover = getattr(connector, "discover_attributes", None)
+        if not callable(discover):
+            raise HTTPException(status_code=501, detail="La découverte n'est pas disponible.")
+        try:
+            found = discover()
+        except DirectoryConnectorError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        selected = next((item for item in found if item.name == custom_attribute), None)
+        if selected is None or not selected.available:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Cet attribut n'est pas accessible. Relancez la découverte et choisissez "
+                    "un résultat."
+                ),
+            )
+    sample_fetch = getattr(connector, "fetch_sample", None)
+    try:
+        snapshot = sample_fetch() if callable(sample_fetch) else connector.fetch()
+    except DirectoryConnectorError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    teams: list[dict[str, Any]] = []
+    for group in sorted(snapshot.groups, key=lambda item: item.name.casefold()):
+        members = sorted(
+            (
+                {
+                    "name": f"{person.given_name} {person.family_name}".strip() or person.email,
+                    "email": person.email,
+                }
+                for person in snapshot.users
+                if group.external_id in person.group_ids
+            ),
+            key=lambda item: item["email"].casefold(),
+        )
+        if members:
+            teams.append({"id": group.external_id, "name": group.name, "members": members})
+    unassigned = [
+        {
+            "name": f"{person.given_name} {person.family_name}".strip() or person.email,
+            "email": person.email,
+        }
+        for person in snapshot.users
+        if not person.group_ids
+    ]
+
+    comparison: dict[str, Any] | None = None
+    if active_source(db, request.app.state.settings) == source:
+        existing: dict[str, set[str]] = {}
+        rows = db.execute(
+            select(Group.name, User.email)
+            .join(GroupMembership, GroupMembership.group_id == Group.id)
+            .join(User, User.id == GroupMembership.user_id)
+            .where(Group.source == source, Group.active.is_(True))
+        ).all()
+        for name, email in rows:
+            existing.setdefault(name, set()).add(email)
+        proposed = {team["name"]: {member["email"] for member in team["members"]} for team in teams}
+        comparison = {
+            "added": sum(
+                len(members - existing.get(name, set())) for name, members in proposed.items()
+            ),
+            "removed": sum(
+                len(members - proposed.get(name, set())) for name, members in existing.items()
+            ),
+        }
+    warnings = list(snapshot.warnings)
+    if custom_attribute and not any(
+        team["id"].startswith(f"team-{custom_attribute}:") for team in teams
+    ):
+        warnings.append(
+            "Aucune équipe n'a été produite à partir de cet attribut dans l'échantillon."
+        )
+    return {
+        "sampled_users": len(snapshot.users),
+        "teams": [
+            {"name": team["name"], "member_count": len(team["members"]), "members": team["members"]}
+            for team in teams
+        ],
+        "unassigned_users": unassigned,
+        "warnings": warnings,
+        "active_comparison": comparison,
+    }
 
 
 @router.post("/sources/{source}/activate")
@@ -182,8 +359,11 @@ def activate_source(
         raise HTTPException(status_code=409, detail=f"connector {source!r} is not configured")
     make_active(db, source)
     append_audit_event(
-        db, action="DIRECTORY_CONNECTOR_ACTIVATED", actor_id=user.id,
-        target_type="directory_connector", target_id=source,
+        db,
+        action="DIRECTORY_CONNECTOR_ACTIVATED",
+        actor_id=user.id,
+        target_type="directory_connector",
+        target_id=source,
     )
     db.commit()
     return {"source": source, "active": active_source(db, settings)}
@@ -198,8 +378,11 @@ def delete_source_config(
         # An active connector that goes leaves no active directory (the bundled one applies).
         db.delete(config)
         append_audit_event(
-            db, action="DIRECTORY_CONNECTOR_REMOVED", actor_id=user.id,
-            target_type="directory_connector", target_id=source,
+            db,
+            action="DIRECTORY_CONNECTOR_REMOVED",
+            actor_id=user.id,
+            target_type="directory_connector",
+            target_id=source,
         )
         db.commit()
 

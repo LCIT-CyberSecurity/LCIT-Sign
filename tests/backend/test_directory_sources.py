@@ -9,11 +9,16 @@ import httpx
 import pytest
 from ldap3 import MOCK_SYNC, Connection, Server
 from sqlalchemy import select
-from test_directory_connectors import ENTRA_FIELDS, _admin, _entra_app
+from test_directory_connectors import ENTRA_FIELDS, _admin, _configure_entra, _entra_app
 
-from lcit_sign.models.directory import Group
+from lcit_sign.models.directory import DirectoryConnectorConfig, Group
 from lcit_sign.services.directory import entra, google, ldap
-from lcit_sign.services.directory.base import DirectoryConnectorError
+from lcit_sign.services.directory.base import (
+    DirectoryConnectorError,
+    DirectorySnapshot,
+    DirUser,
+    teams_from_values,
+)
 from lcit_sign.services.directory.registry import SPECS
 
 
@@ -138,10 +143,120 @@ def test_entra_refuses_an_attribute_it_does_not_know_and_a_missing_one():
         entra.validate({**ENTRA_FIELDS, "team_selector": "attribute", "team_attribute": ""}, None)
 
 
+def test_custom_team_values_are_normalized_and_case_collisions_are_merged():
+    snapshot = DirectorySnapshot(
+        users=[DirUser(f"u{i}", f"u{i}@corp.test", "", "") for i in range(3)], groups=[]
+    )
+    teams_from_values(snapshot, {"u0": " Cyber ", "u1": "CYBER", "u2": "Cyber"})
+    assert len(snapshot.groups) == 1
+    assert snapshot.groups[0].name == "CYBER"
+    assert snapshot.groups[0].external_id == "team:cyber"
+    assert all(snapshot.groups[0].external_id in user.group_ids for user in snapshot.users)
+
+
+def test_custom_team_mapping_skips_multi_valued_values_with_a_warning():
+    snapshot = DirectorySnapshot(users=[DirUser("u1", "u1@corp.test", "", "")], groups=[])
+    teams_from_values(snapshot, {"u1": ["Cyber", "Finance"]})
+    assert snapshot.groups == []
+    assert snapshot.users[0].group_ids == set()
+    assert snapshot.warnings
+
+
+def test_entra_custom_mapping_discovery_and_preview_are_read_only(tmp_path, mock_oidc_base_url):
+    state = {"blank": False}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "oauth2/v2.0/token" in url:
+            return httpx.Response(200, json={"access_token": "tok"})
+        assert "/users?" in url
+        return httpx.Response(
+            200,
+            json={
+                "value": [
+                    {
+                        "id": "u1",
+                        "mail": "a@corp.test",
+                        "givenName": "A",
+                        **({} if state["blank"] else {"employeeOrgData": {"division": "Cyber"}}),
+                    },
+                    {
+                        "id": "u2",
+                        "mail": "b@corp.test",
+                        "givenName": "B",
+                        **({} if state["blank"] else {"employeeOrgData": {"division": "Cyber"}}),
+                    },
+                    {
+                        "id": "u3",
+                        "mail": "c@corp.test",
+                        "givenName": "C",
+                        **({} if state["blank"] else {"employeeOrgData": {"division": "Finance"}}),
+                    },
+                ]
+            },
+        )
+
+    app = _entra_app(tmp_path, mock_oidc_base_url, handler)
+    admin = _admin(app, mock_oidc_base_url)
+    _configure_entra(admin)
+    body = {
+        "fields": {
+            "team_selector": "custom_attribute",
+            "custom_team_attribute": "employeeOrgData.division",
+        }
+    }
+    discovered = admin.post("/api/admin/directory/sources/entra/attributes/discover", json=body)
+    assert discovered.status_code == 200, discovered.text
+    attribute = next(
+        item
+        for item in discovered.json()["attributes"]
+        if item["name"] == "employeeOrgData.division"
+    )
+    assert attribute["available"] is True
+    assert attribute["populated_count"] == 3
+    assert attribute["examples"] == ["Cyber", "Finance"]
+
+    preview = admin.post("/api/admin/directory/sources/entra/mapping/preview", json=body)
+    assert preview.status_code == 200, preview.text
+    assert [(team["name"], team["member_count"]) for team in preview.json()["teams"]] == [
+        ("Cyber", 2),
+        ("Finance", 1),
+    ]
+    assert preview.json()["unassigned_users"] == []
+    injection = admin.post(
+        "/api/admin/directory/sources/entra/mapping/preview",
+        json={
+            "fields": {
+                "team_selector": "custom_attribute",
+                "custom_team_attribute": "displayName,mail",
+            }
+        },
+    )
+    assert injection.status_code == 422
+    with app.state.session_factory() as db:
+        config = db.get(DirectoryConnectorConfig, "entra")
+        assert json.loads(config.settings_json)["team_selector"] == "groups"
+
+    saved = admin.put(
+        "/api/admin/directory/sources/entra/config",
+        json={"fields": {**ENTRA_FIELDS, **body["fields"]}},
+    )
+    assert saved.status_code == 200, saved.text
+    first_sync = admin.post("/api/admin/directory/sync?source=entra").json()
+    assert first_sync["status"] == "SUCCESS"
+    state["blank"] = True
+    failed_sync = admin.post("/api/admin/directory/sync?source=entra").json()
+    assert failed_sync["status"] == "FAILED"
+    assert "aucune équipe" in failed_sync["error"]
+    with app.state.session_factory() as db:
+        groups = db.execute(select(Group).where(Group.source == "entra")).scalars().all()
+        assert {group.name for group in groups if group.active} == {"Cyber", "Finance"}
+
+
 # --- Google: organisational units and departments ---------------------------------
 
 
-def _google_connector(selector, attribute, handler):
+def _google_connector(selector, attribute, handler, **overrides):
     from cryptography.hazmat.primitives import serialization
     from cryptography.hazmat.primitives.asymmetric import rsa
 
@@ -157,6 +272,7 @@ def _google_connector(selector, attribute, handler):
         admin_email="admin@corp.test",
         team_selector=selector,
         team_attribute=attribute,
+        **overrides,
     )
 
 
@@ -205,6 +321,47 @@ def test_google_teams_from_the_org_unit_or_the_department(attribute, expected):
     assert {
         g.name: sum(g.external_id in u.group_ids for u in snapshot.users) for g in snapshot.groups
     } == expected
+
+
+def test_google_custom_schema_is_discovered_and_used_for_teams():
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "token" in url:
+            return httpx.Response(200, json={"access_token": "tok"})
+        if "/users" in url:
+            return httpx.Response(
+                200,
+                json={
+                    "users": [
+                        {
+                            "id": "1",
+                            "primaryEmail": "a@corp.test",
+                            "customSchemas": {"LCIT": {"teamName": {"value": "Cyber"}}},
+                        },
+                        {
+                            "id": "2",
+                            "primaryEmail": "b@corp.test",
+                            "customSchemas": {"LCIT": {"teamName": {"value": "Cyber"}}},
+                        },
+                    ]
+                },
+            )
+        raise AssertionError(f"unexpected call {url}")
+
+    connector = _google_connector(
+        "custom_attribute",
+        "department",
+        handler,
+        custom_team_attribute="customSchemas.LCIT.teamName",
+    )
+    discovered = connector.discover_attributes()
+    custom = next(item for item in discovered if item.name == "customSchemas.LCIT.teamName")
+    assert custom.available and custom.populated_count == 2 and custom.examples == ("Cyber",)
+    snapshot = connector.fetch()
+    assert [
+        (group.name, len([u for u in snapshot.users if group.external_id in u.group_ids]))
+        for group in snapshot.groups
+    ] == [("Cyber", 2)]
 
 
 # --- LDAP ----------------------------------------------------------------------------
@@ -335,6 +492,15 @@ def test_ldap_team_can_be_an_attribute_or_the_container_of_the_person():
 
     both = _connector(team_selector="both", team_attribute="department").fetch()
     assert {g.name for g in both.groups} == {"Finance", "Direction", "Comptabilite-dept", "RH-dept"}
+
+
+def test_ldap_discovers_schema_and_maps_a_custom_attribute():
+    connector = _connector(team_selector="custom_attribute", custom_team_attribute="department")
+    discovered = connector.discover_attributes()
+    assert "department" in {item.name for item in discovered}
+    snapshot = connector.fetch()
+    assert {group.name for group in snapshot.groups} == {"Comptabilite-dept", "RH-dept"}
+    assert all("department" in user.attributes for user in snapshot.users)
 
 
 def test_ldap_a_person_without_mail_is_skipped_and_groups_can_be_left_out():
